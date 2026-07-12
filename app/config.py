@@ -1,0 +1,32 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+class Config:
+    SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-me")
+    JWT_SECRET = os.getenv("JWT_SECRET", "dev-jwt-change-me")
+    OTP_PEPPER = os.getenv("OTP_PEPPER", "dev-pepper-change-me")
+
+    # Falls back to a local SQLite file so you can run instantly;
+    # set DATABASE_URL to your MySQL URL for real use.
+    SQLALCHEMY_DATABASE_URI = os.getenv(
+        "DATABASE_URL", "sqlite:///giftcircle_dev.db"
+    )
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    MAIL_SERVER = os.getenv("MAIL_SERVER", "")
+    MAIL_PORT = int(os.getenv("MAIL_PORT", "465"))
+    MAIL_USE_SSL = os.getenv("MAIL_USE_SSL", "true").lower() == "true"
+    MAIL_USERNAME = os.getenv("MAIL_USERNAME", "")
+    MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "")
+    MAIL_DEFAULT_SENDER = os.getenv("MAIL_USERNAME", "no-reply@giftcircle.local")
+
+    APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:5000")
+
+    OTP_TTL_MINUTES = 10
+    OTP_MAX_ATTEMPTS = 5
+    OTP_REQUESTS_PER_WINDOW = 3       # per email
+    OTP_WINDOW_MINUTES = 15
+    JWT_DAYS = 7

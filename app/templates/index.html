@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GiftCircle</title>
+  <meta name="theme-color" content="#C0392B">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+</head>
+<body>
+  <header id="topbar" hidden>
+    <button id="backBtn" class="icon-btn" aria-label="Go back" hidden>← Back</button>
+    <h1 id="pageTitle">GiftCircle</h1>
+    <button id="bellBtn" class="icon-btn" aria-label="Notifications">
+      🔔<span id="bellBadge" class="badge" hidden></span>
+    </button>
+  </header>
+
+  <main id="app" aria-live="polite"></main>
+
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/static/sw.js");
+    }
+  </script>
+</body>
+</html>
