@@ -26,6 +26,10 @@ def create_app(config_object=None):
                wishlists_bp, messages_bp, announcements_bp, notifications_bp):
         app.register_blueprint(bp, url_prefix="/api")
 
+    @app.route("/privacy_terms")
+    def privacy_terms():
+        return render_template("privacy_terms.html")
+
     @app.route("/")
     @app.route("/<path:_any>")
     def index(_any=None):

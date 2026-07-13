@@ -86,6 +86,8 @@ function pageLogin() {
     <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 123-4567">
     <div id="msg"></div>
     <button class="btn btn-primary" id="sendBtn">Text Me a Sign-In Code</button>
+    <p class="muted center" style="font-size:.85rem">By continuing, you agree to receive a text with your sign-in code.
+      <a href="/privacy_terms" target="_blank" rel="noopener">Privacy Policy &amp; Terms</a></p>
   `, { back: false });
   document.getElementById("sendBtn").onclick = async () => {
     const phone = document.getElementById("phone").value.trim();
