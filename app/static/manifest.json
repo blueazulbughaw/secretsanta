@@ -1,6 +1,6 @@
 {
-  "name": "GiftCircle",
-  "short_name": "GiftCircle",
+  "name": "Secret Santa",
+  "short_name": "Secret Santa",
   "description": "Family gift exchanges made simple.",
   "start_url": "/",
   "display": "standalone",

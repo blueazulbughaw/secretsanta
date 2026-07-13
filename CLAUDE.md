@@ -1,5 +1,5 @@
 # CLAUDE.md
-GiftCircle: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS PWA.
+Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS PWA.
 - Follow ARCHITECTURE.md exactly (structure, endpoints, roles).
 - Schema of record is schema.sql; models live in app/models.py. Use Flask-Migrate for changes.
 - Auth: SMS OTP (Twilio) -> JWT in httpOnly cookie. Phone is the login identifier (email optional, unused for login). NO passwords anywhere.

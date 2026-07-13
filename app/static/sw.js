@@ -52,7 +52,7 @@ self.addEventListener("fetch", (e) => {
 // Future-ready: push handler (activates once Web Push sending ships server-side)
 self.addEventListener("push", (e) => {
   const data = e.data ? e.data.json() : {};
-  e.waitUntil(self.registration.showNotification(data.title || "GiftCircle", {
+  e.waitUntil(self.registration.showNotification(data.title || "Secret Santa", {
     body: data.body || "",
     icon: "/static/icon-192.png",
     data: { link: data.link_path || "/" },

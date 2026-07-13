@@ -1,4 +1,4 @@
-# GiftCircle — Architecture & API Specification
+# Secret Santa — Architecture & API Specification
 
 A family gift-exchange platform built for elderly-friendly use, deployable on Namecheap shared hosting, and designed to scale to thousands of families.
 
@@ -89,7 +89,7 @@ Enforced with two decorators: `@require_auth` (valid JWT) and `@require_family_a
 4. POST /api/auth/logout        → clear cookie
 ```
 
-Elderly-friendly detail: the text message says only "Your GiftCircle code is **482913**" in a short SMS. The login screen has two fields total across two steps, each with one big button.
+Elderly-friendly detail: the text message says only "Your Secret Santa code is **482913**" in a short SMS. The login screen has two fields total across two steps, each with one big button.
 
 ## 5. API endpoints
 

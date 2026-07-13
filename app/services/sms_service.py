@@ -18,14 +18,14 @@ def send_otp_sms(to_phone_e164: str, code: str):
     token = current_app.config.get("TWILIO_AUTH_TOKEN")
     from_number = current_app.config.get("TWILIO_FROM_NUMBER")
     if not (sid and token and from_number):
-        print(f"\n=== GiftCircle sign-in code for {to_phone_e164}: {code} ===\n")
+        print(f"\n=== Secret Santa sign-in code for {to_phone_e164}: {code} ===\n")
         if not current_app.debug:
             logger.warning(
                 "TWILIO_* is not configured; OTP code for %s was only "
                 "printed to the app log, not texted.", to_phone_e164
             )
         return
-    body = f"Your GiftCircle sign-in code is {code}. It works for 10 minutes."
+    body = f"Your Secret Santa sign-in code is {code}. It works for 10 minutes."
     try:
         Client(sid, token).messages.create(to=to_phone_e164, from_=from_number, body=body)
     except Exception:

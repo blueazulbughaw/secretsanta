@@ -1,4 +1,4 @@
-/* GiftCircle SPA — hash router + pages. No frameworks, no build step. */
+/* Secret Santa SPA — hash router + pages. No frameworks, no build step. */
 
 const $app = document.getElementById("app");
 const $title = document.getElementById("pageTitle");
@@ -78,7 +78,7 @@ function pageLogin() {
   render("", `
     <div class="center" style="margin-top:2rem">
       <div style="font-size:4rem">🎁</div>
-      <h2>Welcome to GiftCircle</h2>
+      <h2>Welcome to Secret Santa</h2>
       <p class="muted">Family gift exchanges made simple.</p>
     </div>
     <div class="steps">Step 1 of 2</div>
@@ -140,7 +140,7 @@ function pageName() {
 }
 
 function pageNoFamily() {
-  render("GiftCircle", `
+  render("Secret Santa", `
     <h2>Join your family</h2>
     <p class="muted">Ask your family organizer for the family code.</p>
     <label for="jcode">Family code</label>

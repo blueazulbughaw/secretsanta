@@ -17,7 +17,7 @@ def send_otp_email(to_email: str, code: str):
     """Sends the sign-in code. In dev (no MAIL_SERVER), prints to console
     so you can test without SMTP."""
     if not current_app.config.get("MAIL_SERVER"):
-        print(f"\n=== GiftCircle sign-in code for {to_email}: {code} ===\n")
+        print(f"\n=== Secret Santa sign-in code for {to_email}: {code} ===\n")
         if not current_app.debug:
             logger.warning(
                 "MAIL_SERVER is not configured; OTP code for %s was only "
@@ -26,10 +26,10 @@ def send_otp_email(to_email: str, code: str):
         return
     body = (
         "Hello!\n\n"
-        f"Your GiftCircle sign-in code is:\n\n    {code}\n\n"
+        f"Your Secret Santa sign-in code is:\n\n    {code}\n\n"
         "It works for 10 minutes. If you didn't ask for this, you can ignore this email.\n"
     )
-    msg = MailMessage(subject=f"Your GiftCircle code: {code}",
+    msg = MailMessage(subject=f"Your Secret Santa code: {code}",
                       recipients=[to_email], body=body)
     try:
         mail.send(msg)

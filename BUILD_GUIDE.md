@@ -1,4 +1,4 @@
-# GiftCircle — Step-by-Step Build & Deployment Guide
+# Secret Santa — Step-by-Step Build & Deployment Guide
 
 This guide takes you from empty folder → deployed app on a Namecheap subdomain, using the exact workflow you've already set up for Genri Labs: **VS Code + Claude Code + GitHub + cPanel Git deployment**.
 
@@ -66,7 +66,7 @@ Copy `schema.sql` and `ARCHITECTURE.md` into the repo root, then create `CLAUDE.
 
 ```markdown
 # CLAUDE.md
-GiftCircle: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS PWA.
+Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS PWA.
 - Follow ARCHITECTURE.md exactly (structure, endpoints, roles).
 - Schema is schema.sql — use Flask-Migrate, never raw ALTER in code.
 - Auth: email OTP → JWT in httpOnly cookie. NO passwords anywhere.
@@ -118,7 +118,7 @@ git push
 ---
 
 ## Phase 2 — PWA polish (Sprint 5)
-13. *"Add manifest.json (name GiftCircle, theme #C0392B, 192/512 icons) and sw.js: cache-first static, network-first API, offline fallback page. Make Lighthouse PWA installable check pass."*
+13. *"Add manifest.json (name Secret Santa, theme #C0392B, 192/512 icons) and sw.js: cache-first static, network-first API, offline fallback page. Make Lighthouse PWA installable check pass."*
 14. *"Add /api/push/subscribe storing to push_subscriptions (no sending yet — future-ready only)."*
 15. *"Accessibility pass: WCAG AA contrast, focus states, aria-live confirmations, test at 200% zoom."*
 
