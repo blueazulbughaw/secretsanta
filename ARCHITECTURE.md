@@ -11,10 +11,11 @@ A family gift-exchange platform built for elderly-friendly use, deployable on Na
 | Backend | Flask 3 + Gunicorn (Passenger on cPanel) | Matches your learning path and Namecheap's "Setup Python App" |
 | Database | MySQL 8 (utf8mb4) | Included with Namecheap hosting |
 | ORM | SQLAlchemy + Flask-Migrate (Alembic) | Schema versioning so production migrations are safe |
-| Auth | Email OTP → JWT (httpOnly cookie) | No passwords; elderly-friendly |
+| Auth | SMS OTP (Twilio) → JWT (httpOnly cookie) | No passwords; elderly-friendly, no email required |
 | Frontend | Vanilla JS + CSS (mobile-first) served by Flask templates | No build step on shared hosting; plays to your JS strengths |
 | PWA | manifest.json + service worker | Installable, basic offline, push-ready |
-| Email | Flask-Mail via Namecheap SMTP (or Resend free tier) | OTP + notification delivery |
+| SMS | Twilio | OTP delivery |
+| Email (optional, future) | Flask-Mail via Namecheap SMTP (or Resend free tier) | Reserved for non-auth notifications; not used for login |
 
 ## 2. Project structure
 
@@ -34,7 +35,9 @@ giftcircle/
 │   │   ├── otp_service.py
 │   │   ├── matching_service.py
 │   │   ├── notification_service.py
+│   │   ├── sms_service.py
 │   │   └── mail_service.py
+│   ├── utils.py              # phone normalization, etc.
 │   ├── middleware/
 │   │   ├── auth.py          # @require_auth, @require_family_admin
 │   │   └── rate_limit.py
@@ -71,11 +74,12 @@ Enforced with two decorators: `@require_auth` (valid JWT) and `@require_family_a
 ## 4. Authentication flow (OTP, no passwords)
 
 ```
-1. POST /api/auth/request-otp   { email }
+1. POST /api/auth/request-otp   { phone }
+   → normalize to E.164 (+1XXXXXXXXXX, US numbers only)
    → generate 6-digit code, store SHA-256(code + PEPPER), expire 10 min
-   → email the code. Rate limit: 3 requests / 15 min per email.
+   → text the code via Twilio. Rate limit: 3 requests / 15 min per phone.
 
-2. POST /api/auth/verify-otp    { email, code }
+2. POST /api/auth/verify-otp    { phone, code }
    → check hash, attempts < 5, not expired, not used
    → create user if new (prompt for name on first login)
    → issue JWT (7-day) in httpOnly, Secure, SameSite=Lax cookie
@@ -85,7 +89,7 @@ Enforced with two decorators: `@require_auth` (valid JWT) and `@require_family_a
 4. POST /api/auth/logout        → clear cookie
 ```
 
-Elderly-friendly detail: the OTP email says only "Your GiftCircle code is **482913**" in large type. The login screen has two fields total across two steps, each with one big button.
+Elderly-friendly detail: the text message says only "Your GiftCircle code is **482913**" in a short SMS. The login screen has two fields total across two steps, each with one big button.
 
 ## 5. API endpoints
 
@@ -184,7 +188,7 @@ Non-negotiable UX rules baked into every component:
 - Max ~8 words of instruction per screen. No jargon anywhere — "Sign in code" not "OTP", "Your person" not "assignee".
 - Guided steps: wizard pattern (1 of 3 → 2 of 3) for anything multi-step, with a persistent "Go Back" button.
 - WCAG AA contrast, focus outlines, `aria-live` for confirmations, works at 200% browser zoom.
-- No passwords, no usernames — email + 6-digit code only.
+- No passwords, no usernames — phone number + 6-digit code only.
 
 Pages: Login (2 steps) → Home (big cards: My Person / My Wishlist / Messages / Announcements) → per-card detail pages. Admin gets one extra card, "Manage Family", leading to the admin dashboard (members, households, events, participants checklist, rules form, big "Draw Names" button, all-wishlists view, post-announcement form).
 

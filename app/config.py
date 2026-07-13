@@ -23,10 +23,14 @@ class Config:
     MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "")
     MAIL_DEFAULT_SENDER = os.getenv("MAIL_USERNAME", "no-reply@giftcircle.local")
 
+    TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
+    TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
+    TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
+
     APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:5000")
 
     OTP_TTL_MINUTES = 10
     OTP_MAX_ATTEMPTS = 5
-    OTP_REQUESTS_PER_WINDOW = 3       # per email
+    OTP_REQUESTS_PER_WINDOW = 3       # per phone number
     OTP_WINDOW_MINUTES = 15
     JWT_DAYS = 7

@@ -1,46 +1,50 @@
-import re
 from datetime import datetime
 
 from flask import Blueprint, request, jsonify, make_response, g
 
 from ..extensions import db
 from ..models import User, FamilyMember, Family
-from ..services import otp_service, mail_service
+from ..services import otp_service, sms_service
 from ..middleware.auth import (issue_token, set_auth_cookie, clear_auth_cookie,
                                require_auth)
+from ..utils import normalize_us_phone
 
 bp = Blueprint("auth", __name__)
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 @bp.post("/auth/request-otp")
 def request_otp():
-    email = (request.json or {}).get("email", "").strip().lower()
-    if not EMAIL_RE.match(email):
-        return jsonify({"error": "Please enter a valid email address."}), 400
+    raw_phone = (request.json or {}).get("phone", "").strip()
     try:
-        code = otp_service.request_code(email)
+        phone = normalize_us_phone(raw_phone)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    try:
+        code = otp_service.request_code(phone)
     except ValueError as e:
         return jsonify({"error": str(e)}), 429
     try:
-        mail_service.send_otp_email(email, code)
-    except mail_service.EmailSendError as e:
+        sms_service.send_otp_sms(phone, code)
+    except sms_service.SmsSendError as e:
         return jsonify({"error": str(e)}), 502
-    return jsonify({"ok": True, "message": "We emailed you a 6-digit code."})
+    return jsonify({"ok": True, "message": "We texted you a 6-digit code."})
 
 
 @bp.post("/auth/verify-otp")
 def verify_otp():
     data = request.json or {}
-    email = data.get("email", "").strip().lower()
+    try:
+        phone = normalize_us_phone(data.get("phone", "").strip())
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     code = data.get("code", "").strip()
-    if not otp_service.verify_code(email, code):
+    if not otp_service.verify_code(phone, code):
         return jsonify({"error": "That code didn't work. Please check it and try again."}), 401
 
-    user = User.query.filter_by(email=email).first()
+    user = User.query.filter_by(phone=phone).first()
     is_new = user is None
     if is_new:
-        user = User(email=email, full_name="")
+        user = User(phone=phone, full_name="")
         db.session.add(user)
     user.last_login_at = datetime.utcnow()
     db.session.commit()

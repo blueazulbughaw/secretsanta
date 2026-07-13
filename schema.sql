@@ -12,11 +12,12 @@ USE giftcircle;
 
 -- ------------------------------------------------------------
 -- USERS — global identity. No passwords: OTP-only login.
+-- Phone is the login identifier; email is optional.
 -- ------------------------------------------------------------
 CREATE TABLE users (
   id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  email         VARCHAR(255) NOT NULL UNIQUE,
-  phone         VARCHAR(30)  NULL,
+  phone         VARCHAR(30)  NOT NULL UNIQUE,
+  email         VARCHAR(255) NULL UNIQUE,
   full_name     VARCHAR(120) NOT NULL,
   display_name  VARCHAR(60)  NULL,           -- "Lola Nena", "Tito Ben"
   avatar_color  CHAR(7)      NOT NULL DEFAULT '#C0392B', -- accessible identicon fallback
@@ -25,7 +26,7 @@ CREATE TABLE users (
   created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
                              ON UPDATE CURRENT_TIMESTAMP,
-  INDEX idx_users_email (email)
+  INDEX idx_users_phone (phone)
 ) ENGINE=InnoDB;
 
 -- ------------------------------------------------------------
@@ -33,14 +34,14 @@ CREATE TABLE users (
 -- ------------------------------------------------------------
 CREATE TABLE otp_codes (
   id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  email       VARCHAR(255) NOT NULL,          -- keyed by email so signup + login share flow
+  phone       VARCHAR(30)  NOT NULL,          -- keyed by phone so signup + login share flow
   code_hash   CHAR(64)     NOT NULL,          -- SHA-256 of 6-digit code + server pepper
   purpose     ENUM('login','join_family')     NOT NULL DEFAULT 'login',
   attempts    TINYINT UNSIGNED NOT NULL DEFAULT 0,   -- lock after 5
   expires_at  DATETIME     NOT NULL,           -- now + 10 minutes
   used_at     DATETIME     NULL,
   created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  INDEX idx_otp_email_expires (email, expires_at)
+  INDEX idx_otp_phone_expires (phone, expires_at)
 ) ENGINE=InnoDB;
 
 -- ------------------------------------------------------------

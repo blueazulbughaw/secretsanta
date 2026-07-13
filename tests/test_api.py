@@ -4,6 +4,10 @@ import pytest
 from app import create_app
 from app.extensions import db
 
+ADMIN_PHONE = "+15550000001"
+BOB_PHONE = "+15550000002"
+CARA_PHONE = "+15550000003"
+
 
 class TestConfig:
     TESTING = True
@@ -29,55 +33,42 @@ def app():
         db.drop_all()
 
 
-def login(app, email, name):
-    """Full OTP login for a fresh test client; returns the client."""
-    client = app.test_client()
-    client.post("/api/auth/request-otp", json={"email": email})
-    # grab the code that mail_service printed
-    with app.app_context():
-        from app.models import OtpCode
-        otp = OtpCode.query.filter_by(email=email).order_by(OtpCode.id.desc()).first()
-    # we can't un-hash; instead re-request with a hook: simpler - patch verify:
-    # easier approach: capture from stdout is fragile; instead directly craft code
-    return client
-
-
 @pytest.fixture()
 def users(app, capsys):
     """Creates admin + two members via the real OTP flow (codes read from console)."""
     clients = {}
-    for email, name in [("admin@test.com", "Ana"),
-                        ("bob@test.com", "Bob"),
-                        ("cara@test.com", "Cara")]:
+    for phone, name in [(ADMIN_PHONE, "Ana"),
+                        (BOB_PHONE, "Bob"),
+                        (CARA_PHONE, "Cara")]:
         c = app.test_client()
-        c.post("/api/auth/request-otp", json={"email": email})
-        code = re.search(r"code for {}: (\d{{6}})".format(re.escape(email)),
+        c.post("/api/auth/request-otp", json={"phone": phone})
+        code = re.search(r"code for {}: (\d{{6}})".format(re.escape(phone)),
                          capsys.readouterr().out).group(1)
-        r = c.post("/api/auth/verify-otp", json={"email": email, "code": code})
+        r = c.post("/api/auth/verify-otp", json={"phone": phone, "code": code})
         assert r.status_code == 200
         c.patch("/api/auth/me", json={"full_name": name})
-        clients[email] = c
+        clients[phone] = c
     return clients
 
 
 def setup_family(users):
-    admin = users["admin@test.com"]
+    admin = users[ADMIN_PHONE]
     fam = admin.post("/api/families", json={"name": "Test Fam"}).get_json()["family"]
-    for email in ("bob@test.com", "cara@test.com"):
-        users[email].post("/api/families/join", json={"join_code": fam["join_code"]})
+    for phone in (BOB_PHONE, CARA_PHONE):
+        users[phone].post("/api/families/join", json={"join_code": fam["join_code"]})
     return fam
 
 
 def test_wrong_otp_rejected(app):
     c = app.test_client()
-    c.post("/api/auth/request-otp", json={"email": "x@test.com"})
-    r = c.post("/api/auth/verify-otp", json={"email": "x@test.com", "code": "000000"})
+    c.post("/api/auth/request-otp", json={"phone": "+15559999999"})
+    r = c.post("/api/auth/verify-otp", json={"phone": "+15559999999", "code": "000000"})
     assert r.status_code == 401
 
 
 def test_full_flow_and_privacy(app, users):
     fam = setup_family(users)
-    admin, bob, cara = (users["admin@test.com"], users["bob@test.com"], users["cara@test.com"])
+    admin, bob, cara = (users[ADMIN_PHONE], users[BOB_PHONE], users[CARA_PHONE])
 
     # households
     members = admin.get(f"/api/families/{fam['id']}/members").get_json()

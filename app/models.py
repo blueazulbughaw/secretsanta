@@ -8,8 +8,8 @@ BigIntPK = db.BigInteger().with_variant(db.Integer, "sqlite")
 class User(db.Model):
     __tablename__ = "users"
     id = db.Column(BigIntPK, primary_key=True)
-    email = db.Column(db.String(255), unique=True, nullable=False, index=True)
-    phone = db.Column(db.String(30))
+    phone = db.Column(db.String(30), unique=True, nullable=False, index=True)
+    email = db.Column(db.String(255), unique=True, nullable=True, index=True)
     full_name = db.Column(db.String(120), nullable=False, default="")
     display_name = db.Column(db.String(60))
     avatar_color = db.Column(db.String(7), nullable=False, default="#C0392B")
@@ -20,6 +20,7 @@ class User(db.Model):
     def to_dict(self):
         return {
             "id": self.id,
+            "phone": self.phone,
             "email": self.email,
             "full_name": self.full_name,
             "display_name": self.display_name or self.full_name,
@@ -30,7 +31,7 @@ class User(db.Model):
 class OtpCode(db.Model):
     __tablename__ = "otp_codes"
     id = db.Column(BigIntPK, primary_key=True)
-    email = db.Column(db.String(255), nullable=False, index=True)
+    phone = db.Column(db.String(30), nullable=False, index=True)
     code_hash = db.Column(db.String(64), nullable=False)
     purpose = db.Column(db.String(20), nullable=False, default="login")
     attempts = db.Column(db.SmallInteger, nullable=False, default=0)

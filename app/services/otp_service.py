@@ -13,20 +13,20 @@ def _hash(code: str) -> str:
     return hashlib.sha256(f"{code}{pepper}".encode()).hexdigest()
 
 
-def request_code(email: str) -> str:
+def request_code(phone: str) -> str:
     """Create + store a 6-digit code. Raises ValueError if rate-limited.
-    Returns the raw code so the caller can email it."""
-    email = email.strip().lower()
+    Returns the raw code so the caller can text it."""
+    phone = phone.strip()
     window_start = datetime.utcnow() - timedelta(
         minutes=current_app.config["OTP_WINDOW_MINUTES"])
     recent = OtpCode.query.filter(
-        OtpCode.email == email, OtpCode.created_at >= window_start).count()
+        OtpCode.phone == phone, OtpCode.created_at >= window_start).count()
     if recent >= current_app.config["OTP_REQUESTS_PER_WINDOW"]:
         raise ValueError("Too many codes requested. Please wait a few minutes and try again.")
 
     code = f"{secrets.randbelow(1000000):06d}"
     otp = OtpCode(
-        email=email,
+        phone=phone,
         code_hash=_hash(code),
         expires_at=datetime.utcnow() + timedelta(
             minutes=current_app.config["OTP_TTL_MINUTES"]),
@@ -36,10 +36,10 @@ def request_code(email: str) -> str:
     return code
 
 
-def verify_code(email: str, code: str) -> bool:
-    email = email.strip().lower()
+def verify_code(phone: str, code: str) -> bool:
+    phone = phone.strip()
     otp = (OtpCode.query
-           .filter(OtpCode.email == email,
+           .filter(OtpCode.phone == phone,
                    OtpCode.used_at.is_(None),
                    OtpCode.expires_at >= datetime.utcnow())
            .order_by(OtpCode.created_at.desc())

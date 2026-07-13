@@ -82,25 +82,25 @@ function pageLogin() {
       <p class="muted">Family gift exchanges made simple.</p>
     </div>
     <div class="steps">Step 1 of 2</div>
-    <label for="email">Your email address</label>
-    <input id="email" type="email" autocomplete="email" placeholder="you@example.com">
+    <label for="phone">Your phone number</label>
+    <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 123-4567">
     <div id="msg"></div>
-    <button class="btn btn-primary" id="sendBtn">Email Me a Sign-In Code</button>
+    <button class="btn btn-primary" id="sendBtn">Text Me a Sign-In Code</button>
   `, { back: false });
   document.getElementById("sendBtn").onclick = async () => {
-    const email = document.getElementById("email").value.trim();
+    const phone = document.getElementById("phone").value.trim();
     try {
-      await api.post("/auth/request-otp", { email });
-      pageCode(email);
+      await api.post("/auth/request-otp", { phone });
+      pageCode(phone);
     } catch (e) { showError(e); }
   };
 }
 
-function pageCode(email) {
+function pageCode(phone) {
   render("", `
     <div class="steps">Step 2 of 2</div>
-    <h2 class="center">Check your email</h2>
-    <p class="center">We sent a 6-digit code to<br><strong>${esc(email)}</strong></p>
+    <h2 class="center">Check your phone</h2>
+    <p class="center">We sent a 6-digit code by text to<br><strong>${esc(phone)}</strong></p>
     <label for="code">Type the code here</label>
     <input id="code" class="code-input" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
     <div id="msg"></div>
@@ -109,12 +109,12 @@ function pageCode(email) {
   `, { back: false });
   document.getElementById("verifyBtn").onclick = async () => {
     try {
-      await api.post("/auth/verify-otp", { email, code: document.getElementById("code").value });
+      await api.post("/auth/verify-otp", { phone, code: document.getElementById("code").value });
       location.hash = "/"; boot();
     } catch (e) { showError(e); }
   };
   document.getElementById("againBtn").onclick = async () => {
-    try { await api.post("/auth/request-otp", { email });
+    try { await api.post("/auth/request-otp", { phone });
       document.getElementById("msg").innerHTML = alertBox("New code sent!", true);
     } catch (e) { showError(e); }
   };
