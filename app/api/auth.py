@@ -22,7 +22,10 @@ def request_otp():
         code = otp_service.request_code(email)
     except ValueError as e:
         return jsonify({"error": str(e)}), 429
-    mail_service.send_otp_email(email, code)
+    try:
+        mail_service.send_otp_email(email, code)
+    except mail_service.EmailSendError as e:
+        return jsonify({"error": str(e)}), 502
     return jsonify({"ok": True, "message": "We emailed you a 6-digit code."})
 
 
