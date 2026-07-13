@@ -145,17 +145,19 @@ function pageNoFamily() {
     <input id="jcode" class="code-input" maxlength="8" placeholder="ABCD1234" style="text-transform:uppercase">
     <div id="msg"></div>
     <button class="btn btn-primary" id="joinBtn">Join Family</button>
+    ${ME.can_create_family ? `
     <hr style="margin:2rem 0">
     <p class="muted center">Or start a brand-new family group:</p>
     <label for="fname">Family name</label>
     <input id="fname" placeholder="e.g. The Cedeño Family">
-    <button class="btn btn-secondary" id="createBtn">Create a Family</button>
+    <button class="btn btn-secondary" id="createBtn">Create a Family</button>` : ""}
   `, { back: false });
   document.getElementById("joinBtn").onclick = async () => {
     try { await api.post("/families/join", { join_code: document.getElementById("jcode").value }); boot(); }
     catch (e) { showError(e); }
   };
-  document.getElementById("createBtn").onclick = async () => {
+  const createBtn = document.getElementById("createBtn");
+  if (createBtn) createBtn.onclick = async () => {
     try { await api.post("/families", { name: document.getElementById("fname").value }); boot(); }
     catch (e) { showError(e); }
   };
@@ -345,7 +347,10 @@ route(/^\/admin\/members$/, async () => {
   const rows = members.map(m => `
     <div class="card">
       <strong>${esc(m.user.display_name)}</strong>
-      ${m.role === "admin" ? `<span class="tag-bought" style="background:var(--yellow);color:#1A1A1A">Organizer</span>` : ""}
+      <div class="check-row">
+        <input type="checkbox" id="admin-${m.membership_id}" data-role="${m.membership_id}" ${m.role === "admin" ? "checked" : ""}>
+        <label for="admin-${m.membership_id}" style="margin:0">Organizer (can manage this family)</label>
+      </div>
       <label>Household</label>
       <select data-house="${m.membership_id}">${opts(m.household_id)}</select>
     </div>`).join("");
@@ -368,6 +373,13 @@ route(/^\/admin\/members$/, async () => {
         { household_id: sel.value ? Number(sel.value) : null });
       document.getElementById("msg").innerHTML = alertBox("Saved!", true);
     } catch (e) { showError(e); }
+  });
+  $app.querySelectorAll("[data-role]").forEach(cb => cb.onchange = async () => {
+    try {
+      await api.patch(`/families/${FAMILY.id}/members/${cb.dataset.role}`,
+        { role: cb.checked ? "admin" : "member" });
+      document.getElementById("msg").innerHTML = alertBox("Saved!", true);
+    } catch (e) { cb.checked = !cb.checked; showError(e); }
   });
 });
 

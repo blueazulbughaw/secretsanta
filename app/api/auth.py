@@ -7,7 +7,7 @@ from ..models import User, FamilyMember, Family
 from ..services import otp_service, sms_service
 from ..middleware.auth import (issue_token, set_auth_cookie, clear_auth_cookie,
                                require_auth)
-from ..utils import normalize_us_phone
+from ..utils import normalize_us_phone, is_app_admin_phone
 
 bp = Blueprint("auth", __name__)
 
@@ -63,7 +63,8 @@ def me():
         f = Family.query.get(m.family_id)
         fams.append({"id": f.id, "name": f.name, "role": m.role,
                      "join_code": f.join_code if m.role == "admin" else None})
-    return jsonify({"user": g.user.to_dict(), "families": fams})
+    return jsonify({"user": g.user.to_dict(), "families": fams,
+                    "can_create_family": is_app_admin_phone(g.user.phone)})
 
 
 @bp.patch("/auth/me")

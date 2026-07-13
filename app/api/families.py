@@ -6,6 +6,7 @@ from flask import Blueprint, request, jsonify, g
 from ..extensions import db
 from ..models import Family, FamilyMember, Household
 from ..middleware.auth import require_auth, require_family_member, require_family_admin
+from ..utils import is_app_admin_phone
 
 bp = Blueprint("families", __name__)
 
@@ -21,6 +22,8 @@ def _make_join_code():
 @bp.post("/families")
 @require_auth
 def create_family():
+    if not is_app_admin_phone(g.user.phone):
+        return jsonify({"error": "Ask the family organizer for a join code instead."}), 403
     name = ((request.json or {}).get("name") or "").strip()
     if not name:
         return jsonify({"error": "Please give your family group a name."}), 400

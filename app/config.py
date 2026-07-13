@@ -29,6 +29,10 @@ class Config:
 
     APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:5000")
 
+    # Phone numbers (E.164, comma-separated) allowed to create new families.
+    # Everyone else can only join an existing family via its join code.
+    APP_ADMIN_PHONES = [p.strip() for p in os.getenv("APP_ADMIN_PHONES", "").split(",") if p.strip()]
+
     OTP_TTL_MINUTES = 10
     OTP_MAX_ATTEMPTS = 5
     OTP_REQUESTS_PER_WINDOW = 3       # per phone number

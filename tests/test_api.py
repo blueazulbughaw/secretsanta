@@ -59,6 +59,32 @@ def setup_family(users):
     return fam
 
 
+def test_family_creation_restricted_to_admin_phones(capsys):
+    class RestrictedConfig(TestConfig):
+        APP_ADMIN_PHONES = [ADMIN_PHONE]
+
+    app = create_app(RestrictedConfig)
+    with app.app_context():
+        db.create_all()
+        try:
+            def login(phone):
+                c = app.test_client()
+                c.post("/api/auth/request-otp", json={"phone": phone})
+                code = re.search(r"code for {}: (\d{{6}})".format(re.escape(phone)),
+                                 capsys.readouterr().out).group(1)
+                c.post("/api/auth/verify-otp", json={"phone": phone, "code": code})
+                return c
+
+            admin = login(ADMIN_PHONE)
+            assert admin.post("/api/families", json={"name": "Allowed"}).status_code == 201
+
+            outsider = login(BOB_PHONE)
+            r = outsider.post("/api/families", json={"name": "Not allowed"})
+            assert r.status_code == 403
+        finally:
+            db.drop_all()
+
+
 def test_wrong_otp_rejected(app):
     c = app.test_client()
     c.post("/api/auth/request-otp", json={"phone": "+15559999999"})
