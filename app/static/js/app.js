@@ -92,20 +92,25 @@ function pageLogin() {
       <h2>Welcome to Secret Santa</h2>
       <p class="muted">Family gift exchanges made simple.</p>
     </div>
-    <label for="username">Your username</label>
-    <input id="username" autocomplete="username" placeholder="e.g. lolanena">
-    <p class="muted" style="font-size:.85rem">New here? Just type a username and continue — we'll create your account.</p>
+    <label for="username">Username</label>
+    <input id="username" autocomplete="username">
+    <label for="password">Password</label>
+    <input id="password" type="password" autocomplete="current-password">
     <div id="msg"></div>
-    <button class="btn btn-primary" id="continueBtn">Continue</button>
+    <button class="btn btn-primary" id="loginBtn">Sign In</button>
+    <button class="btn btn-quiet" id="registerBtn">Create an Account</button>
   `, { back: false });
-  document.getElementById("continueBtn").onclick = async () => {
+  document.getElementById("loginBtn").onclick = async () => {
     const username = document.getElementById("username").value.trim();
+    const password = document.getElementById("password").value;
     try {
-      const r = await api.post("/auth/login-start", { username });
-      if (r.exists === false) pageRegister(username);
-      else if (r.method === "otp") pageCode(username);
-      else if (r.method === "password") pagePassword(username);
+      await api.post("/auth/login-password", { username, password });
+      location.hash = "/"; boot();
     } catch (e) { showError(e); }
+  };
+  document.getElementById("registerBtn").onclick = () => {
+    location.hash = "#/register";
+    pageRegisterStart();
   };
 }
 
@@ -117,7 +122,7 @@ function pageRegisterStart() {
       <p class="muted">Pick a username to get started.</p>
     </div>
     <label for="newUsername">Username</label>
-    <input id="newUsername" autocomplete="username" placeholder="e.g. lolanena">
+    <input id="newUsername" autocomplete="username">
     <div id="msg"></div>
     <button class="btn btn-primary" id="continueBtn">Continue</button>
     <button class="btn btn-quiet" id="loginInsteadBtn">I already have an account</button>
@@ -213,45 +218,6 @@ function pageClanCreated(family) {
     }
   };
   document.getElementById("continueBtn").onclick = () => boot();
-}
-
-function pageCode(username) {
-  render("", `
-    <h2 class="center">Check your phone</h2>
-    <p class="center">We sent a 6-digit code by text.</p>
-    <label for="code">Type the code here</label>
-    <input id="code" class="code-input" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
-    <div id="msg"></div>
-    <button class="btn btn-primary" id="verifyBtn">Sign In</button>
-    <button class="btn btn-quiet" id="againBtn">Send a New Code</button>
-  `, { back: false });
-  document.getElementById("verifyBtn").onclick = async () => {
-    try {
-      await api.post("/auth/verify-otp", { username, code: document.getElementById("code").value });
-      location.hash = "/"; boot();
-    } catch (e) { showError(e); }
-  };
-  document.getElementById("againBtn").onclick = async () => {
-    try { await api.post("/auth/login-start", { username });
-      document.getElementById("msg").innerHTML = alertBox("New code sent!", true);
-    } catch (e) { showError(e); }
-  };
-}
-
-function pagePassword(username) {
-  render("", `
-    <h2 class="center">Enter your password</h2>
-    <label for="password">Password</label>
-    <input id="password" type="password" autocomplete="current-password">
-    <div id="msg"></div>
-    <button class="btn btn-primary" id="loginBtn">Sign In</button>
-  `, { back: false });
-  document.getElementById("loginBtn").onclick = async () => {
-    try {
-      await api.post("/auth/login-password", { username, password: document.getElementById("password").value });
-      location.hash = "/"; boot();
-    } catch (e) { showError(e); }
-  };
 }
 
 function pageName() {
