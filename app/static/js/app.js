@@ -9,6 +9,15 @@ const $badge = document.getElementById("bellBadge");
 
 let ME = null;          // { user, families }
 let FAMILY = null;      // active family {id, name, role}
+let PENDING_JOIN_CODE = null;
+
+(function capturePendingJoinCode() {
+  const m = location.hash.match(/^#\/join\/([A-Za-z0-9]+)$/);
+  if (m) {
+    PENDING_JOIN_CODE = m[1].toUpperCase();
+    history.replaceState(null, "", location.pathname + location.search);
+  }
+})();
 
 // ---------- helpers ----------
 function esc(s) {
@@ -92,9 +101,53 @@ function pageLogin() {
     const username = document.getElementById("username").value.trim();
     try {
       const r = await api.post("/auth/login-start", { username });
-      if (r.method === "otp") pageCode(username);
+      if (r.exists === false) pageRegister(username);
+      else if (r.method === "otp") pageCode(username);
       else if (r.method === "password") pagePassword(username);
-      else { location.hash = "/"; boot(); }
+    } catch (e) { showError(e); }
+  };
+}
+
+function pageRegister(username) {
+  render("", `
+    <h2 class="center">Create your account</h2>
+    <p class="muted center">Username: <strong>${esc(username)}</strong></p>
+    <label for="regPassword">Password</label>
+    <input id="regPassword" type="password" autocomplete="new-password">
+    <label for="regEmail">Email (optional)</label>
+    <input id="regEmail" type="email" autocomplete="email" placeholder="you@example.com">
+    <label for="regPhone">Phone number (optional)</label>
+    <input id="regPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 123-4567">
+    <div class="check-row" style="align-items:flex-start;margin-top:1rem">
+      <input type="checkbox" id="smsConsent" style="margin-top:.3rem">
+      <label for="smsConsent" style="margin:0;font-size:.85rem;font-weight:400">
+        By checking this box, I agree to receive SMS messages from Genri Labs for account authentication,
+        including one-time passwords (OTP) used to verify my identity when signing in. Message frequency
+        varies based on sign-in activity. Message and data rates may apply. Reply STOP to opt out and
+        HELP for assistance. View our
+        <a href="/privacy_terms#privacy" target="_blank" rel="noopener">Privacy Policy</a>
+        and <a href="/privacy_terms#terms" target="_blank" rel="noopener">Terms of Service</a>.
+        (Only needed if you fill in a phone number above.)
+      </label>
+    </div>
+    <div id="msg"></div>
+    <button class="btn btn-primary" id="createBtn">Create Account</button>
+  `, { back: true });
+  document.getElementById("createBtn").onclick = async () => {
+    const phone = document.getElementById("regPhone").value.trim();
+    if (phone && !document.getElementById("smsConsent").checked) {
+      document.getElementById("msg").innerHTML =
+        alertBox("Please check the box to agree to receive text messages, or leave the phone number blank.");
+      return;
+    }
+    try {
+      await api.post("/auth/register", {
+        username,
+        password: document.getElementById("regPassword").value,
+        email: document.getElementById("regEmail").value.trim(),
+        phone,
+      });
+      boot();
     } catch (e) { showError(e); }
   };
 }
@@ -216,14 +269,16 @@ function pageSecuritySetup(forced) {
 route(/^\/security$/, () => pageSecuritySetup(false));
 
 function pageNoFamily() {
+  const hasPending = !!PENDING_JOIN_CODE;
   render("Secret Santa", `
     <h2>Join your family</h2>
-    <p class="muted">Ask your family organizer for the family code.</p>
+    <p class="muted">${hasPending ? "Confirm below to join." : "Ask your clan admin for the family code."}</p>
     <label for="jcode">Family code</label>
-    <input id="jcode" class="code-input" maxlength="8" placeholder="ABCD1234" style="text-transform:uppercase">
+    <input id="jcode" class="code-input" maxlength="8" placeholder="ABCD1234" style="text-transform:uppercase"
+      value="${esc(PENDING_JOIN_CODE || "")}" ${hasPending ? "readonly" : ""}>
     <div id="msg"></div>
     <button class="btn btn-primary" id="joinBtn">Join Family</button>
-    ${ME.can_create_family ? `
+    ${ME.can_create_family && !hasPending ? `
     <hr style="margin:2rem 0">
     <p class="muted center">Or start a brand-new family group:</p>
     <label for="fname">Family name</label>
@@ -231,8 +286,11 @@ function pageNoFamily() {
     <button class="btn btn-secondary" id="createBtn">Create a Family</button>` : ""}
   `, { back: false });
   document.getElementById("joinBtn").onclick = async () => {
-    try { await api.post("/families/join", { join_code: document.getElementById("jcode").value }); boot(); }
-    catch (e) { showError(e); }
+    try {
+      await api.post("/families/join", { join_code: document.getElementById("jcode").value });
+      PENDING_JOIN_CODE = null;
+      boot();
+    } catch (e) { showError(e); }
   };
   const createBtn = document.getElementById("createBtn");
   if (createBtn) createBtn.onclick = async () => {
@@ -407,22 +465,42 @@ route(/^\/notifications$/, async () => {
 // ---------- admin ----------
 route(/^\/admin$/, async () => {
   const fam = await api.get(`/families/${FAMILY.id}`);
-  render("Manage Family", `
+  const regUrl = `${location.origin}/#/join/${fam.join_code}`;
+  render("Clan Admin Dashboard", `
     <div class="card center">
       <p class="muted">Share this code so family can join:</p>
       <div class="reveal-name" style="font-size:1.8rem">${esc(fam.join_code)}</div>
+      <button class="btn btn-quiet" id="copyLinkBtn" style="margin-top:.5rem">Copy Registration Link</button>
+      <div id="copyMsg"></div>
     </div>
-    <button class="card-btn" onclick="go('/admin/members')"><span class="emoji">👪</span><span>Members & Households</span></button>
+    <button class="card-btn" onclick="go('/admin/members')"><span class="emoji">👪</span><span>Members</span></button>
+    <button class="card-btn" onclick="go('/admin/groups')"><span class="emoji">🏠</span><span>Family Groups</span></button>
     <button class="card-btn" onclick="go('/admin/events')"><span class="emoji">🎄</span><span>Gift Exchanges</span></button>
     <button class="card-btn" onclick="go('/admin/announce')"><span class="emoji">📢</span><span>Post an Announcement</span></button>
   `);
+  document.getElementById("copyLinkBtn").onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(regUrl);
+      document.getElementById("copyMsg").innerHTML = alertBox("Link copied!", true);
+    } catch (e) {
+      document.getElementById("copyMsg").innerHTML = alertBox(regUrl, true);
+    }
+  };
 });
 
 route(/^\/admin\/members$/, async () => {
-  const [members, households] = await Promise.all([
+  const [members, households, events] = await Promise.all([
     api.get(`/families/${FAMILY.id}/members`),
     api.get(`/families/${FAMILY.id}/households`),
+    api.get(`/families/${FAMILY.id}/events`),
   ]);
+  const current = events.find(e => e.status !== "completed" && e.status !== "cancelled");
+  const participants = current
+    ? await api.get(`/events/${current.id}/participants`)
+    : [];
+  const participating = new Set(
+    participants.filter(p => p.is_participating).map(p => p.user.id));
+
   const opts = hid => `<option value="">No household yet</option>` +
     households.map(hh => `<option value="${hh.id}" ${hh.id === hid ? "selected" : ""}>${esc(hh.name)}</option>`).join("");
   const rows = members.map(m => `
@@ -430,24 +508,21 @@ route(/^\/admin\/members$/, async () => {
       <strong>${esc(m.user.display_name)}</strong>
       <div class="check-row">
         <input type="checkbox" id="admin-${m.membership_id}" data-role="${m.membership_id}" ${m.role === "admin" ? "checked" : ""}>
-        <label for="admin-${m.membership_id}" style="margin:0">Organizer (can manage this family)</label>
+        <label for="admin-${m.membership_id}" style="margin:0">Clan Admin (can manage this family)</label>
       </div>
-      <label>Household</label>
+      ${current ? `
+      <div class="check-row">
+        <input type="checkbox" id="joining-${m.user.id}" data-joining="${m.user.id}" ${participating.has(m.user.id) ? "checked" : ""}>
+        <label for="joining-${m.user.id}" style="margin:0">Joining ${esc(current.name)} this year</label>
+      </div>` : ""}
+      <label>Family Group</label>
       <select data-house="${m.membership_id}">${opts(m.household_id)}</select>
     </div>`).join("");
   render("Members", `
     <div id="msg"></div>
+    ${current ? "" : `<div class="card center"><p class="muted">Create a gift exchange first to track who's joining this year.</p></div>`}
     ${rows}
-    <h2>Add a household</h2>
-    <label>Household name</label>
-    <input id="hname" placeholder="e.g. The Reyes House">
-    <button class="btn btn-secondary" id="addHouse">Add Household</button>
-    <p class="muted">People in the same household won't draw each other.</p>
   `);
-  document.getElementById("addHouse").onclick = async () => {
-    try { await api.post(`/families/${FAMILY.id}/households`, { name: document.getElementById("hname").value }); navigate(); }
-    catch (e) { showError(e); }
-  };
   $app.querySelectorAll("[data-house]").forEach(sel => sel.onchange = async () => {
     try {
       await api.patch(`/families/${FAMILY.id}/members/${sel.dataset.house}`,
@@ -461,6 +536,54 @@ route(/^\/admin\/members$/, async () => {
         { role: cb.checked ? "admin" : "member" });
       document.getElementById("msg").innerHTML = alertBox("Saved!", true);
     } catch (e) { cb.checked = !cb.checked; showError(e); }
+  });
+  $app.querySelectorAll("[data-joining]").forEach(cb => cb.onchange = async () => {
+    const uid = Number(cb.dataset.joining);
+    if (cb.checked) participating.add(uid); else participating.delete(uid);
+    try {
+      await api.put(`/events/${current.id}/participants`, { user_ids: [...participating] });
+      document.getElementById("msg").innerHTML = alertBox("Saved!", true);
+    } catch (e) { cb.checked = !cb.checked; showError(e); }
+  });
+});
+
+route(/^\/admin\/groups$/, async () => {
+  const households = await api.get(`/families/${FAMILY.id}/households`);
+  const rows = households.map(hh => `
+    <div class="card">
+      <input data-name="${hh.id}" value="${esc(hh.name)}">
+      <div style="display:flex;gap:.5rem;margin-top:.5rem">
+        <button class="btn btn-secondary" data-save="${hh.id}" style="margin:0">Save</button>
+        <button class="btn btn-quiet" data-del="${hh.id}" style="margin:0">Delete</button>
+      </div>
+    </div>`).join("") || `<div class="card center"><p class="muted">No family groups yet.</p></div>`;
+  render("Family Groups", `
+    <p class="muted">People in the same family group won't draw each other's names.</p>
+    <div id="msg"></div>
+    ${rows}
+    <h2>Add a family group</h2>
+    <label>Group name</label>
+    <input id="hname" placeholder="e.g. The Reyes House">
+    <button class="btn btn-primary" id="addHouse">Add Family Group</button>
+  `);
+  document.getElementById("addHouse").onclick = async () => {
+    try {
+      await api.post(`/families/${FAMILY.id}/households`, { name: document.getElementById("hname").value });
+      navigate();
+    } catch (e) { showError(e); }
+  };
+  $app.querySelectorAll("[data-save]").forEach(btn => btn.onclick = async () => {
+    const input = $app.querySelector(`[data-name="${btn.dataset.save}"]`);
+    try {
+      await api.patch(`/households/${btn.dataset.save}`, { name: input.value });
+      document.getElementById("msg").innerHTML = alertBox("Saved!", true);
+    } catch (e) { showError(e); }
+  });
+  $app.querySelectorAll("[data-del]").forEach(btn => btn.onclick = async () => {
+    try {
+      await api.del(`/households/${btn.dataset.del}`);
+      navigate();
+    } catch (e) { showError(e); }
   });
 });
 

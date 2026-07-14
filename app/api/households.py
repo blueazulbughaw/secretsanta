@@ -34,6 +34,24 @@ def create_household(family_id):
     return jsonify({"ok": True, "household": {"id": h.id, "name": h.name}}), 201
 
 
+@bp.patch("/households/<int:household_id>")
+@require_auth
+def update_household(household_id):
+    h = Household.query.get_or_404(household_id)
+    _, err = require_family_admin(h.family_id)
+    if err:
+        return err
+    name = ((request.json or {}).get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Please give the household a name."}), 400
+    existing = Household.query.filter_by(family_id=h.family_id, name=name).first()
+    if existing and existing.id != h.id:
+        return jsonify({"error": "That household name is already used."}), 400
+    h.name = name[:120]
+    db.session.commit()
+    return jsonify({"ok": True, "household": {"id": h.id, "name": h.name}})
+
+
 @bp.delete("/households/<int:household_id>")
 @require_auth
 def delete_household(household_id):

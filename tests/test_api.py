@@ -36,14 +36,12 @@ def app():
 
 @pytest.fixture()
 def users(app):
-    """Creates admin + two members (username + password) via login-start's
-    implicit signup, returns logged-in clients."""
+    """Registers admin + two members (username + password), returns logged-in clients."""
     clients = {}
     for username, name in [(ADMIN_USER, "Ana"), (BOB_USER, "Bob"), (CARA_USER, "Cara")]:
         c = app.test_client()
-        r = c.post("/api/auth/login-start", json={"username": username})
+        r = c.post("/api/auth/register", json={"username": username, "password": PASSWORD})
         assert r.status_code == 200
-        c.patch("/api/auth/security", json={"password": PASSWORD})
         c.patch("/api/auth/me", json={"full_name": name})
         clients[username] = c
     with app.app_context():
@@ -62,20 +60,31 @@ def setup_family(users):
     return fam
 
 
-def test_login_start_creates_account_for_new_username(app):
+def test_login_start_signals_new_username(app):
     c = app.test_client()
     r = c.post("/api/auth/login-start", json={"username": "brandnew"})
     assert r.status_code == 200
-    assert r.get_json()["user"]["username"] == "brandnew"
-    # second call for the same username now logs in rather than re-creating
-    me = c.get("/api/auth/me").get_json()
-    assert me["user"]["username"] == "brandnew"
+    assert r.get_json()["exists"] is False
+
+
+def test_register_requires_unique_username(app):
+    c = app.test_client()
+    assert c.post("/api/auth/register",
+                   json={"username": "taken", "password": PASSWORD}).status_code == 200
+    c2 = app.test_client()
+    assert c2.post("/api/auth/register",
+                    json={"username": "taken", "password": PASSWORD}).status_code == 409
+
+
+def test_register_requires_password(app):
+    c = app.test_client()
+    r = c.post("/api/auth/register", json={"username": "shortpw", "password": "short"})
+    assert r.status_code == 400
 
 
 def test_password_login_flow(app):
     c = app.test_client()
-    c.post("/api/auth/login-start", json={"username": "pwuser"})
-    c.patch("/api/auth/security", json={"password": PASSWORD})
+    c.post("/api/auth/register", json={"username": "pwuser", "password": PASSWORD})
     c.post("/api/auth/logout")
 
     c2 = app.test_client()
@@ -90,8 +99,8 @@ def test_password_login_flow(app):
 
 def test_phone_otp_login_flow(app, capsys):
     c = app.test_client()
-    c.post("/api/auth/login-start", json={"username": "phoneuser"})
-    c.patch("/api/auth/security", json={"phone": "5551234567"})
+    c.post("/api/auth/register",
+           json={"username": "phoneuser", "password": PASSWORD, "phone": "5551234567"})
 
     c2 = app.test_client()
     r = c2.post("/api/auth/login-start", json={"username": "phoneuser"})
@@ -108,6 +117,16 @@ def test_family_creation_restricted_to_app_admins(users):
     admin, bob = users[ADMIN_USER], users[BOB_USER]
     assert admin.post("/api/families", json={"name": "Allowed"}).status_code == 201
     assert bob.post("/api/families", json={"name": "Not allowed"}).status_code == 403
+
+
+def test_household_rename_and_delete(users):
+    fam = setup_family(users)
+    admin = users[ADMIN_USER]
+    h = admin.post(f"/api/families/{fam['id']}/households",
+                    json={"name": "Original"}).get_json()["household"]
+    r = admin.patch(f"/api/households/{h['id']}", json={"name": "Renamed"})
+    assert r.status_code == 200 and r.get_json()["household"]["name"] == "Renamed"
+    assert admin.delete(f"/api/households/{h['id']}").status_code == 200
 
 
 def test_full_flow_and_privacy(app, users):

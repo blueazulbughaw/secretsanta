@@ -22,7 +22,7 @@ def _make_join_code():
 @require_auth
 def create_family():
     if not g.user.is_app_admin:
-        return jsonify({"error": "Ask the family organizer for a join code instead."}), 403
+        return jsonify({"error": "Ask your clan admin for a join code instead."}), 403
     name = ((request.json or {}).get("name") or "").strip()
     if not name:
         return jsonify({"error": "Please give your family group a name."}), 400
@@ -93,7 +93,7 @@ def update_member(family_id, membership_id):
         if mem.role == "admin" and data["role"] == "member":
             admins = FamilyMember.query.filter_by(family_id=family_id, role="admin").count()
             if admins <= 1:
-                return jsonify({"error": "A family needs at least one organizer."}), 400
+                return jsonify({"error": "A family needs at least one clan admin."}), 400
         mem.role = data["role"]
     if "household_id" in data:
         hid = data["household_id"]
@@ -114,7 +114,7 @@ def remove_member(family_id, membership_id):
         return err
     mem = FamilyMember.query.filter_by(id=membership_id, family_id=family_id).first_or_404()
     if mem.user_id == g.user.id:
-        return jsonify({"error": "You can't remove yourself. Ask another organizer."}), 400
+        return jsonify({"error": "You can't remove yourself. Ask another clan admin."}), 400
     db.session.delete(mem)
     db.session.commit()
     return jsonify({"ok": True})

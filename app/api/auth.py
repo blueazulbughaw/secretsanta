@@ -20,10 +20,7 @@ def login_start():
         return jsonify({"error": str(e)}), 400
     user = User.query.filter_by(username=username).first()
     if not user:
-        user = User(username=username, full_name="")
-        db.session.add(user)
-        db.session.commit()
-        return _finish_login(user)
+        return jsonify({"ok": True, "exists": False})
 
     if user.phone:
         try:
@@ -40,6 +37,40 @@ def login_start():
         return jsonify({"ok": True, "method": "password"})
 
     return jsonify({"error": "This account has no sign-in method set up yet. Contact an admin."}), 400
+
+
+@bp.post("/auth/register")
+def register():
+    data = request.json or {}
+    try:
+        username = normalize_username(data.get("username", ""))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    if User.query.filter_by(username=username).first():
+        return jsonify({"error": "That username is already taken."}), 409
+
+    password = data.get("password") or ""
+    if len(password) < 8:
+        return jsonify({"error": "Password must be at least 8 characters."}), 400
+
+    email = (data.get("email") or "").strip()
+    if email and User.query.filter_by(email=email).first():
+        return jsonify({"error": "That email is already in use."}), 409
+
+    phone = None
+    if data.get("phone"):
+        try:
+            phone = normalize_us_phone(data.get("phone", ""))
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        if User.query.filter_by(phone=phone).first():
+            return jsonify({"error": "That phone number is already in use."}), 409
+
+    user = User(username=username, email=email or None, phone=phone,
+                password_hash=hash_password(password), full_name="")
+    db.session.add(user)
+    db.session.commit()
+    return _finish_login(user)
 
 
 @bp.post("/auth/verify-otp")
