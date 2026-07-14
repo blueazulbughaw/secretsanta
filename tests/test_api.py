@@ -135,6 +135,18 @@ def test_register_with_clan_name_creates_family_and_makes_admin(app):
     assert len(me["families"]) == 1 and me["families"][0]["role"] == "admin"
 
 
+def test_first_family_creation_free_for_any_user(app):
+    # A user who registered without a clan_name (no family yet) can still
+    # create their first family later via POST /families without needing
+    # is_app_admin - only a *second* family requires that flag.
+    c = app.test_client()
+    c.post("/api/auth/register",
+           json={"username": "latebloomer", "password": PASSWORD, "full_name": "Late"})
+    r = c.post("/api/families", json={"name": "My First Clan"})
+    assert r.status_code == 201
+    assert c.post("/api/families", json={"name": "My Second Clan"}).status_code == 403
+
+
 def test_additional_family_creation_still_restricted_to_app_admins(app, users):
     # POST /families (creating a *second* family later) is a separate, rarer
     # action still gated by the platform-level is_app_admin flag - distinct

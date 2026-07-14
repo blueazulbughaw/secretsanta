@@ -79,7 +79,8 @@ async function boot() {
     navigate();
   } catch (_) {
     $topbar.hidden = true;
-    pageLogin();
+    if (location.hash === "#/register") pageRegisterStart();
+    else pageLogin();
   }
 }
 
@@ -106,6 +107,33 @@ function pageLogin() {
       else if (r.method === "password") pagePassword(username);
     } catch (e) { showError(e); }
   };
+}
+
+function pageRegisterStart() {
+  render("", `
+    <div class="center" style="margin-top:2rem">
+      <div style="font-size:4rem">🎁</div>
+      <h2>Create Your Account</h2>
+      <p class="muted">Pick a username to get started.</p>
+    </div>
+    <label for="newUsername">Username</label>
+    <input id="newUsername" autocomplete="username" placeholder="e.g. lolanena">
+    <div id="msg"></div>
+    <button class="btn btn-primary" id="continueBtn">Continue</button>
+    <button class="btn btn-quiet" id="loginInsteadBtn">I already have an account</button>
+  `, { back: false });
+  document.getElementById("continueBtn").onclick = async () => {
+    const username = document.getElementById("newUsername").value.trim();
+    try {
+      const r = await api.post("/auth/login-start", { username });
+      if (r.exists === false) pageRegister(username);
+      else {
+        document.getElementById("msg").innerHTML =
+          alertBox("That username is already taken. Try logging in instead.");
+      }
+    } catch (e) { showError(e); }
+  };
+  document.getElementById("loginInsteadBtn").onclick = () => { location.hash = ""; pageLogin(); };
 }
 
 function pageRegister(username) {
@@ -307,18 +335,18 @@ function pageNoFamily() {
   const hasPending = !!PENDING_JOIN_CODE;
   render("Secret Santa", `
     <h2>Join your family</h2>
-    <p class="muted">${hasPending ? "Confirm below to join." : "Ask your clan admin for the family code."}</p>
+    <p class="muted">${hasPending ? "Confirm below to join." : "Have a family code? Enter it below."}</p>
     <label for="jcode">Family code</label>
     <input id="jcode" class="code-input" maxlength="8" placeholder="ABCD1234" style="text-transform:uppercase"
       value="${esc(PENDING_JOIN_CODE || "")}" ${hasPending ? "readonly" : ""}>
     <div id="msg"></div>
     <button class="btn btn-primary" id="joinBtn">Join Family</button>
-    ${ME.can_create_family && !hasPending ? `
+    ${!hasPending ? `
     <hr style="margin:2rem 0">
-    <p class="muted center">Or start a brand-new family group:</p>
-    <label for="fname">Family name</label>
-    <input id="fname" placeholder="e.g. The Cedeño Family">
-    <button class="btn btn-secondary" id="createBtn">Create a Family</button>` : ""}
+    <p class="muted center">Or start your own clan:</p>
+    <label for="fname">Clan name</label>
+    <input id="fname" placeholder="e.g. The Cedeño Clan">
+    <button class="btn btn-secondary" id="createBtn">Start My Clan</button>` : ""}
   `, { back: false });
   document.getElementById("joinBtn").onclick = async () => {
     try {

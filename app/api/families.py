@@ -21,7 +21,8 @@ def _make_join_code():
 @bp.post("/families")
 @require_auth
 def create_family():
-    if not g.user.is_app_admin:
+    has_family = FamilyMember.query.filter_by(user_id=g.user.id).first() is not None
+    if has_family and not g.user.is_app_admin:
         return jsonify({"error": "Ask your clan admin for a join code instead."}), 403
     name = ((request.json or {}).get("name") or "").strip()
     if not name:
