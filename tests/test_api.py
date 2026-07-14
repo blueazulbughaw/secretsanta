@@ -77,10 +77,11 @@ def test_register_requires_unique_username(app):
                     json={"username": "taken", "password": PASSWORD, "full_name": "T"}).status_code == 409
 
 
-def test_register_requires_full_name(app):
+def test_register_without_full_name_falls_back_to_name_prompt(app):
     c = app.test_client()
     r = c.post("/api/auth/register", json={"username": "noname", "password": PASSWORD})
-    assert r.status_code == 400
+    assert r.status_code == 200
+    assert r.get_json()["user"]["full_name"] == ""
 
 
 def test_register_requires_password(app):

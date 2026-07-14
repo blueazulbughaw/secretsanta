@@ -98,7 +98,6 @@ function pageLogin() {
     <input id="password" type="password" autocomplete="current-password">
     <div id="msg"></div>
     <button class="btn btn-primary" id="loginBtn">Sign In</button>
-    <button class="btn btn-quiet" id="registerBtn">Create an Account</button>
   `, { back: false });
   document.getElementById("loginBtn").onclick = async () => {
     const username = document.getElementById("username").value.trim();
@@ -107,10 +106,6 @@ function pageLogin() {
       await api.post("/auth/login-password", { username, password });
       location.hash = "/"; boot();
     } catch (e) { showError(e); }
-  };
-  document.getElementById("registerBtn").onclick = () => {
-    location.hash = "#/register";
-    pageRegisterStart();
   };
 }
 
@@ -146,49 +141,17 @@ function pageRegister(username) {
   render("", `
     <h2 class="center">Create your account</h2>
     <p class="muted center">Username: <strong>${esc(username)}</strong></p>
-    <label for="regName">Your name</label>
-    <input id="regName" autocomplete="name">
     <label for="regPassword">Password</label>
     <input id="regPassword" type="password" autocomplete="new-password">
-    <label for="regEmail">Email (optional)</label>
-    <input id="regEmail" type="email" autocomplete="email" placeholder="you@example.com">
-    <label for="regPhone">Phone number (optional)</label>
-    <input id="regPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 123-4567">
-    <div class="check-row" style="align-items:flex-start;margin-top:1rem">
-      <input type="checkbox" id="smsConsent" style="margin-top:.3rem">
-      <label for="smsConsent" style="margin:0;font-size:.85rem;font-weight:400">
-        By checking this box, I agree to receive SMS messages from Genri Labs for account authentication,
-        including one-time passwords (OTP) used to verify my identity when signing in. Message frequency
-        varies based on sign-in activity. Message and data rates may apply. Reply STOP to opt out and
-        HELP for assistance. View our
-        <a href="/privacy_terms#privacy" target="_blank" rel="noopener">Privacy Policy</a>
-        and <a href="/privacy_terms#terms" target="_blank" rel="noopener">Terms of Service</a>.
-        (Only needed if you fill in a phone number above.)
-      </label>
-    </div>
-    ${joining ? "" : `
-    <hr style="margin:2rem 0">
-    <label for="regClan">Starting a new clan? Name it here (optional)</label>
-    <input id="regClan" placeholder="e.g. The Cedeño Clan">
-    <p class="muted" style="font-size:.85rem">Fill this in to become that clan's admin. Leave blank if you're joining a clan someone invites you to instead.</p>`}
     <div id="msg"></div>
     <button class="btn btn-primary" id="createBtn">Create Account</button>
   `, { back: true });
   document.getElementById("createBtn").onclick = async () => {
-    const phone = document.getElementById("regPhone").value.trim();
-    if (phone && !document.getElementById("smsConsent").checked) {
-      document.getElementById("msg").innerHTML =
-        alertBox("Please check the box to agree to receive text messages, or leave the phone number blank.");
-      return;
-    }
     try {
       const r = await api.post("/auth/register", {
         username,
-        full_name: document.getElementById("regName").value.trim(),
         password: document.getElementById("regPassword").value,
-        email: document.getElementById("regEmail").value.trim(),
-        phone,
-        clan_name: joining ? "" : document.getElementById("regClan").value.trim(),
+        clan_name: joining ? "" : `${username}'s Clan`,
       });
       if (r.family) pageClanCreated(r.family);
       else boot();

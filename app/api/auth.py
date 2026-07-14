@@ -50,8 +50,6 @@ def register():
         return jsonify({"error": "That username is already taken."}), 409
 
     full_name = (data.get("full_name") or "").strip()[:120]
-    if not full_name:
-        return jsonify({"error": "Please enter your name."}), 400
 
     password = data.get("password") or ""
     if len(password) < 8:
