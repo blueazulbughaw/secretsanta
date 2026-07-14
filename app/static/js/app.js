@@ -109,6 +109,7 @@ function pageLogin() {
 }
 
 function pageRegister(username) {
+  const joining = !!PENDING_JOIN_CODE;
   render("", `
     <h2 class="center">Create your account</h2>
     <p class="muted center">Username: <strong>${esc(username)}</strong></p>
@@ -132,6 +133,11 @@ function pageRegister(username) {
         (Only needed if you fill in a phone number above.)
       </label>
     </div>
+    ${joining ? "" : `
+    <hr style="margin:2rem 0">
+    <label for="regClan">Starting a new clan? Name it here (optional)</label>
+    <input id="regClan" placeholder="e.g. The Cedeño Clan">
+    <p class="muted" style="font-size:.85rem">Fill this in to become that clan's admin. Leave blank if you're joining a clan someone invites you to instead.</p>`}
     <div id="msg"></div>
     <button class="btn btn-primary" id="createBtn">Create Account</button>
   `, { back: true });
@@ -143,16 +149,42 @@ function pageRegister(username) {
       return;
     }
     try {
-      await api.post("/auth/register", {
+      const r = await api.post("/auth/register", {
         username,
         full_name: document.getElementById("regName").value.trim(),
         password: document.getElementById("regPassword").value,
         email: document.getElementById("regEmail").value.trim(),
         phone,
+        clan_name: joining ? "" : document.getElementById("regClan").value.trim(),
       });
-      boot();
+      if (r.family) pageClanCreated(r.family);
+      else boot();
     } catch (e) { showError(e); }
   };
+}
+
+function pageClanCreated(family) {
+  const regUrl = `${location.origin}/#/join/${family.join_code}`;
+  render("", `
+    <div class="center" style="margin-top:1rem"><div style="font-size:3rem">🎉</div></div>
+    <h2 class="center">${esc(family.name)} is ready!</h2>
+    <p class="muted center">You're its clan admin. Share this code or link so family can join:</p>
+    <div class="card center">
+      <div class="reveal-name" style="font-size:1.8rem">${esc(family.join_code)}</div>
+      <button class="btn btn-quiet" id="copyLinkBtn" style="margin-top:.5rem">Copy Registration Link</button>
+      <div id="copyMsg"></div>
+    </div>
+    <button class="btn btn-primary" id="continueBtn">Continue to Dashboard</button>
+  `, { back: false });
+  document.getElementById("copyLinkBtn").onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(regUrl);
+      document.getElementById("copyMsg").innerHTML = alertBox("Link copied!", true);
+    } catch (e) {
+      document.getElementById("copyMsg").innerHTML = alertBox(regUrl, true);
+    }
+  };
+  document.getElementById("continueBtn").onclick = () => boot();
 }
 
 function pageCode(username) {

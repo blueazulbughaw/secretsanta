@@ -70,11 +70,25 @@ def register():
         if User.query.filter_by(phone=phone).first():
             return jsonify({"error": "That phone number is already in use."}), 409
 
+    clan_name = (data.get("clan_name") or "").strip()[:120]
+
     user = User(username=username, email=email or None, phone=phone,
                 password_hash=hash_password(password), full_name=full_name)
     db.session.add(user)
+    db.session.flush()
+
+    family = None
+    if clan_name:
+        from .families import _make_join_code
+        family = Family(name=clan_name, join_code=_make_join_code(), created_by=user.id)
+        db.session.add(family)
+        db.session.flush()
+        db.session.add(FamilyMember(family_id=family.id, user_id=user.id, role="admin"))
+
     db.session.commit()
-    return _finish_login(user)
+    extra = {"family": {"id": family.id, "name": family.name,
+                        "join_code": family.join_code}} if family else {}
+    return _finish_login(user, **extra)
 
 
 @bp.post("/auth/verify-otp")
@@ -105,10 +119,10 @@ def login_password():
     return _finish_login(user)
 
 
-def _finish_login(user):
+def _finish_login(user, **extra):
     user.last_login_at = datetime.utcnow()
     db.session.commit()
-    resp = make_response(jsonify({"ok": True, "user": user.to_dict()}))
+    resp = make_response(jsonify({"ok": True, "user": user.to_dict(), **extra}))
     return set_auth_cookie(resp, issue_token(user.id))
 
 

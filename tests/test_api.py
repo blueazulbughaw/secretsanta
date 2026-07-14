@@ -36,28 +36,29 @@ def app():
 
 @pytest.fixture()
 def users(app):
-    """Registers admin + two members (username + password), returns logged-in clients."""
+    """Registers admin (self-service clan creation) + two members, returns logged-in clients."""
     clients = {}
-    for username, name in [(ADMIN_USER, "Ana"), (BOB_USER, "Bob"), (CARA_USER, "Cara")]:
+    admin_client = app.test_client()
+    r = admin_client.post("/api/auth/register", json={
+        "username": ADMIN_USER, "password": PASSWORD, "full_name": "Ana", "clan_name": "Test Fam",
+    })
+    assert r.status_code == 200
+    fam = r.get_json()["family"]
+    clients[ADMIN_USER] = admin_client
+
+    for username, name in [(BOB_USER, "Bob"), (CARA_USER, "Cara")]:
         c = app.test_client()
         r = c.post("/api/auth/register",
                     json={"username": username, "password": PASSWORD, "full_name": name})
         assert r.status_code == 200
+        c.post("/api/families/join", json={"join_code": fam["join_code"]})
         clients[username] = c
-    with app.app_context():
-        from app.models import User
-        admin = User.query.filter_by(username=ADMIN_USER).first()
-        admin.is_app_admin = True
-        db.session.commit()
+    clients["_family"] = fam
     return clients
 
 
 def setup_family(users):
-    admin = users[ADMIN_USER]
-    fam = admin.post("/api/families", json={"name": "Test Fam"}).get_json()["family"]
-    for username in (BOB_USER, CARA_USER):
-        users[username].post("/api/families/join", json={"join_code": fam["join_code"]})
-    return fam
+    return users["_family"]
 
 
 def test_login_start_signals_new_username(app):
@@ -122,9 +123,28 @@ def test_phone_otp_login_flow(app, capsys):
     assert r2.status_code == 200
 
 
-def test_family_creation_restricted_to_app_admins(users):
+def test_register_with_clan_name_creates_family_and_makes_admin(app):
+    c = app.test_client()
+    r = c.post("/api/auth/register", json={
+        "username": "founder", "password": PASSWORD, "full_name": "Founder", "clan_name": "New Clan",
+    })
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["family"]["name"] == "New Clan"
+    me = c.get("/api/auth/me").get_json()
+    assert len(me["families"]) == 1 and me["families"][0]["role"] == "admin"
+
+
+def test_additional_family_creation_still_restricted_to_app_admins(app, users):
+    # POST /families (creating a *second* family later) is a separate, rarer
+    # action still gated by the platform-level is_app_admin flag - distinct
+    # from the self-service clan creation at registration time.
     admin, bob = users[ADMIN_USER], users[BOB_USER]
-    assert admin.post("/api/families", json={"name": "Allowed"}).status_code == 201
+    assert admin.post("/api/families", json={"name": "Second clan"}).status_code == 403
+    from app.models import User
+    User.query.filter_by(username=ADMIN_USER).first().is_app_admin = True
+    db.session.commit()
+    assert admin.post("/api/families", json={"name": "Second clan"}).status_code == 201
     assert bob.post("/api/families", json={"name": "Not allowed"}).status_code == 403
 
 
