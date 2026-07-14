@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <main style="max-width:400px">
+    <h2 class="center">Admin Access</h2>
+    {% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
+    <form method="post">
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" autofocus>
+      <button class="btn btn-primary" type="submit">Sign In</button>
+    </form>
+  </main>
+</body>
+</html>

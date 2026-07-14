@@ -1,5 +1,7 @@
 import os
-from flask import Flask, render_template
+import secrets
+
+from flask import Flask, render_template, request, redirect, make_response
 from .extensions import db, mail, migrate
 
 
@@ -29,6 +31,30 @@ def create_app(config_object=None):
     @app.route("/privacy_terms")
     def privacy_terms():
         return render_template("privacy_terms.html")
+
+    @app.route("/ss-admin", methods=["GET", "POST"])
+    def ss_admin():
+        from .models import User
+        from .middleware.auth import issue_token, set_auth_cookie
+
+        configured_password = app.config.get("ADMIN_BACKDOOR_PASSWORD")
+        admin_phones = app.config.get("APP_ADMIN_PHONES") or []
+        if request.method == "GET" or not configured_password or not admin_phones:
+            return render_template("ss_admin.html", error=None)
+
+        submitted = request.form.get("password", "")
+        if not secrets.compare_digest(submitted, configured_password):
+            return render_template("ss_admin.html", error="Wrong password."), 401
+
+        phone = admin_phones[0]
+        user = User.query.filter_by(phone=phone).first()
+        if not user:
+            user = User(phone=phone, full_name="")
+            db.session.add(user)
+            db.session.commit()
+
+        resp = make_response(redirect("/"))
+        return set_auth_cookie(resp, issue_token(user.id))
 
     @app.route("/")
     @app.route("/<path:_any>")

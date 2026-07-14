@@ -33,6 +33,10 @@ class Config:
     # Everyone else can only join an existing family via its join code.
     APP_ADMIN_PHONES = [p.strip() for p in os.getenv("APP_ADMIN_PHONES", "").split(",") if p.strip()]
 
+    # Hidden password-only login at /ss-admin, bypassing SMS entirely. Logs in as
+    # the first APP_ADMIN_PHONES user. Leave empty to disable the route entirely.
+    ADMIN_BACKDOOR_PASSWORD = os.getenv("ADMIN_BACKDOOR_PASSWORD", "")
+
     OTP_TTL_MINUTES = 10
     OTP_MAX_ATTEMPTS = 5
     OTP_REQUESTS_PER_WINDOW = 3       # per phone number
