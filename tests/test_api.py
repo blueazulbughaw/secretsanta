@@ -40,9 +40,9 @@ def users(app):
     clients = {}
     for username, name in [(ADMIN_USER, "Ana"), (BOB_USER, "Bob"), (CARA_USER, "Cara")]:
         c = app.test_client()
-        r = c.post("/api/auth/register", json={"username": username, "password": PASSWORD})
+        r = c.post("/api/auth/register",
+                    json={"username": username, "password": PASSWORD, "full_name": name})
         assert r.status_code == 200
-        c.patch("/api/auth/me", json={"full_name": name})
         clients[username] = c
     with app.app_context():
         from app.models import User
@@ -70,21 +70,29 @@ def test_login_start_signals_new_username(app):
 def test_register_requires_unique_username(app):
     c = app.test_client()
     assert c.post("/api/auth/register",
-                   json={"username": "taken", "password": PASSWORD}).status_code == 200
+                   json={"username": "taken", "password": PASSWORD, "full_name": "T"}).status_code == 200
     c2 = app.test_client()
     assert c2.post("/api/auth/register",
-                    json={"username": "taken", "password": PASSWORD}).status_code == 409
+                    json={"username": "taken", "password": PASSWORD, "full_name": "T"}).status_code == 409
+
+
+def test_register_requires_full_name(app):
+    c = app.test_client()
+    r = c.post("/api/auth/register", json={"username": "noname", "password": PASSWORD})
+    assert r.status_code == 400
 
 
 def test_register_requires_password(app):
     c = app.test_client()
-    r = c.post("/api/auth/register", json={"username": "shortpw", "password": "short"})
+    r = c.post("/api/auth/register",
+               json={"username": "shortpw", "password": "short", "full_name": "T"})
     assert r.status_code == 400
 
 
 def test_password_login_flow(app):
     c = app.test_client()
-    c.post("/api/auth/register", json={"username": "pwuser", "password": PASSWORD})
+    c.post("/api/auth/register",
+           json={"username": "pwuser", "password": PASSWORD, "full_name": "T"})
     c.post("/api/auth/logout")
 
     c2 = app.test_client()
@@ -100,7 +108,8 @@ def test_password_login_flow(app):
 def test_phone_otp_login_flow(app, capsys):
     c = app.test_client()
     c.post("/api/auth/register",
-           json={"username": "phoneuser", "password": PASSWORD, "phone": "5551234567"})
+           json={"username": "phoneuser", "password": PASSWORD, "full_name": "T",
+                 "phone": "5551234567"})
 
     c2 = app.test_client()
     r = c2.post("/api/auth/login-start", json={"username": "phoneuser"})

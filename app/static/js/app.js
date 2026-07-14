@@ -112,6 +112,8 @@ function pageRegister(username) {
   render("", `
     <h2 class="center">Create your account</h2>
     <p class="muted center">Username: <strong>${esc(username)}</strong></p>
+    <label for="regName">Your name</label>
+    <input id="regName" autocomplete="name">
     <label for="regPassword">Password</label>
     <input id="regPassword" type="password" autocomplete="new-password">
     <label for="regEmail">Email (optional)</label>
@@ -143,6 +145,7 @@ function pageRegister(username) {
     try {
       await api.post("/auth/register", {
         username,
+        full_name: document.getElementById("regName").value.trim(),
         password: document.getElementById("regPassword").value,
         email: document.getElementById("regEmail").value.trim(),
         phone,
@@ -196,7 +199,7 @@ function pageName() {
     <h2>What's your name?</h2>
     <p class="muted">This is how your family will see you.</p>
     <label for="name">Your name</label>
-    <input id="name" autocomplete="name" placeholder="e.g. Lola Nena">
+    <input id="name" autocomplete="name">
     <div id="msg"></div>
     <button class="btn btn-primary" id="saveBtn">Continue</button>
   `, { back: false });

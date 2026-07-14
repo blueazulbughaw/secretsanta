@@ -49,6 +49,10 @@ def register():
     if User.query.filter_by(username=username).first():
         return jsonify({"error": "That username is already taken."}), 409
 
+    full_name = (data.get("full_name") or "").strip()[:120]
+    if not full_name:
+        return jsonify({"error": "Please enter your name."}), 400
+
     password = data.get("password") or ""
     if len(password) < 8:
         return jsonify({"error": "Password must be at least 8 characters."}), 400
@@ -67,7 +71,7 @@ def register():
             return jsonify({"error": "That phone number is already in use."}), 409
 
     user = User(username=username, email=email or None, phone=phone,
-                password_hash=hash_password(password), full_name="")
+                password_hash=hash_password(password), full_name=full_name)
     db.session.add(user)
     db.session.commit()
     return _finish_login(user)
