@@ -38,12 +38,34 @@ function esc(s) {
   return d.innerHTML;
 }
 function h(html) { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content; }
-function render(title, html, { back = true } = {}) {
+function render(title, html, { back = true, wide = false } = {}) {
   $title.textContent = title;
   $back.hidden = !back;
+  $app.classList.toggle("wide", wide);
   $app.innerHTML = "";
   $app.append(typeof html === "string" ? h(html) : html);
   window.scrollTo(0, 0);
+}
+
+const ADMIN_NAV = [
+  { key: "dashboard", href: "/admin", label: "Dashboard" },
+  { key: "members", href: "/admin/members", label: "Members" },
+  { key: "groups", href: "/admin/groups", label: "Family Groups" },
+  { key: "events", href: "/admin/events", label: "Gift Exchanges" },
+  { key: "announce", href: "/admin/announce", label: "Post Announcement" },
+];
+function renderAdmin(title, activeKey, contentHtml, { back = false } = {}) {
+  const links = ADMIN_NAV.map(item => `
+    <a href="#${item.href}" class="${item.key === activeKey ? "active" : ""}">${esc(item.label)}</a>`).join("");
+  render(title, `
+    <div class="admin-layout">
+      <nav class="admin-sidebar">
+        ${links}
+        <a href="#/" class="leave">← Back to My Dashboard</a>
+      </nav>
+      <div class="admin-content">${contentHtml}</div>
+    </div>
+  `, { back, wide: true });
 }
 function alertBox(msg, ok = false) {
   return `<div class="alert ${ok ? "alert-ok" : "alert-error"}" role="alert">${esc(msg)}</div>`;
@@ -487,17 +509,13 @@ route(/^\/notifications$/, async () => {
 route(/^\/admin$/, async () => {
   const fam = await api.get(`/families/${FAMILY.id}`);
   const regUrl = `${location.origin}/#/join/${fam.join_code}`;
-  render("Clan Admin Dashboard", `
+  renderAdmin("Clan Admin Dashboard", "dashboard", `
     <div class="card center">
       <p class="muted">Share this code so family can join:</p>
       <div class="reveal-name" style="font-size:1.8rem">${esc(fam.join_code)}</div>
       <button class="btn btn-quiet" id="copyLinkBtn" style="margin-top:.5rem">Copy Registration Link</button>
       <div id="copyMsg"></div>
     </div>
-    <button class="card-btn" onclick="go('/admin/members')"><span class="emoji">👪</span><span>Members</span></button>
-    <button class="card-btn" onclick="go('/admin/groups')"><span class="emoji">🏠</span><span>Family Groups</span></button>
-    <button class="card-btn" onclick="go('/admin/events')"><span class="emoji">🎄</span><span>Gift Exchanges</span></button>
-    <button class="card-btn" onclick="go('/admin/announce')"><span class="emoji">📢</span><span>Post an Announcement</span></button>
   `);
   document.getElementById("copyLinkBtn").onclick = async () => {
     try {
@@ -522,27 +540,31 @@ route(/^\/admin\/members$/, async () => {
   const participating = new Set(
     participants.filter(p => p.is_participating).map(p => p.user.id));
 
-  const opts = hid => `<option value="">No household yet</option>` +
+  const opts = hid => `<option value="">—</option>` +
     households.map(hh => `<option value="${hh.id}" ${hh.id === hid ? "selected" : ""}>${esc(hh.name)}</option>`).join("");
   const rows = members.map(m => `
-    <div class="card">
-      <strong>${esc(m.user.display_name)}</strong>
-      <div class="check-row">
-        <input type="checkbox" id="admin-${m.membership_id}" data-role="${m.membership_id}" ${m.role === "admin" ? "checked" : ""}>
-        <label for="admin-${m.membership_id}" style="margin:0">Clan Admin (can manage this family)</label>
-      </div>
-      ${current ? `
-      <div class="check-row">
-        <input type="checkbox" id="joining-${m.user.id}" data-joining="${m.user.id}" ${participating.has(m.user.id) ? "checked" : ""}>
-        <label for="joining-${m.user.id}" style="margin:0">Joining ${esc(current.name)} this year</label>
-      </div>` : ""}
-      <label>Family Group</label>
-      <select data-house="${m.membership_id}">${opts(m.household_id)}</select>
-    </div>`).join("");
-  render("Members", `
+    <tr>
+      <td>${esc(m.user.display_name)}</td>
+      <td>${esc(m.user.phone || "—")}</td>
+      <td>${esc(m.user.email || "—")}</td>
+      <td><select data-house="${m.membership_id}">${opts(m.household_id)}</select></td>
+      <td><input type="checkbox" data-role="${m.membership_id}" ${m.role === "admin" ? "checked" : ""} aria-label="Clan admin"></td>
+      <td>${current
+        ? `<input type="checkbox" data-joining="${m.user.id}" ${participating.has(m.user.id) ? "checked" : ""} aria-label="Joining this year">`
+        : "—"}</td>
+    </tr>`).join("");
+  renderAdmin("Members", "members", `
     <div id="msg"></div>
     ${current ? "" : `<div class="card center"><p class="muted">Create a gift exchange first to track who's joining this year.</p></div>`}
-    ${rows}
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr>
+          <th>Name</th><th>Phone</th><th>Email</th><th>Family Group</th>
+          <th>Admin</th><th>Joining${current ? ` (${esc(current.name)})` : ""}</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
   `);
   $app.querySelectorAll("[data-house]").forEach(sel => sel.onchange = async () => {
     try {
@@ -578,7 +600,7 @@ route(/^\/admin\/groups$/, async () => {
         <button class="btn btn-quiet" data-del="${hh.id}" style="margin:0">Delete</button>
       </div>
     </div>`).join("") || `<div class="card center"><p class="muted">No family groups yet.</p></div>`;
-  render("Family Groups", `
+  renderAdmin("Family Groups", "groups", `
     <p class="muted">People in the same family group won't draw each other's names.</p>
     <div id="msg"></div>
     ${rows}
@@ -615,7 +637,7 @@ route(/^\/admin\/events$/, async () => {
       <span class="emoji">${e.status === "matched" ? "✅" : "🎄"}</span>
       <span>${esc(e.name)}<span class="sub">${esc(e.event_date)} • ${e.status === "matched" ? "Names drawn" : "Not drawn yet"}</span></span>
     </button>`).join("");
-  render("Gift Exchanges", `
+  renderAdmin("Gift Exchanges", "events", `
     ${list}
     <h2>Create a new exchange</h2>
     <label>Name</label><input id="ename" placeholder="e.g. Christmas 2026">
@@ -659,7 +681,7 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
     ? `<div class="alert alert-ok">✅ Names are drawn! ${st.revealed} of ${st.matched} people have peeked.</div>
        <button class="btn btn-quiet" id="reroll">Start Over (Re-Draw Names)</button>`
     : `<button class="btn btn-primary" id="draw">🎲 Draw Names</button>`;
-  render(ev.name, `
+  renderAdmin(ev.name, "events", `
     <div id="msg"></div>
     <h2>Who's joining?</h2>
     ${rows}
@@ -667,7 +689,7 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
     <hr style="margin:1.5rem 0">
     ${drawSection}
     <button class="btn btn-quiet" onclick="go('/admin/events/${id}/wishlists')">View Everyone's Wishlists</button>
-  `);
+  `, { back: true });
   const save = document.getElementById("saveParts");
   if (save) save.onclick = async () => {
     const ids = [...$app.querySelectorAll("[data-uid]:checked")].map(c => Number(c.dataset.uid));
@@ -702,11 +724,11 @@ route(/^\/admin\/events\/(\d+)\/wishlists$/, async (id) => {
         ? "<ul>" + w.items.map(i => `<li>${esc(i.item_name)}</li>`).join("") + "</ul>"
         : `<p class="muted">No gift ideas yet.</p>`}
     </div>`).join("");
-  render("All Wishlists", list);
+  renderAdmin("All Wishlists", "events", list, { back: true });
 });
 
 route(/^\/admin\/announce$/, async () => {
-  render("Post Announcement", `
+  renderAdmin("Post Announcement", "announce", `
     <label>Title</label><input id="atitle" placeholder="e.g. Party is at 6pm!">
     <label>Message</label><textarea id="abody" rows="4"></textarea>
     <div class="check-row"><input type="checkbox" id="apin"><label for="apin" style="margin:0">Pin to the top</label></div>
