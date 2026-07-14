@@ -49,7 +49,7 @@ def register():
     if User.query.filter_by(username=username).first():
         return jsonify({"error": "That username is already taken."}), 409
 
-    full_name = (data.get("full_name") or "").strip()[:120]
+    full_name = (data.get("full_name") or "").strip()[:120] or username
 
     password = data.get("password") or ""
     if len(password) < 8:

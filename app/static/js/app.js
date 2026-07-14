@@ -213,7 +213,15 @@ function pageName() {
 }
 
 function pageSecuritySetup(forced) {
-  render("Security", `
+  render("Profile & Security", `
+    <h2>Your name</h2>
+    <p class="muted">This is how your family will see you.</p>
+    <label for="displayName">Your name</label>
+    <input id="displayName" value="${esc(ME.user.full_name)}">
+    <div id="nameMsg"></div>
+    <button class="btn btn-secondary" id="saveNameBtn">Save Name</button>
+
+    <hr style="margin:2rem 0">
     <h2>Set up your password</h2>
     <p class="muted">You'll use this to sign in. At least 8 characters.</p>
     <label for="newPassword">Password</label>
@@ -241,6 +249,15 @@ function pageSecuritySetup(forced) {
     <button class="btn btn-secondary" id="savePhoneBtn">Save Phone Number</button>
     ${!forced ? `<button class="btn btn-quiet" id="doneBtn">Done</button>` : ""}
   `, { back: !forced });
+  document.getElementById("saveNameBtn").onclick = async () => {
+    try {
+      const r = await api.patch("/auth/me", { full_name: document.getElementById("displayName").value });
+      ME.user = r.user;
+      document.getElementById("nameMsg").innerHTML = alertBox("Name saved!", true);
+    } catch (e) {
+      document.getElementById("nameMsg").innerHTML = alertBox(e.message);
+    }
+  };
   document.getElementById("savePwBtn").onclick = async () => {
     const password = document.getElementById("newPassword").value;
     try {
@@ -330,7 +347,7 @@ route(/^\/$/, async () => {
   }
   cards += `
     <button class="card-btn" onclick="go('/security')">
-      <span class="emoji">🔒</span><span>Security<span class="sub">Password & phone sign-in</span></span></button>`;
+      <span class="emoji">🔒</span><span>Profile & Security<span class="sub">Your name, password & phone sign-in</span></span></button>`;
   cards += `<button class="btn btn-quiet" id="logoutBtn" style="margin-top:2rem">Sign Out</button>`;
   render(FAMILY.name, cards, { back: false });
   document.getElementById("logoutBtn").onclick = async () => { await api.post("/auth/logout"); location.reload(); };
