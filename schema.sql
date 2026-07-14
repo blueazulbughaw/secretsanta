@@ -11,13 +11,16 @@ CREATE DATABASE IF NOT EXISTS giftcircle
 USE giftcircle;
 
 -- ------------------------------------------------------------
--- USERS — global identity. No passwords: OTP-only login.
--- Phone is the login identifier; email is optional.
+-- USERS — global identity. Username is the login identifier; phone
+-- (SMS OTP) and password are both optional, alternate sign-in methods.
 -- ------------------------------------------------------------
 CREATE TABLE users (
   id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  phone         VARCHAR(30)  NOT NULL UNIQUE,
+  username      VARCHAR(60)  NOT NULL UNIQUE,
+  phone         VARCHAR(30)  NULL UNIQUE,
   email         VARCHAR(255) NULL UNIQUE,
+  password_hash VARCHAR(255) NULL,
+  is_app_admin  TINYINT(1)   NOT NULL DEFAULT 0,
   full_name     VARCHAR(120) NOT NULL,
   display_name  VARCHAR(60)  NULL,           -- "Lola Nena", "Tito Ben"
   avatar_color  CHAR(7)      NOT NULL DEFAULT '#C0392B', -- accessible identicon fallback
@@ -26,6 +29,7 @@ CREATE TABLE users (
   created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
                              ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_users_username (username),
   INDEX idx_users_phone (phone)
 ) ENGINE=InnoDB;
 

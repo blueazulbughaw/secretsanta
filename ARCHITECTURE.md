@@ -11,7 +11,7 @@ A family gift-exchange platform built for elderly-friendly use, deployable on Na
 | Backend | Flask 3 + Gunicorn (Passenger on cPanel) | Matches your learning path and Namecheap's "Setup Python App" |
 | Database | MySQL 8 (utf8mb4) | Included with Namecheap hosting |
 | ORM | SQLAlchemy + Flask-Migrate (Alembic) | Schema versioning so production migrations are safe |
-| Auth | SMS OTP (Twilio) → JWT (httpOnly cookie) | No passwords; elderly-friendly, no email required |
+| Auth | Username → SMS OTP (Twilio) or password → JWT (httpOnly cookie) | SMS is optional per-user so login doesn't hard-depend on Twilio |
 | Frontend | Vanilla JS + CSS (mobile-first) served by Flask templates | No build step on shared hosting; plays to your JS strengths |
 | PWA | manifest.json + service worker | Installable, basic offline, push-ready |
 | SMS | Twilio | OTP delivery |
@@ -71,31 +71,46 @@ Roles live on `family_members`, not `users` — a person can be admin of one fam
 
 Enforced with two decorators: `@require_auth` (valid JWT) and `@require_family_admin(family_id)` (checks `family_members.role`). Admins can see all wishlists but **never** the assignment map (who drew whom stays secret even from admins — only "matching complete: 12/12" is shown).
 
-## 4. Authentication flow (OTP, no passwords)
+## 4. Authentication flow (username-first, SMS OTP or password)
 
 ```
-1. POST /api/auth/request-otp   { phone }
-   → normalize to E.164 (+1XXXXXXXXXX, US numbers only)
-   → generate 6-digit code, store SHA-256(code + PEPPER), expire 10 min
-   → text the code via Twilio. Rate limit: 3 requests / 15 min per phone.
+1. POST /api/auth/signup        { username }
+   → creates the account, auto-issues a JWT cookie
+   → user is routed to Security setup (password required, phone optional)
 
-2. POST /api/auth/verify-otp    { phone, code }
-   → check hash, attempts < 5, not expired, not used
-   → create user if new (prompt for name on first login)
-   → issue JWT (7-day) in httpOnly, Secure, SameSite=Lax cookie
-   → mark otp used_at
+2. POST /api/auth/login-start   { username }
+   → if the account has a phone on file: generate a 6-digit code,
+     store SHA-256(code + PEPPER), expire 10 min, text it via Twilio
+     (rate limit: 3 requests / 15 min per phone) → { method: "otp" }
+   → else if it has a password set: → { method: "password" }
 
-3. GET  /api/auth/me            → current user + families
-4. POST /api/auth/logout        → clear cookie
+3a. POST /api/auth/verify-otp   { username, code }
+    → check hash, attempts < 5, not expired, not used → issue JWT cookie
+3b. POST /api/auth/login-password { username, password }
+    → check password hash → issue JWT cookie
+
+4. PATCH /api/auth/security     { password? , phone? }  (authenticated)
+   → set/change password (>= 8 chars) and/or phone (SMS consent required
+     in the UI at the moment the phone is added)
+
+5. GET  /api/auth/me             → current user + families + can_create_family
+6. POST /api/auth/logout         → clear cookie
 ```
 
-Elderly-friendly detail: the text message says only "Your Secret Santa code is **482913**" in a short SMS. The login screen has two fields total across two steps, each with one big button.
+Hidden bypass: `GET/POST /ss-admin` (env var `ADMIN_BACKDOOR_PASSWORD`) takes a
+master key + username; an existing `is_app_admin` username logs in, an unknown
+one is created as a new admin. Not linked from the UI. Exists because Twilio's
+A2P 10DLC registration is an external dependency with no fixed timeline, and
+login can't be allowed to hard-fail while it's pending.
+
+Elderly-friendly detail: the text message says only "Your verification code is
+**482913**" in a short SMS. Each auth screen has one field and one big button.
 
 ## 5. API endpoints
 
 All JSON, prefixed `/api`. 🔒 = auth required, 👑 = family admin.
 
-**Auth** — `POST /auth/request-otp`, `POST /auth/verify-otp`, `GET /auth/me` 🔒, `POST /auth/logout` 🔒
+**Auth** — `POST /auth/signup`, `POST /auth/login-start`, `POST /auth/verify-otp`, `POST /auth/login-password`, `GET /auth/me` 🔒, `PATCH /auth/me` 🔒, `PATCH /auth/security` 🔒, `POST /auth/logout` 🔒
 
 **Families**
 - `POST /families` 🔒 — create family (creator becomes admin)
@@ -188,7 +203,7 @@ Non-negotiable UX rules baked into every component:
 - Max ~8 words of instruction per screen. No jargon anywhere — "Sign in code" not "OTP", "Your person" not "assignee".
 - Guided steps: wizard pattern (1 of 3 → 2 of 3) for anything multi-step, with a persistent "Go Back" button.
 - WCAG AA contrast, focus outlines, `aria-live` for confirmations, works at 200% browser zoom.
-- No passwords, no usernames — phone number + 6-digit code only.
+- Sign in with a username, then either a texted 6-digit code (if a phone is on file) or a password.
 
 Pages: Login (2 steps) → Home (big cards: My Person / My Wishlist / Messages / Announcements) → per-card detail pages. Admin gets one extra card, "Manage Family", leading to the admin dashboard (members, households, events, participants checklist, rules form, big "Draw Names" button, all-wishlists view, post-announcement form).
 

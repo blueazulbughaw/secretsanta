@@ -29,12 +29,10 @@ class Config:
 
     APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:5000")
 
-    # Phone numbers (E.164, comma-separated) allowed to create new families.
-    # Everyone else can only join an existing family via its join code.
-    APP_ADMIN_PHONES = [p.strip() for p in os.getenv("APP_ADMIN_PHONES", "").split(",") if p.strip()]
-
-    # Hidden password-only login at /ss-admin, bypassing SMS entirely. Logs in as
-    # the first APP_ADMIN_PHONES user. Leave empty to disable the route entirely.
+    # Master key for the hidden /ss-admin route: username + this key logs in as
+    # (or creates) an admin account, bypassing SMS/password entirely. Whether a
+    # user can create new families is controlled by User.is_app_admin, not this
+    # key directly. Leave empty to disable the /ss-admin route entirely.
     ADMIN_BACKDOOR_PASSWORD = os.getenv("ADMIN_BACKDOOR_PASSWORD", "")
 
     OTP_TTL_MINUTES = 10

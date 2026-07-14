@@ -4,9 +4,10 @@ import pytest
 from app import create_app
 from app.extensions import db
 
-ADMIN_PHONE = "+15550000001"
-BOB_PHONE = "+15550000002"
-CARA_PHONE = "+15550000003"
+ADMIN_USER = "admin"
+BOB_USER = "bob"
+CARA_USER = "cara"
+PASSWORD = "correct-horse-battery"
 
 
 class TestConfig:
@@ -34,67 +35,86 @@ def app():
 
 
 @pytest.fixture()
-def users(app, capsys):
-    """Creates admin + two members via the real OTP flow (codes read from console)."""
+def users(app):
+    """Signs up admin + two members (username + password), returns logged-in clients."""
     clients = {}
-    for phone, name in [(ADMIN_PHONE, "Ana"),
-                        (BOB_PHONE, "Bob"),
-                        (CARA_PHONE, "Cara")]:
+    for username, name in [(ADMIN_USER, "Ana"), (BOB_USER, "Bob"), (CARA_USER, "Cara")]:
         c = app.test_client()
-        c.post("/api/auth/request-otp", json={"phone": phone})
-        code = re.search(r"code for {}: (\d{{6}})".format(re.escape(phone)),
-                         capsys.readouterr().out).group(1)
-        r = c.post("/api/auth/verify-otp", json={"phone": phone, "code": code})
+        r = c.post("/api/auth/signup", json={"username": username})
         assert r.status_code == 200
+        c.patch("/api/auth/security", json={"password": PASSWORD})
         c.patch("/api/auth/me", json={"full_name": name})
-        clients[phone] = c
+        clients[username] = c
+    with app.app_context():
+        from app.models import User
+        admin = User.query.filter_by(username=ADMIN_USER).first()
+        admin.is_app_admin = True
+        db.session.commit()
     return clients
 
 
 def setup_family(users):
-    admin = users[ADMIN_PHONE]
+    admin = users[ADMIN_USER]
     fam = admin.post("/api/families", json={"name": "Test Fam"}).get_json()["family"]
-    for phone in (BOB_PHONE, CARA_PHONE):
-        users[phone].post("/api/families/join", json={"join_code": fam["join_code"]})
+    for username in (BOB_USER, CARA_USER):
+        users[username].post("/api/families/join", json={"join_code": fam["join_code"]})
     return fam
 
 
-def test_family_creation_restricted_to_admin_phones(capsys):
-    class RestrictedConfig(TestConfig):
-        APP_ADMIN_PHONES = [ADMIN_PHONE]
-
-    app = create_app(RestrictedConfig)
-    with app.app_context():
-        db.create_all()
-        try:
-            def login(phone):
-                c = app.test_client()
-                c.post("/api/auth/request-otp", json={"phone": phone})
-                code = re.search(r"code for {}: (\d{{6}})".format(re.escape(phone)),
-                                 capsys.readouterr().out).group(1)
-                c.post("/api/auth/verify-otp", json={"phone": phone, "code": code})
-                return c
-
-            admin = login(ADMIN_PHONE)
-            assert admin.post("/api/families", json={"name": "Allowed"}).status_code == 201
-
-            outsider = login(BOB_PHONE)
-            r = outsider.post("/api/families", json={"name": "Not allowed"})
-            assert r.status_code == 403
-        finally:
-            db.drop_all()
-
-
-def test_wrong_otp_rejected(app):
+def test_signup_requires_unique_username(app):
     c = app.test_client()
-    c.post("/api/auth/request-otp", json={"phone": "+15559999999"})
-    r = c.post("/api/auth/verify-otp", json={"phone": "+15559999999", "code": "000000"})
-    assert r.status_code == 401
+    assert c.post("/api/auth/signup", json={"username": "taken"}).status_code == 200
+    c2 = app.test_client()
+    assert c2.post("/api/auth/signup", json={"username": "taken"}).status_code == 409
+
+
+def test_login_start_unknown_username(app):
+    c = app.test_client()
+    r = c.post("/api/auth/login-start", json={"username": "nobody"})
+    assert r.status_code == 404
+
+
+def test_password_login_flow(app):
+    c = app.test_client()
+    c.post("/api/auth/signup", json={"username": "pwuser"})
+    c.patch("/api/auth/security", json={"password": PASSWORD})
+    c.post("/api/auth/logout")
+
+    c2 = app.test_client()
+    r = c2.post("/api/auth/login-start", json={"username": "pwuser"})
+    assert r.status_code == 200 and r.get_json()["method"] == "password"
+
+    assert c2.post("/api/auth/login-password",
+                    json={"username": "pwuser", "password": "wrong"}).status_code == 401
+    r2 = c2.post("/api/auth/login-password", json={"username": "pwuser", "password": PASSWORD})
+    assert r2.status_code == 200
+
+
+def test_phone_otp_login_flow(app, capsys):
+    c = app.test_client()
+    c.post("/api/auth/signup", json={"username": "phoneuser"})
+    c.patch("/api/auth/security", json={"phone": "5551234567"})
+
+    c2 = app.test_client()
+    r = c2.post("/api/auth/login-start", json={"username": "phoneuser"})
+    assert r.status_code == 200 and r.get_json()["method"] == "otp"
+    code = re.search(r"code for \+15551234567: (\d{6})", capsys.readouterr().out).group(1)
+
+    assert c2.post("/api/auth/verify-otp",
+                    json={"username": "phoneuser", "code": "000000"}).status_code == 401
+    r2 = c2.post("/api/auth/verify-otp", json={"username": "phoneuser", "code": code})
+    assert r2.status_code == 200
+
+
+def test_family_creation_restricted_to_app_admins(users):
+    admin, bob = users[ADMIN_USER], users[BOB_USER]
+    assert admin.post("/api/families", json={"name": "Allowed"}).status_code == 201
+    assert bob.post("/api/families", json={"name": "Not allowed"}).status_code == 403
 
 
 def test_full_flow_and_privacy(app, users):
     fam = setup_family(users)
-    admin, bob, cara = (users[ADMIN_PHONE], users[BOB_PHONE], users[CARA_PHONE])
+    admin, bob, cara = (users[ADMIN_USER], users[BOB_USER], users[CARA_USER])
 
     # households
     members = admin.get(f"/api/families/{fam['id']}/members").get_json()

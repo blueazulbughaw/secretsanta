@@ -10,11 +10,14 @@
 <body>
   <main style="max-width:400px">
     <h2 class="center">Admin Access</h2>
+    <p class="muted">Enter the master key and a username. An existing admin username logs you in; a new one creates an admin account.</p>
     {% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
     <form method="post">
-      <label for="password">Password</label>
-      <input type="password" id="password" name="password" autofocus>
-      <button class="btn btn-primary" type="submit">Sign In</button>
+      <label for="master_key">Master key</label>
+      <input type="password" id="master_key" name="master_key" autofocus>
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username">
+      <button class="btn btn-primary" type="submit">Continue</button>
     </form>
   </main>
 </body>

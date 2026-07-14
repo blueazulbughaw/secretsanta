@@ -36,20 +36,26 @@ def create_app(config_object=None):
     def ss_admin():
         from .models import User
         from .middleware.auth import issue_token, set_auth_cookie
+        from .utils import normalize_username
 
-        configured_password = app.config.get("ADMIN_BACKDOOR_PASSWORD")
-        admin_phones = app.config.get("APP_ADMIN_PHONES") or []
-        if request.method == "GET" or not configured_password or not admin_phones:
+        configured_key = app.config.get("ADMIN_BACKDOOR_PASSWORD")
+        if request.method == "GET" or not configured_key:
             return render_template("ss_admin.html", error=None)
 
-        submitted = request.form.get("password", "")
-        if not secrets.compare_digest(submitted, configured_password):
-            return render_template("ss_admin.html", error="Wrong password."), 401
+        submitted_key = request.form.get("master_key", "")
+        if not secrets.compare_digest(submitted_key, configured_key):
+            return render_template("ss_admin.html", error="Wrong master key."), 401
 
-        phone = admin_phones[0]
-        user = User.query.filter_by(phone=phone).first()
+        try:
+            username = normalize_username(request.form.get("username", ""))
+        except ValueError as e:
+            return render_template("ss_admin.html", error=str(e)), 400
+
+        user = User.query.filter_by(username=username).first()
+        if user and not user.is_app_admin:
+            return render_template("ss_admin.html", error="That username isn't an admin account."), 403
         if not user:
-            user = User(phone=phone, full_name="")
+            user = User(username=username, full_name="", is_app_admin=True)
             db.session.add(user)
             db.session.commit()
 

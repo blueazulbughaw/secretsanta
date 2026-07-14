@@ -1,14 +1,27 @@
 import re
 
-from flask import current_app
+from werkzeug.security import generate_password_hash, check_password_hash
 
 
-def is_app_admin_phone(phone: str) -> bool:
-    """Whether this phone number is allowed to create new families.
-    If APP_ADMIN_PHONES isn't set, family creation is unrestricted
-    (dev-friendly default, mirroring MAIL_SERVER/TWILIO_* conventions)."""
-    allowed = current_app.config.get("APP_ADMIN_PHONES", [])
-    return not allowed or phone in allowed
+def normalize_username(raw: str) -> str:
+    """Lowercases and strips a username; enforces a simple safe charset."""
+    username = (raw or "").strip().lower()
+    if not re.match(r"^[a-z0-9._-]{3,60}$", username):
+        raise ValueError(
+            "Username must be 3-60 characters: letters, numbers, dots, "
+            "dashes, or underscores only."
+        )
+    return username
+
+
+def hash_password(raw: str) -> str:
+    return generate_password_hash(raw)
+
+
+def verify_password(raw: str, password_hash: str) -> bool:
+    if not password_hash:
+        return False
+    return check_password_hash(password_hash, raw)
 
 
 def normalize_us_phone(raw: str) -> str:

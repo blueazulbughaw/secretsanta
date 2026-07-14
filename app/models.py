@@ -8,8 +8,11 @@ BigIntPK = db.BigInteger().with_variant(db.Integer, "sqlite")
 class User(db.Model):
     __tablename__ = "users"
     id = db.Column(BigIntPK, primary_key=True)
-    phone = db.Column(db.String(30), unique=True, nullable=False, index=True)
+    username = db.Column(db.String(60), unique=True, nullable=False, index=True)
+    phone = db.Column(db.String(30), unique=True, nullable=True, index=True)
     email = db.Column(db.String(255), unique=True, nullable=True, index=True)
+    password_hash = db.Column(db.String(255), nullable=True)
+    is_app_admin = db.Column(db.Boolean, nullable=False, default=False)
     full_name = db.Column(db.String(120), nullable=False, default="")
     display_name = db.Column(db.String(60))
     avatar_color = db.Column(db.String(7), nullable=False, default="#C0392B")
@@ -20,8 +23,11 @@ class User(db.Model):
     def to_dict(self):
         return {
             "id": self.id,
+            "username": self.username,
             "phone": self.phone,
             "email": self.email,
+            "has_password": self.password_hash is not None,
+            "is_app_admin": self.is_app_admin,
             "full_name": self.full_name,
             "display_name": self.display_name or self.full_name,
             "avatar_color": self.avatar_color,

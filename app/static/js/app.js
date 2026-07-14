@@ -63,6 +63,7 @@ async function boot() {
     ME = await api.get("/auth/me");
     $topbar.hidden = false;
     if (!ME.user.full_name) return pageName();
+    if (ME.needs_security_setup) return pageSecuritySetup(true);
     if (ME.families.length === 0) return pageNoFamily();
     FAMILY = ME.families[0];
     refreshBadge();
@@ -81,42 +82,45 @@ function pageLogin() {
       <h2>Welcome to Secret Santa</h2>
       <p class="muted">Family gift exchanges made simple.</p>
     </div>
-    <div class="steps">Step 1 of 2</div>
-    <label for="phone">Your phone number</label>
-    <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 123-4567">
-    <div class="check-row" style="align-items:flex-start;margin-top:1rem">
-      <input type="checkbox" id="smsConsent" style="margin-top:.3rem">
-      <label for="smsConsent" style="margin:0;font-size:.85rem;font-weight:400">
-        By checking this box, I agree to receive SMS messages from Genri Labs for account authentication,
-        including one-time passwords (OTP) used to verify my identity when signing in. Message frequency
-        varies based on sign-in activity. Message and data rates may apply. Reply STOP to opt out and
-        HELP for assistance. View our
-        <a href="/privacy_terms#privacy" target="_blank" rel="noopener">Privacy Policy</a>
-        and <a href="/privacy_terms#terms" target="_blank" rel="noopener">Terms of Service</a>.
-      </label>
-    </div>
+    <label for="username">Your username</label>
+    <input id="username" autocomplete="username" placeholder="e.g. lolanena">
     <div id="msg"></div>
-    <button class="btn btn-primary" id="sendBtn">Text Me a Sign-In Code</button>
+    <button class="btn btn-primary" id="continueBtn">Continue</button>
+    <button class="btn btn-quiet" id="signupBtn">I don't have an account yet</button>
   `, { back: false });
-  document.getElementById("sendBtn").onclick = async () => {
-    const phone = document.getElementById("phone").value.trim();
-    if (!document.getElementById("smsConsent").checked) {
-      document.getElementById("msg").innerHTML =
-        alertBox("Please check the box to agree to receive text messages before continuing.");
-      return;
-    }
+  document.getElementById("continueBtn").onclick = async () => {
+    const username = document.getElementById("username").value.trim();
     try {
-      await api.post("/auth/request-otp", { phone });
-      pageCode(phone);
+      const r = await api.post("/auth/login-start", { username });
+      if (r.method === "otp") pageCode(username);
+      else if (r.method === "password") pagePassword(username);
+    } catch (e) { showError(e); }
+  };
+  document.getElementById("signupBtn").onclick = () => pageSignup();
+}
+
+function pageSignup() {
+  render("", `
+    <h2 class="center">Create your username</h2>
+    <p class="muted center">Letters, numbers, dots, dashes, or underscores. You'll set up a password (and optionally a phone number) next.</p>
+    <label for="newUsername">Username</label>
+    <input id="newUsername" autocomplete="username" placeholder="e.g. lolanena">
+    <div id="msg"></div>
+    <button class="btn btn-primary" id="createBtn">Create Account</button>
+  `, { back: false });
+  document.getElementById("createBtn").onclick = async () => {
+    const username = document.getElementById("newUsername").value.trim();
+    try {
+      await api.post("/auth/signup", { username });
+      boot();
     } catch (e) { showError(e); }
   };
 }
 
-function pageCode(phone) {
+function pageCode(username) {
   render("", `
-    <div class="steps">Step 2 of 2</div>
     <h2 class="center">Check your phone</h2>
-    <p class="center">We sent a 6-digit code by text to<br><strong>${esc(phone)}</strong></p>
+    <p class="center">We sent a 6-digit code by text.</p>
     <label for="code">Type the code here</label>
     <input id="code" class="code-input" inputmode="numeric" maxlength="6" autocomplete="one-time-code">
     <div id="msg"></div>
@@ -125,13 +129,29 @@ function pageCode(phone) {
   `, { back: false });
   document.getElementById("verifyBtn").onclick = async () => {
     try {
-      await api.post("/auth/verify-otp", { phone, code: document.getElementById("code").value });
+      await api.post("/auth/verify-otp", { username, code: document.getElementById("code").value });
       location.hash = "/"; boot();
     } catch (e) { showError(e); }
   };
   document.getElementById("againBtn").onclick = async () => {
-    try { await api.post("/auth/request-otp", { phone });
+    try { await api.post("/auth/login-start", { username });
       document.getElementById("msg").innerHTML = alertBox("New code sent!", true);
+    } catch (e) { showError(e); }
+  };
+}
+
+function pagePassword(username) {
+  render("", `
+    <h2 class="center">Enter your password</h2>
+    <label for="password">Password</label>
+    <input id="password" type="password" autocomplete="current-password">
+    <div id="msg"></div>
+    <button class="btn btn-primary" id="loginBtn">Sign In</button>
+  `, { back: false });
+  document.getElementById("loginBtn").onclick = async () => {
+    try {
+      await api.post("/auth/login-password", { username, password: document.getElementById("password").value });
+      location.hash = "/"; boot();
     } catch (e) { showError(e); }
   };
 }
@@ -152,6 +172,66 @@ function pageName() {
     } catch (e) { showError(e); }
   };
 }
+
+function pageSecuritySetup(forced) {
+  render("Security", `
+    <h2>Set up your password</h2>
+    <p class="muted">You'll use this to sign in. At least 8 characters.</p>
+    <label for="newPassword">Password</label>
+    <input id="newPassword" type="password" autocomplete="new-password">
+    <div id="pwMsg"></div>
+    <button class="btn btn-primary" id="savePwBtn">Save Password</button>
+
+    <hr style="margin:2rem 0">
+    <h2>Add a phone number (optional)</h2>
+    <p class="muted">Get a text with a 6-digit code instead of typing your password.</p>
+    <label for="secPhone">Phone number</label>
+    <input id="secPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 123-4567">
+    <div class="check-row" style="align-items:flex-start;margin-top:1rem">
+      <input type="checkbox" id="smsConsent" style="margin-top:.3rem">
+      <label for="smsConsent" style="margin:0;font-size:.85rem;font-weight:400">
+        By checking this box, I agree to receive SMS messages from Genri Labs for account authentication,
+        including one-time passwords (OTP) used to verify my identity when signing in. Message frequency
+        varies based on sign-in activity. Message and data rates may apply. Reply STOP to opt out and
+        HELP for assistance. View our
+        <a href="/privacy_terms#privacy" target="_blank" rel="noopener">Privacy Policy</a>
+        and <a href="/privacy_terms#terms" target="_blank" rel="noopener">Terms of Service</a>.
+      </label>
+    </div>
+    <div id="phoneMsg"></div>
+    <button class="btn btn-secondary" id="savePhoneBtn">Save Phone Number</button>
+    ${!forced ? `<button class="btn btn-quiet" id="doneBtn">Done</button>` : ""}
+  `, { back: !forced });
+  document.getElementById("savePwBtn").onclick = async () => {
+    const password = document.getElementById("newPassword").value;
+    try {
+      await api.patch("/auth/security", { password });
+      document.getElementById("pwMsg").innerHTML = alertBox("Password saved!", true);
+      if (forced) boot();
+    } catch (e) {
+      const el = document.getElementById("pwMsg");
+      el.innerHTML = alertBox(e.message);
+    }
+  };
+  document.getElementById("savePhoneBtn").onclick = async () => {
+    if (!document.getElementById("smsConsent").checked) {
+      document.getElementById("phoneMsg").innerHTML =
+        alertBox("Please check the box to agree to receive text messages before continuing.");
+      return;
+    }
+    const phone = document.getElementById("secPhone").value.trim();
+    try {
+      await api.patch("/auth/security", { phone });
+      document.getElementById("phoneMsg").innerHTML = alertBox("Phone number saved!", true);
+    } catch (e) {
+      document.getElementById("phoneMsg").innerHTML = alertBox(e.message);
+    }
+  };
+  const doneBtn = document.getElementById("doneBtn");
+  if (doneBtn) doneBtn.onclick = () => { history.back(); };
+}
+
+route(/^\/security$/, () => pageSecuritySetup(false));
 
 function pageNoFamily() {
   render("Secret Santa", `
@@ -204,6 +284,9 @@ route(/^\/$/, async () => {
     cards += `<button class="card-btn" onclick="go('/admin')">
       <span class="emoji">⚙️</span><span>Manage Family<span class="sub">Members, households & events</span></span></button>`;
   }
+  cards += `
+    <button class="card-btn" onclick="go('/security')">
+      <span class="emoji">🔒</span><span>Security<span class="sub">Password & phone sign-in</span></span></button>`;
   cards += `<button class="btn btn-quiet" id="logoutBtn" style="margin-top:2rem">Sign Out</button>`;
   render(FAMILY.name, cards, { back: false });
   document.getElementById("logoutBtn").onclick = async () => { await api.post("/auth/logout"); location.reload(); };
