@@ -116,7 +116,7 @@ function pageRegisterStart() {
       <h2>Create Your Account</h2>
       <p class="muted">Pick a username to get started.</p>
     </div>
-    <label for="newUsername">Username</label>
+    <label for="newUsername">Create Username</label>
     <input id="newUsername" autocomplete="username">
     <div id="msg"></div>
     <button class="btn btn-primary" id="continueBtn">Continue</button>
@@ -141,7 +141,7 @@ function pageRegister(username) {
   render("", `
     <h2 class="center">Create your account</h2>
     <p class="muted center">Username: <strong>${esc(username)}</strong></p>
-    <label for="regPassword">Password</label>
+    <label for="regPassword">Create Password</label>
     <input id="regPassword" type="password" autocomplete="new-password">
     <div id="msg"></div>
     <button class="btn btn-primary" id="createBtn">Create Account</button>
