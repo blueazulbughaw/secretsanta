@@ -84,13 +84,25 @@ function pageLogin() {
     <div class="steps">Step 1 of 2</div>
     <label for="phone">Your phone number</label>
     <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 123-4567">
+    <div class="check-row" style="align-items:flex-start;margin-top:1rem">
+      <input type="checkbox" id="smsConsent" style="margin-top:.3rem">
+      <label for="smsConsent" style="margin:0;font-size:.85rem;font-weight:400">
+        I agree to receive a text message with my sign-in code to log in to Secret Santa.
+        Message frequency varies. Msg &amp; Data Rates May Apply.
+        <a href="/privacy_terms#privacy" target="_blank" rel="noopener">Privacy Policy</a> &amp;
+        <a href="/privacy_terms#terms" target="_blank" rel="noopener">Terms of Service</a>.
+      </label>
+    </div>
     <div id="msg"></div>
     <button class="btn btn-primary" id="sendBtn">Text Me a Sign-In Code</button>
-    <p class="muted center" style="font-size:.85rem">By continuing, you agree to receive a text with your sign-in code.
-      <a href="/privacy_terms" target="_blank" rel="noopener">Privacy Policy &amp; Terms</a></p>
   `, { back: false });
   document.getElementById("sendBtn").onclick = async () => {
     const phone = document.getElementById("phone").value.trim();
+    if (!document.getElementById("smsConsent").checked) {
+      document.getElementById("msg").innerHTML =
+        alertBox("Please check the box to agree to receive text messages before continuing.");
+      return;
+    }
     try {
       await api.post("/auth/request-otp", { phone });
       pageCode(phone);
