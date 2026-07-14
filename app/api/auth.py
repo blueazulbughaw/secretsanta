@@ -12,21 +12,6 @@ from ..utils import normalize_us_phone, normalize_username, hash_password, verif
 bp = Blueprint("auth", __name__)
 
 
-@bp.post("/auth/signup")
-def signup():
-    try:
-        username = normalize_username((request.json or {}).get("username", ""))
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    if User.query.filter_by(username=username).first():
-        return jsonify({"error": "That username is already taken."}), 409
-    user = User(username=username, full_name="")
-    db.session.add(user)
-    db.session.commit()
-    resp = make_response(jsonify({"ok": True, "user": user.to_dict()}))
-    return set_auth_cookie(resp, issue_token(user.id))
-
-
 @bp.post("/auth/login-start")
 def login_start():
     try:
@@ -35,7 +20,10 @@ def login_start():
         return jsonify({"error": str(e)}), 400
     user = User.query.filter_by(username=username).first()
     if not user:
-        return jsonify({"error": "No account with that username."}), 404
+        user = User(username=username, full_name="")
+        db.session.add(user)
+        db.session.commit()
+        return _finish_login(user)
 
     if user.phone:
         try:

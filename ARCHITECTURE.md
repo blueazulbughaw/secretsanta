@@ -74,34 +74,31 @@ Enforced with two decorators: `@require_auth` (valid JWT) and `@require_family_a
 ## 4. Authentication flow (username-first, SMS OTP or password)
 
 ```
-1. POST /api/auth/signup        { username }
-   → creates the account, auto-issues a JWT cookie
-   → user is routed to Security setup (password required, phone optional)
-
-2. POST /api/auth/login-start   { username }
-   → if the account has a phone on file: generate a 6-digit code,
+1. POST /api/auth/login-start   { username }
+   → unknown username: creates the account right here, issues a JWT
+     cookie immediately, user is routed to Security setup (password
+     required, phone optional) - no separate signup step
+   → existing account with a phone on file: generate a 6-digit code,
      store SHA-256(code + PEPPER), expire 10 min, text it via Twilio
      (rate limit: 3 requests / 15 min per phone) → { method: "otp" }
-   → else if it has a password set: → { method: "password" }
+   → existing account with a password set: → { method: "password" }
 
-3a. POST /api/auth/verify-otp   { username, code }
+2a. POST /api/auth/verify-otp   { username, code }
     → check hash, attempts < 5, not expired, not used → issue JWT cookie
-3b. POST /api/auth/login-password { username, password }
+2b. POST /api/auth/login-password { username, password }
     → check password hash → issue JWT cookie
 
-4. PATCH /api/auth/security     { password? , phone? }  (authenticated)
+3. PATCH /api/auth/security     { password? , phone? }  (authenticated)
    → set/change password (>= 8 chars) and/or phone (SMS consent required
      in the UI at the moment the phone is added)
 
-5. GET  /api/auth/me             → current user + families + can_create_family
-6. POST /api/auth/logout         → clear cookie
+4. GET  /api/auth/me             → current user + families + can_create_family
+5. POST /api/auth/logout         → clear cookie
 ```
 
-Hidden bypass: `GET/POST /ss-admin` (env var `ADMIN_BACKDOOR_PASSWORD`) takes a
-master key + username; an existing `is_app_admin` username logs in, an unknown
-one is created as a new admin. Not linked from the UI. Exists because Twilio's
-A2P 10DLC registration is an external dependency with no fixed timeline, and
-login can't be allowed to hard-fail while it's pending.
+Twilio's A2P 10DLC registration is an external dependency with no fixed
+timeline, so login can't hard-depend on SMS delivery - the password path
+above is what keeps accounts (including admins) usable while it's pending.
 
 Elderly-friendly detail: the text message says only "Your verification code is
 **482913**" in a short SMS. Each auth screen has one field and one big button.
@@ -110,7 +107,7 @@ Elderly-friendly detail: the text message says only "Your verification code is
 
 All JSON, prefixed `/api`. 🔒 = auth required, 👑 = family admin.
 
-**Auth** — `POST /auth/signup`, `POST /auth/login-start`, `POST /auth/verify-otp`, `POST /auth/login-password`, `GET /auth/me` 🔒, `PATCH /auth/me` 🔒, `PATCH /auth/security` 🔒, `POST /auth/logout` 🔒
+**Auth** — `POST /auth/login-start` (creates the account if the username is new), `POST /auth/verify-otp`, `POST /auth/login-password`, `GET /auth/me` 🔒, `PATCH /auth/me` 🔒, `PATCH /auth/security` 🔒, `POST /auth/logout` 🔒
 
 **Families**
 - `POST /families` 🔒 — create family (creator becomes admin)

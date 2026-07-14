@@ -84,9 +84,9 @@ function pageLogin() {
     </div>
     <label for="username">Your username</label>
     <input id="username" autocomplete="username" placeholder="e.g. lolanena">
+    <p class="muted" style="font-size:.85rem">New here? Just type a username and continue — we'll create your account.</p>
     <div id="msg"></div>
     <button class="btn btn-primary" id="continueBtn">Continue</button>
-    <button class="btn btn-quiet" id="signupBtn">I don't have an account yet</button>
   `, { back: false });
   document.getElementById("continueBtn").onclick = async () => {
     const username = document.getElementById("username").value.trim();
@@ -94,25 +94,7 @@ function pageLogin() {
       const r = await api.post("/auth/login-start", { username });
       if (r.method === "otp") pageCode(username);
       else if (r.method === "password") pagePassword(username);
-    } catch (e) { showError(e); }
-  };
-  document.getElementById("signupBtn").onclick = () => pageSignup();
-}
-
-function pageSignup() {
-  render("", `
-    <h2 class="center">Create your username</h2>
-    <p class="muted center">Letters, numbers, dots, dashes, or underscores. You'll set up a password (and optionally a phone number) next.</p>
-    <label for="newUsername">Username</label>
-    <input id="newUsername" autocomplete="username" placeholder="e.g. lolanena">
-    <div id="msg"></div>
-    <button class="btn btn-primary" id="createBtn">Create Account</button>
-  `, { back: false });
-  document.getElementById("createBtn").onclick = async () => {
-    const username = document.getElementById("newUsername").value.trim();
-    try {
-      await api.post("/auth/signup", { username });
-      boot();
+      else { location.hash = "/"; boot(); }
     } catch (e) { showError(e); }
   };
 }

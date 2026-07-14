@@ -36,11 +36,12 @@ def app():
 
 @pytest.fixture()
 def users(app):
-    """Signs up admin + two members (username + password), returns logged-in clients."""
+    """Creates admin + two members (username + password) via login-start's
+    implicit signup, returns logged-in clients."""
     clients = {}
     for username, name in [(ADMIN_USER, "Ana"), (BOB_USER, "Bob"), (CARA_USER, "Cara")]:
         c = app.test_client()
-        r = c.post("/api/auth/signup", json={"username": username})
+        r = c.post("/api/auth/login-start", json={"username": username})
         assert r.status_code == 200
         c.patch("/api/auth/security", json={"password": PASSWORD})
         c.patch("/api/auth/me", json={"full_name": name})
@@ -61,22 +62,19 @@ def setup_family(users):
     return fam
 
 
-def test_signup_requires_unique_username(app):
+def test_login_start_creates_account_for_new_username(app):
     c = app.test_client()
-    assert c.post("/api/auth/signup", json={"username": "taken"}).status_code == 200
-    c2 = app.test_client()
-    assert c2.post("/api/auth/signup", json={"username": "taken"}).status_code == 409
-
-
-def test_login_start_unknown_username(app):
-    c = app.test_client()
-    r = c.post("/api/auth/login-start", json={"username": "nobody"})
-    assert r.status_code == 404
+    r = c.post("/api/auth/login-start", json={"username": "brandnew"})
+    assert r.status_code == 200
+    assert r.get_json()["user"]["username"] == "brandnew"
+    # second call for the same username now logs in rather than re-creating
+    me = c.get("/api/auth/me").get_json()
+    assert me["user"]["username"] == "brandnew"
 
 
 def test_password_login_flow(app):
     c = app.test_client()
-    c.post("/api/auth/signup", json={"username": "pwuser"})
+    c.post("/api/auth/login-start", json={"username": "pwuser"})
     c.patch("/api/auth/security", json={"password": PASSWORD})
     c.post("/api/auth/logout")
 
@@ -92,7 +90,7 @@ def test_password_login_flow(app):
 
 def test_phone_otp_login_flow(app, capsys):
     c = app.test_client()
-    c.post("/api/auth/signup", json={"username": "phoneuser"})
+    c.post("/api/auth/login-start", json={"username": "phoneuser"})
     c.patch("/api/auth/security", json={"phone": "5551234567"})
 
     c2 = app.test_client()

@@ -2,11 +2,10 @@
 Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS PWA.
 - Follow ARCHITECTURE.md exactly (structure, endpoints, roles).
 - Schema of record is schema.sql; models live in app/models.py. Use Flask-Migrate for changes.
-- Auth: username -> JWT in httpOnly cookie. If the account has a phone on file, sign-in
-  sends an SMS OTP (Twilio); otherwise sign-in uses a password. Users set up a password
-  and/or phone from Security settings after their first login. A hidden password-only
-  route at /ss-admin (env var ADMIN_BACKDOOR_PASSWORD) logs in as/creates an is_app_admin
-  user, bypassing SMS entirely.
+- Auth: username -> JWT in httpOnly cookie. Typing a new username creates the account
+  (no separate signup step). If the account has a phone on file, sign-in sends an SMS
+  OTP (Twilio); otherwise sign-in uses a password. Users set up a password and/or phone
+  from Security settings after their first login.
 - Every endpoint must verify the user belongs to the resource's family (see middleware/auth.py helpers).
 - Wishlist privacy rule: owners NEVER see purchase status; givers do.
 - Assignment secrecy: admins see counts only, never who drew whom.

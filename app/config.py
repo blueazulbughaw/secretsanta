@@ -27,14 +27,6 @@ class Config:
     TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
     TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
 
-    APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:5000")
-
-    # Master key for the hidden /ss-admin route: username + this key logs in as
-    # (or creates) an admin account, bypassing SMS/password entirely. Whether a
-    # user can create new families is controlled by User.is_app_admin, not this
-    # key directly. Leave empty to disable the /ss-admin route entirely.
-    ADMIN_BACKDOOR_PASSWORD = os.getenv("ADMIN_BACKDOOR_PASSWORD", "")
-
     OTP_TTL_MINUTES = 10
     OTP_MAX_ATTEMPTS = 5
     OTP_REQUESTS_PER_WINDOW = 3       # per phone number
