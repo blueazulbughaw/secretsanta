@@ -10,12 +10,24 @@ const $badge = document.getElementById("bellBadge");
 let ME = null;          // { user, families }
 let FAMILY = null;      // active family {id, name, role}
 let PENDING_JOIN_CODE = null;
+let IS_REGISTER_ENTRY = false;
 
-(function capturePendingJoinCode() {
-  const m = location.hash.match(/^#\/join\/([A-Za-z0-9]+)$/);
-  if (m) {
-    PENDING_JOIN_CODE = m[1].toUpperCase();
-    history.replaceState(null, "", location.pathname + location.search);
+(function captureEntryIntent() {
+  // Support both hash-based (#/join/CODE, #/register) and plain-path
+  // (/join/CODE, /register) URLs, since people type or paste either form -
+  // the server serves the same SPA shell for any path either way.
+  const hashPath = location.hash.replace(/^#/, "");
+  const plainPath = location.pathname.replace(/\/+$/, "") || "/";
+
+  const hashJoin = hashPath.match(/^\/join\/([A-Za-z0-9]+)$/i);
+  const plainJoin = plainPath.match(/^\/join\/([A-Za-z0-9]+)$/i);
+  const joinMatch = hashJoin || plainJoin;
+  if (joinMatch) {
+    PENDING_JOIN_CODE = joinMatch[1].toUpperCase();
+    if (hashJoin) history.replaceState(null, "", location.pathname + location.search);
+  }
+  if (hashPath === "/register" || plainPath === "/register") {
+    IS_REGISTER_ENTRY = true;
   }
 })();
 
@@ -79,7 +91,7 @@ async function boot() {
     navigate();
   } catch (_) {
     $topbar.hidden = true;
-    if (location.hash === "#/register") pageRegisterStart();
+    if (IS_REGISTER_ENTRY) pageRegisterStart();
     else pageLogin();
   }
 }
