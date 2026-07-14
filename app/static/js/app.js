@@ -87,10 +87,11 @@ function pageLogin() {
     <div class="check-row" style="align-items:flex-start;margin-top:1rem">
       <input type="checkbox" id="smsConsent" style="margin-top:.3rem">
       <label for="smsConsent" style="margin:0;font-size:.85rem;font-weight:400">
-        By checking this box, I agree to receive SMS messages from Genri Labs regarding my Secret Santa account,
-        including one-time passwords (OTP) and account notifications. Message frequency varies.
-        Message and data rates may apply. Reply STOP to unsubscribe and HELP for assistance.
-        View our <a href="/privacy_terms#privacy" target="_blank" rel="noopener">Privacy Policy</a>
+        By checking this box, I agree to receive SMS messages from Genri Labs for account authentication,
+        including one-time passwords (OTP) used to verify my identity when signing in. Message frequency
+        varies based on sign-in activity. Message and data rates may apply. Reply STOP to opt out and
+        HELP for assistance. View our
+        <a href="/privacy_terms#privacy" target="_blank" rel="noopener">Privacy Policy</a>
         and <a href="/privacy_terms#terms" target="_blank" rel="noopener">Terms of Service</a>.
       </label>
     </div>

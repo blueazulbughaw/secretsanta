@@ -25,7 +25,7 @@ def send_otp_sms(to_phone_e164: str, code: str):
                 "printed to the app log, not texted.", to_phone_e164
             )
         return
-    body = f"Your Secret Santa sign-in code is {code}. It works for 10 minutes."
+    body = f"Genri Labs: Your verification code is {code}. This code expires in 10 minutes. Do not share this code with anyone."
     try:
         Client(sid, token).messages.create(to=to_phone_e164, from_=from_number, body=body)
     except Exception:
