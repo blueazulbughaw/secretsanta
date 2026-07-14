@@ -26,6 +26,11 @@ def send_otp_sms(to_phone_e164: str, code: str):
             )
         return
     body = f"Genri Labs: Your verification code is {code}. This code expires in 10 minutes. Do not share this code with anyone."
+    # Also logged even on the success path: carriers can silently block A2P-unregistered
+    # numbers (Twilio accepts the send, then delivery fails asynchronously), so this is
+    # the fallback way to retrieve a code while registration is pending. Remove once
+    # A2P 10DLC registration is approved and delivery is confirmed working end to end.
+    logger.warning("OTP code for %s: %s (message also queued via Twilio)", to_phone_e164, code)
     try:
         Client(sid, token).messages.create(to=to_phone_e164, from_=from_number, body=body)
     except Exception:
