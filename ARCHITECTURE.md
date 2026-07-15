@@ -179,7 +179,7 @@ and proof sketch.
 
 **Scale note:** matching is per-event, so n is family-sized (5–200). Backtracking is instant at that scale even with thousands of families on the platform, because families never interact in the matcher.
 
-## 7. Frontend structure (elderly-friendly)
+## 7. Frontend structure (desktop web app, responsive)
 
 Design tokens in `app.css`:
 
@@ -189,9 +189,9 @@ Design tokens in `app.css`:
   --red: #C0392B;          /* primary actions */
   --green: #2E7D4F;        /* success, "purchased" */
   --yellow: #F5C518;       /* highlights, announcements */
-  --touch-min: 64px;       /* every tappable target ≥ 64px tall */
-  --font-body: 20px;       /* base font 20px, headings 28–36px */
-  --radius: 16px;
+  --touch: 40px;           /* button/input height — desktop-web density, not oversized */
+  --radius: 8px;
+  font-size: 15px;         /* base font */
 }
 ```
 
@@ -202,7 +202,7 @@ Non-negotiable UX rules baked into every component:
 - WCAG AA contrast, focus outlines, `aria-live` for confirmations, works at 200% browser zoom.
 - Sign in with a username, then either a texted 6-digit code (if a phone is on file) or a password.
 
-Pages: Login (2 steps) → persistent left sidebar nav + content pane. The sidebar (My Person / My Wishlist / My Person's Wishlist / Messages / Announcements / Profile & Security / Sign Out) stays mounted across every page — clicking a link swaps only the content pane, not the whole screen — and collapses behind a hamburger into a slide-out overlay drawer below ~780px width. Admins additionally get "Manage Family", a WordPress-style expandable submenu (Members, Family Groups, Gift Exchanges, Post Announcement) leading to the admin content: members, households, events, participants checklist, rules form, big "Draw Names" button, all-wishlists view, post-announcement form. The sidebar itself intentionally uses a denser WordPress-admin scale (small text, tight padding) — the non-negotiable big-touch-target rules above still apply to all page *content* (forms, buttons, tables), just not to sidebar nav links.
+Pages: Login (2 steps) → persistent left sidebar nav + content pane. The sidebar stays mounted across every page — clicking a link swaps only the content pane, not the whole screen — and collapses behind a hamburger into a slide-out overlay drawer below ~780px width. First item is "My Dashboard" (also the landing page right after login), an expandable WordPress-style submenu grouping the member-facing pages: My Person, My Wishlist, My Person's Wishlist, Messages, Announcements. Admins additionally get "Manage Family", the same expandable-submenu pattern (Members, Family Groups, Gift Exchanges, Post Announcement) leading to the admin content: members, households, events, participants checklist, rules form, big "Draw Names" button, all-wishlists view, post-announcement form. "Profile & Security" and "Sign Out" sit at the top level below those two groups.
 
 ## 8. PWA
 

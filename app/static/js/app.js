@@ -52,11 +52,13 @@ function render(title, html, { back = true, wide = false } = {}) {
 }
 
 const NAV = [
-  { key: "my-person", label: "My Person", eventPath: "my-person" },
-  { key: "wishlist", label: "My Wishlist", eventPath: "wishlist" },
-  { key: "giftee", label: "My Person's Wishlist", eventPath: "giftee" },
-  { key: "messages", label: "Messages", eventPath: "messages" },
-  { key: "announcements", label: "Announcements", href: "/announcements" },
+  { key: "dashboard", label: "My Dashboard", href: "/", children: [
+    { key: "my-person", href: "my-person", label: "My Person", eventPath: "my-person" },
+    { key: "wishlist", href: "wishlist", label: "My Wishlist", eventPath: "wishlist" },
+    { key: "giftee", href: "giftee", label: "My Person's Wishlist", eventPath: "giftee" },
+    { key: "messages", href: "messages", label: "Messages", eventPath: "messages" },
+    { key: "announcements", href: "/announcements", label: "Announcements" },
+  ] },
   { key: "admin", label: "Manage Family", href: "/admin", adminOnly: true, children: [
     { key: "members", href: "/admin/members", label: "Members" },
     { key: "groups", href: "/admin/groups", label: "Family Groups" },
@@ -74,12 +76,17 @@ async function refreshCurrentEvent() {
 function navHref(item) {
   return item.eventPath ? (CURRENT_EVENT ? `/events/${CURRENT_EVENT.id}/${item.eventPath}` : null) : item.href;
 }
+function navChildHtml(item, activePath) {
+  const href = navHref(item);
+  if (!href) return `<span class="nav-link nav-child nav-disabled">${esc(item.label)}</span>`;
+  return `<a href="#${href}" class="nav-link nav-child ${activePath === href ? "active" : ""}">${esc(item.label)}</a>`;
+}
 function navItemHtml(item, activePath) {
   const href = navHref(item);
   if (item.children) {
-    const isActive = activePath === href || item.children.some(c => activePath === c.href);
-    const kids = item.children.map(c => `
-      <a href="#${c.href}" class="nav-link nav-child ${activePath === c.href ? "active" : ""}">${esc(c.label)}</a>`).join("");
+    const childHrefs = item.children.map(navHref);
+    const isActive = activePath === href || childHrefs.some(h => h && activePath === h);
+    const kids = item.children.map(c => navChildHtml(c, activePath)).join("");
     return `
       <div class="nav-group ${isActive ? "expanded" : ""}">
         <a href="#${href}" class="nav-link nav-parent ${isActive ? "active" : ""}">
@@ -405,7 +412,7 @@ route(/^\/$/, async () => {
       ? `<div class="card center"><p>No gift exchange is happening right now.</p>
            <button class="btn btn-primary" onclick="go('/admin/events')" style="margin-top:.75rem">Create a Gift Exchange</button></div>`
       : `<div class="card center"><p>No gift exchange is happening right now. Check back soon!</p></div>`;
-  render(FAMILY.name, `
+  render("My Dashboard", `
     <h2 class="center" style="margin-top:1rem">Welcome, ${esc(ME.user.full_name)}!</h2>
     ${status}
   `, { back: false });

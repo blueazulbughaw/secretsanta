@@ -9,8 +9,9 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
 - Every endpoint must verify the user belongs to the resource's family (see middleware/auth.py helpers).
 - Wishlist privacy rule: owners NEVER see purchase status; givers do.
 - Assignment secrecy: admins see counts only, never who drew whom.
-- UI: base font 20px, buttons >=64px tall, one primary action per screen,
-  plain language ("sign-in code" not "OTP"). White bg, #C0392B red,
-  #2E7D4F green, #F5C518 yellow accents.
+- UI: persistent left sidebar nav (hamburger drawer on mobile), desktop-web density
+  throughout (base font ~15px, buttons/inputs ~40px tall, 8px radius) — not oversized
+  touch targets. One primary action per screen, plain language ("sign-in code" not
+  "OTP"). White bg, #C0392B red, #2E7D4F green, #F5C518 yellow accents.
 - Run pytest before declaring any task done.
 - Deploy target: Namecheap cPanel Python app (passenger_wsgi.py entry).
