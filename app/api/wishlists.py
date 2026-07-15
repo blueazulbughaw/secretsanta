@@ -1,6 +1,8 @@
+import os
+import uuid
 from datetime import datetime
 
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, request, jsonify, g, current_app
 
 from ..extensions import db
 from ..models import Event, WishlistItem, Assignment, User, EventParticipant
@@ -9,10 +11,29 @@ from ..services.notification_service import notify
 
 bp = Blueprint("wishlists", __name__)
 
+ALLOWED_PHOTO_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif"}
+MAX_PHOTO_BYTES = 4 * 1024 * 1024  # 4MB
+
 
 def _my_giftee(event_id):
     a = Assignment.query.filter_by(event_id=event_id, giver_id=g.user.id).first()
     return a.receiver_id if a else None
+
+
+def _save_wishlist_photo(photo):
+    ext = photo.filename.rsplit(".", 1)[-1].lower() if "." in photo.filename else ""
+    if ext not in ALLOWED_PHOTO_EXTENSIONS:
+        raise ValueError("Photos must be a JPG, PNG, WEBP, or GIF file.")
+    photo.seek(0, os.SEEK_END)
+    size = photo.tell()
+    photo.seek(0)
+    if size > MAX_PHOTO_BYTES:
+        raise ValueError("Photos must be smaller than 4MB.")
+    upload_dir = os.path.join(current_app.static_folder, "uploads", "wishlist")
+    os.makedirs(upload_dir, exist_ok=True)
+    filename = f"{uuid.uuid4().hex}.{ext}"
+    photo.save(os.path.join(upload_dir, filename))
+    return f"uploads/wishlist/{filename}"
 
 
 @bp.get("/events/<int:event_id>/wishlists/mine")
@@ -40,16 +61,26 @@ def add_item(event_id):
     if count >= ev.wishlist_limit:
         return jsonify({"error": f"Your list is full ({ev.wishlist_limit} gifts). "
                                  "Remove one to add another."}), 400
-    data = request.json or {}
+    data = request.form if request.form else (request.get_json(silent=True) or {})
     name = (data.get("item_name") or "").strip()
     if not name:
         return jsonify({"error": "Please tell us what the gift is."}), 400
+
+    photo_path = None
+    photo = request.files.get("photo")
+    if photo and photo.filename:
+        try:
+            photo_path = _save_wishlist_photo(photo)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+
     item = WishlistItem(
         event_id=ev.id, user_id=g.user.id, item_name=name[:200],
         description=(data.get("description") or "").strip() or None,
         link_url=(data.get("link_url") or "").strip()[:500] or None,
         price_estimate=data.get("price_estimate"),
         priority=int(data.get("priority") or 3),
+        photo_path=photo_path,
     )
     db.session.add(item)
     db.session.commit()

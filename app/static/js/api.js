@@ -21,4 +21,15 @@ const api = {
   put:   (p, b) => api.call("PUT", p, b || {}),
   patch: (p, b) => api.call("PATCH", p, b || {}),
   del:   (p)    => api.call("DELETE", p),
+  async postForm(path, formData) {
+    const res = await fetch("/api" + path, { method: "POST", credentials: "same-origin", body: formData });
+    let data = {};
+    try { data = await res.json(); } catch (_) {}
+    if (!res.ok) {
+      const err = new Error(data.error || "Something went wrong. Please try again.");
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  },
 };

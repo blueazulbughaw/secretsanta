@@ -158,6 +158,7 @@ class WishlistItem(db.Model):
     link_url = db.Column(db.String(500))
     price_estimate = db.Column(db.Numeric(10, 2))
     priority = db.Column(db.SmallInteger, nullable=False, default=3)
+    photo_path = db.Column(db.String(255))
     is_purchased = db.Column(db.Boolean, nullable=False, default=False)
     purchased_by = db.Column(db.BigInteger, db.ForeignKey("users.id", ondelete="SET NULL"))
     purchased_at = db.Column(db.DateTime)
@@ -170,6 +171,7 @@ class WishlistItem(db.Model):
             "link_url": self.link_url,
             "price_estimate": float(self.price_estimate) if self.price_estimate else None,
             "priority": self.priority,
+            "photo_url": f"/static/{self.photo_path}" if self.photo_path else None,
         }
         if include_purchase:  # never for the wishlist owner
             d["is_purchased"] = self.is_purchased

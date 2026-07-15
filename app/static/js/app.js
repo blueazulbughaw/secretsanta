@@ -52,13 +52,9 @@ function render(title, html, { back = true, wide = false } = {}) {
 }
 
 const NAV = [
-  { key: "dashboard", label: "My Dashboard", href: "/", children: [
-    { key: "my-person", href: "my-person", label: "My Person", eventPath: "my-person" },
-    { key: "wishlist", href: "wishlist", label: "My Wishlist", eventPath: "wishlist" },
-    { key: "giftee", href: "giftee", label: "My Person's Wishlist", eventPath: "giftee" },
-    { key: "messages", href: "messages", label: "Messages", eventPath: "messages" },
-    { key: "announcements", href: "/announcements", label: "Announcements" },
-  ] },
+  { key: "dashboard", label: "My Dashboard", href: "/" },
+  { key: "wishlist", label: "My Wishlist", eventPath: "wishlist" },
+  { key: "messages", label: "Messages", eventPath: "messages" },
   { key: "admin", label: "Manage Family", href: "/admin", adminOnly: true, children: [
     { key: "members", href: "/admin/members", label: "Members" },
     { key: "groups", href: "/admin/groups", label: "Family Groups" },
@@ -126,6 +122,33 @@ function showError(e) {
 }
 function go(hash) { location.hash = hash; }
 
+function wishItemRow(item, { showBuy = false, showDelete = false } = {}) {
+  const thumb = item.photo_url
+    ? `<img src="${esc(item.photo_url)}" alt="" class="wish-thumb">`
+    : `<div class="wish-thumb wish-thumb-empty">🎁</div>`;
+  const meta = [
+    item.description ? esc(item.description) : "",
+    item.link_url ? `<a href="${esc(item.link_url)}" target="_blank" rel="noopener">See it online</a>` : "",
+  ].filter(Boolean).join(" · ");
+  let action = "";
+  if (showBuy) {
+    action = `<button class="btn ${item.is_purchased ? "btn-quiet" : "btn-green"}" style="width:auto" data-buy="${item.id}">${item.is_purchased ? "Undo" : "I Bought This"}</button>`;
+  } else if (showDelete) {
+    action = `<button class="icon-btn" aria-label="Remove ${esc(item.item_name)}" data-del="${item.id}">🗑</button>`;
+  }
+  return `
+    <div class="wish-row ${item.is_purchased ? "bought" : ""}">
+      ${thumb}
+      <div class="wish-info">
+        <strong>${esc(item.item_name)}</strong>
+        <span class="wish-priority">P${item.priority}</span>
+        ${meta ? `<div class="muted wish-meta">${meta}</div>` : ""}
+        ${item.is_purchased ? `<span class="tag-bought">✓ Bought</span>` : ""}
+      </div>
+      ${action}
+    </div>`;
+}
+
 async function refreshBadge() {
   try {
     const n = await api.get("/notifications");
@@ -190,6 +213,11 @@ function pageLogin() {
     <input id="password" type="password" autocomplete="current-password">
     <div id="msg"></div>
     <button class="btn btn-primary" id="loginBtn">Sign In</button>
+    <p class="muted center" style="font-size:.78rem;margin-top:2rem">
+      By continuing you agree to our
+      <a href="/privacy_terms#terms" target="_blank" rel="noopener">Terms of Service</a>
+      and <a href="/privacy_terms#privacy" target="_blank" rel="noopener">Privacy Policy</a>.
+    </p>
   `, { back: false });
   document.getElementById("loginBtn").onclick = async () => {
     const username = document.getElementById("username").value.trim();
@@ -402,28 +430,66 @@ function pageNoFamily() {
 
 // ---------- main pages ----------
 route(/^\/$/, async () => {
-  const status = CURRENT_EVENT
-    ? `<div class="card center">
-         <p class="muted">This year's exchange</p>
-         <h2 style="margin:.25rem 0">${esc(CURRENT_EVENT.name)}</h2>
-         <p class="muted">${esc(CURRENT_EVENT.event_date)}</p>
-       </div>`
-    : FAMILY.role === "admin"
-      ? `<div class="card center"><p>No gift exchange is happening right now.</p>
-           <button class="btn btn-primary" onclick="go('/admin/events')" style="margin-top:.75rem">Create a Gift Exchange</button></div>`
-      : `<div class="card center"><p>No gift exchange is happening right now. Check back soon!</p></div>`;
-  render("My Dashboard", `
-    <h2 class="center" style="margin-top:1rem">Welcome, ${esc(ME.user.full_name)}!</h2>
-    ${status}
-  `, { back: false });
+  const sections = [`<h2 style="margin-top:0">Welcome, ${esc(ME.user.full_name)}!</h2>`];
+
+  if (!CURRENT_EVENT) {
+    sections.push(`
+      <div class="dash-section">
+        <p class="muted">No gift exchange is happening right now.${FAMILY.role === "admin" ? "" : " Check back soon!"}</p>
+        ${FAMILY.role === "admin" ? `<button class="btn btn-primary" style="width:auto" onclick="go('/admin/events')">Create a Gift Exchange</button>` : ""}
+      </div>`);
+  } else {
+    const d = await api.get(`/events/${CURRENT_EVENT.id}/assignments/mine`);
+    if (!d.assigned) {
+      sections.push(`
+        <div class="dash-section">
+          <h2>My Giftee</h2>
+          <p class="muted">${esc(d.message)}</p>
+        </div>`);
+    } else {
+      let giftItems = [];
+      try {
+        const gd = await api.get(`/events/${CURRENT_EVENT.id}/wishlists/giftee`);
+        giftItems = gd.items;
+      } catch (e) { /* names just drawn but not yet queryable — show empty state below */ }
+      const budget = d.budget_amount
+        ? `<p class="muted">Gift budget: <strong>${esc(d.budget_currency)} ${d.budget_amount}</strong></p>` : "";
+      const itemsHtml = giftItems.length
+        ? giftItems.map(i => wishItemRow(i, { showBuy: true })).join("")
+        : `<p class="muted">They haven't added any gift ideas yet. Send them a friendly nudge!</p>`;
+      sections.push(`
+        <div class="dash-section">
+          <h2>My Giftee: ${esc(d.giftee_display_name)}</h2>
+          ${budget}
+          ${itemsHtml}
+          <button class="btn btn-secondary" style="width:auto;margin-top:.5rem" onclick="go('/events/${CURRENT_EVENT.id}/messages')">Send a Message</button>
+        </div>`);
+    }
+  }
+
+  const anns = await api.get(`/families/${FAMILY.id}/announcements`);
+  const annHtml = anns.length
+    ? anns.map(a => `
+        <div class="ann-row">
+          <strong>${a.is_pinned ? "📌 " : ""}${esc(a.title)}</strong>
+          <p>${esc(a.body)}</p>
+          <p class="muted">${esc(a.author)} • ${new Date(a.at).toLocaleDateString()}</p>
+        </div>`).join("")
+    : `<p class="muted">No announcements yet.</p>`;
+  sections.push(`<div class="dash-section"><h2>Announcements</h2>${annHtml}</div>`);
+
+  render("My Dashboard", sections.join(""), { back: false });
+  $app.querySelectorAll("[data-buy]").forEach(b => b.onclick = async () => {
+    await api.post(`/wishlists/${b.dataset.buy}/purchase`); navigate();
+  });
 });
 
 route(/^\/events\/(\d+)\/my-person$/, async (id) => {
   const d = await api.get(`/events/${id}/assignments/mine`);
-  if (!d.assigned) return render("My Person", `<div class="card center"><p>${esc(d.message)}</p></div>`);
+  if (!d.assigned) return render("My Giftee", `<div class="card center"><p>${esc(d.message)}</p></div>`);
   const budget = d.budget_amount
     ? `<p class="center muted">Gift budget: <strong>${esc(d.budget_currency)} ${d.budget_amount}</strong></p>` : "";
-  render("My Person", `
+  render("My Giftee", `
     <p class="center" style="margin-top:2rem">You are giving a gift to…</p>
     <div class="reveal-name">🎁 ${esc(d.giftee_display_name)}</div>
     ${budget}
@@ -435,17 +501,13 @@ route(/^\/events\/(\d+)\/my-person$/, async (id) => {
 
 route(/^\/events\/(\d+)\/wishlist$/, async (id) => {
   const d = await api.get(`/events/${id}/wishlists/mine`);
-  const items = d.items.map(i => `
-    <div class="card wish">
-      <span class="name"><strong>${esc(i.item_name)}</strong>
-        ${i.description ? `<br><span class="muted">${esc(i.description)}</span>` : ""}
-        ${i.link_url ? `<br><a href="${esc(i.link_url)}" target="_blank" rel="noopener">See it online</a>` : ""}
-      </span>
-      <button class="icon-btn" aria-label="Remove ${esc(i.item_name)}" data-del="${i.id}">🗑</button>
-    </div>`).join("") || `<div class="card center"><p>Your list is empty. Add your first gift idea!</p></div>`;
+  const priorityOptions = Array.from({ length: d.limit }, (_, n) => n + 1)
+    .map(n => `<option value="${n}" ${n === Math.min(3, d.limit) ? "selected" : ""}>${n}</option>`).join("");
+  const items = d.items.length
+    ? d.items.map(i => wishItemRow(i, { showDelete: true })).join("")
+    : `<p class="muted">Your list is empty. Add your first gift idea!</p>`;
   render("My Wishlist", `
-    <p class="muted center">${d.items.length} of ${d.limit} gifts</p>
-    ${items}
+    <p class="muted">${d.items.length} of ${d.limit} gifts</p>
     <h2>Add a gift idea</h2>
     <label>What would you love?</label>
     <input id="iname" placeholder="e.g. Warm slippers, size 7">
@@ -453,16 +515,25 @@ route(/^\/events\/(\d+)\/wishlist$/, async (id) => {
     <input id="idesc" placeholder="e.g. Favorite color is blue">
     <label>Link to it online <span class="muted">(optional)</span></label>
     <input id="ilink" type="url" placeholder="https://…">
+    <label>Priority</label>
+    <select id="ipriority">${priorityOptions}</select>
+    <label>Photo <span class="muted">(optional)</span></label>
+    <input id="iphoto" type="file" accept="image/*">
     <div id="msg"></div>
     <button class="btn btn-primary" id="addBtn">Add to My List</button>
+    <h2 style="margin-top:1.5rem">Your gift ideas</h2>
+    ${items}
   `);
   document.getElementById("addBtn").onclick = async () => {
     try {
-      await api.post(`/events/${id}/wishlists`, {
-        item_name: document.getElementById("iname").value,
-        description: document.getElementById("idesc").value,
-        link_url: document.getElementById("ilink").value,
-      });
+      const fd = new FormData();
+      fd.append("item_name", document.getElementById("iname").value);
+      fd.append("description", document.getElementById("idesc").value);
+      fd.append("link_url", document.getElementById("ilink").value);
+      fd.append("priority", document.getElementById("ipriority").value);
+      const photo = document.getElementById("iphoto").files[0];
+      if (photo) fd.append("photo", photo);
+      await api.postForm(`/events/${id}/wishlists`, fd);
       navigate();
     } catch (e) { showError(e); }
   };
@@ -475,18 +546,11 @@ route(/^\/events\/(\d+)\/giftee$/, async (id) => {
   let d;
   try { d = await api.get(`/events/${id}/wishlists/giftee`); }
   catch (e) { return render("Their Wishlist", alertBox(e.message)); }
-  const items = d.items.map(i => `
-    <div class="card wish ${i.is_purchased ? "bought" : ""}">
-      <span class="name"><strong>${esc(i.item_name)}</strong>
-        ${i.description ? `<br><span class="muted">${esc(i.description)}</span>` : ""}
-        ${i.link_url ? `<br><a href="${esc(i.link_url)}" target="_blank" rel="noopener">See it online</a>` : ""}
-        ${i.is_purchased ? `<br><span class="tag-bought">✓ Bought</span>` : ""}
-      </span>
-      <button class="btn ${i.is_purchased ? "btn-quiet" : "btn-green"}" style="width:auto;min-height:48px"
-        data-buy="${i.id}">${i.is_purchased ? "Undo" : "I Bought This"}</button>
-    </div>`).join("") || `<div class="card center"><p>They haven't added any gift ideas yet. Send them a friendly nudge!</p></div>`;
+  const items = d.items.length
+    ? d.items.map(i => wishItemRow(i, { showBuy: true })).join("")
+    : `<p class="muted">They haven't added any gift ideas yet. Send them a friendly nudge!</p>`;
   render("Their Wishlist", items + `
-    <button class="btn btn-secondary" onclick="go('/events/${id}/messages')">Send a Secret Message</button>`);
+    <button class="btn btn-secondary" style="width:auto;margin-top:.5rem" onclick="go('/events/${id}/messages')">Send a Secret Message</button>`);
   $app.querySelectorAll("[data-buy]").forEach(b => b.onclick = async () => {
     await api.post(`/wishlists/${b.dataset.buy}/purchase`); navigate();
   });

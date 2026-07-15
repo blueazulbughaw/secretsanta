@@ -43,6 +43,11 @@ header#topbar {
 main#app { flex: 1 1 auto; min-width: 0; padding: 1.5rem 2rem; max-width: 760px; margin: 0 auto; }
 main#app.wide { max-width: 1320px; }
 
+/* My Dashboard — flat sections, no card boxes */
+.dash-section { padding: 1rem 0; border-bottom: 1px solid var(--line); }
+.dash-section:last-child { border-bottom: none; }
+.dash-section h2 { margin: 0 0 .5rem; }
+
 #menuBtn { display: none; }
 #sidebarOverlay { display: none; }
 
@@ -192,10 +197,24 @@ input:focus, textarea:focus, select:focus {
   width: 18px; height: 18px; min-height: 0; accent-color: var(--green);
 }
 
-/* Wishlist items */
-.wish { display: flex; align-items: center; gap: .6rem; }
-.wish .name { flex: 1; }
-.wish.bought .name { text-decoration: line-through; color: var(--muted); }
+/* Wishlist items — dense row, not a bordered card */
+.wish-row {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .5rem 0; border-bottom: 1px solid var(--line);
+}
+.wish-row:last-child { border-bottom: none; }
+.wish-thumb {
+  width: 36px; height: 36px; border-radius: 6px; object-fit: cover;
+  flex: 0 0 auto; background: #F4F4F4;
+}
+.wish-thumb-empty { display: flex; align-items: center; justify-content: center; font-size: 1rem; }
+.wish-info { flex: 1; min-width: 0; }
+.wish-priority {
+  display: inline-block; margin-left: .4rem; color: var(--muted);
+  font-size: .72rem; font-weight: 600; vertical-align: middle;
+}
+.wish-meta { font-size: .82rem; }
+.wish-row.bought .wish-info strong { text-decoration: line-through; color: var(--muted); }
 .tag-bought { background: var(--green); color:#fff; border-radius: 999px;
   padding: .15rem .55rem; font-size: .72rem; font-weight: 700; }
 
@@ -207,6 +226,9 @@ input:focus, textarea:focus, select:focus {
 
 /* Announcements */
 .ann { border-left: 4px solid var(--yellow); }
+.ann-row { padding: .6rem 0; border-bottom: 1px solid var(--line); }
+.ann-row:last-child { border-bottom: none; }
+.ann-row p { margin: .25rem 0; }
 
 /* Alerts */
 .alert { border-radius: var(--radius); padding: .7rem .9rem; margin: .6rem 0;

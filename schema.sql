@@ -174,6 +174,7 @@ CREATE TABLE wishlists (
   link_url        VARCHAR(500) NULL,
   price_estimate  DECIMAL(10,2) NULL,
   priority        TINYINT UNSIGNED NOT NULL DEFAULT 3,  -- 1 = most wanted
+  photo_path      VARCHAR(255) NULL,           -- relative path under app/static/
   is_purchased    TINYINT(1) NOT NULL DEFAULT 0,
   purchased_by    BIGINT UNSIGNED NULL,        -- never exposed to owner
   purchased_at    DATETIME NULL,
