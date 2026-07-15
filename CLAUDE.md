@@ -7,9 +7,12 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   OTP (Twilio); otherwise sign-in uses a password. Users set up a password and/or phone
   from Security settings after their first login.
 - Every endpoint must verify the user belongs to the resource's family (see middleware/auth.py helpers).
-- Wishlist privacy rule: owners NEVER see purchase status. Everyone else in the family
-  can — not just the assigned Secret Santa — via My Clan (`/events/:id/wishlists/clan`),
-  so the whole clan can coordinate gifts beyond the one drawn assignment.
+- Wishlist privacy rule: owners NEVER see purchase status (who/when). Everyone else in
+  the family can, and can toggle it — not just the assigned Secret Santa — via My Clan
+  (`/events/:id/wishlists/clan`) and the admin all-wishlists view, so the whole clan can
+  coordinate gifts beyond the one drawn assignment. Once purchased, an item is locked:
+  the owner can no longer edit or delete it (they just lose the delete control — the
+  `locked` flag on `WishlistItem.to_dict()` is the only signal that ever reaches them).
 - Assignment secrecy: admins see counts only, never who drew whom.
 - UI: persistent left sidebar nav (hamburger drawer on mobile), desktop-web density
   throughout (base font ~17px, buttons/inputs ~44px tall, 8px radius) — not oversized

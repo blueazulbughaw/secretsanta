@@ -173,6 +173,9 @@ class WishlistItem(db.Model):
             "price_estimate": float(self.price_estimate) if self.price_estimate else None,
             "priority": self.priority,
             "photo_url": f"/static/{self.photo_path}" if self.photo_path else None,
+            # Owners never see is_purchased/who/when, but do need to know an item
+            # is no longer editable once someone's bought it.
+            "locked": self.is_purchased,
         }
         if include_purchase:  # never for the wishlist owner
             d["is_purchased"] = self.is_purchased

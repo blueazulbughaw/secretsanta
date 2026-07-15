@@ -138,9 +138,11 @@ function wishItemRow(item, { showBuy = false, showDelete = false } = {}) {
   ].filter(Boolean).join(" · ");
   let action = "";
   if (showBuy) {
-    action = `<button class="btn ${item.is_purchased ? "btn-quiet" : "btn-green"}" style="width:auto" data-buy="${item.id}">${item.is_purchased ? "Undo" : "I Bought This"}</button>`;
+    action = `<button class="btn ${item.is_purchased ? "btn-quiet" : "btn-green"}" style="width:auto" data-buy="${item.id}">${item.is_purchased ? "Unbought" : "I Bought This"}</button>`;
   } else if (showDelete) {
-    action = `<button class="icon-btn" aria-label="Remove ${esc(item.item_name)}" data-del="${item.id}">🗑</button>`;
+    action = item.locked
+      ? `<span class="muted wish-locked" title="This gift can no longer be changed">🔒</span>`
+      : `<button class="icon-btn" aria-label="Remove ${esc(item.item_name)}" data-del="${item.id}">🗑</button>`;
   }
   return `
     <div class="wish-row ${item.is_purchased ? "bought" : ""}">
@@ -595,6 +597,7 @@ route(/^\/events\/(\d+)\/giftee$/, async (id) => {
 
 route(/^\/events\/(\d+)\/clan$/, async (id) => {
   const list = await api.get(`/events/${id}/wishlists/clan`);
+  list.sort((a, b) => a.user.display_name.localeCompare(b.user.display_name));
   const sections = list.map(entry => {
     const items = entry.items.length
       ? entry.items.map(i => wishItemRow(i, { showBuy: i.is_purchased !== undefined })).join("")
@@ -1025,14 +1028,17 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
 
 route(/^\/admin\/events\/(\d+)\/wishlists$/, async (id) => {
   const all = await api.get(`/events/${id}/wishlists`);
-  const list = all.map(w => `
-    <div class="card">
-      <strong>${esc(w.user.display_name)}</strong>
-      ${w.items.length
-        ? "<ul>" + w.items.map(i => `<li>${esc(i.item_name)}</li>`).join("") + "</ul>"
-        : `<p class="muted">No gift ideas yet.</p>`}
-    </div>`).join("");
+  all.sort((a, b) => a.user.display_name.localeCompare(b.user.display_name));
+  const list = all.map(w => {
+    const items = w.items.length
+      ? w.items.map(i => wishItemRow(i, { showBuy: i.is_purchased !== undefined })).join("")
+      : `<p class="muted">No gift ideas yet.</p>`;
+    return `<div class="dash-section"><h2>${esc(w.user.display_name)}</h2>${items}</div>`;
+  }).join("");
   render("All Wishlists", list, { back: true, wide: true });
+  $app.querySelectorAll("[data-buy]").forEach(b => b.onclick = async () => {
+    await api.post(`/wishlists/${b.dataset.buy}/purchase`); navigate();
+  });
 });
 
 route(/^\/admin\/announce$/, async () => {

@@ -99,6 +99,8 @@ def edit_item(item_id):
     item = WishlistItem.query.get_or_404(item_id)
     if item.user_id != g.user.id:
         return jsonify({"error": "You can only edit your own list."}), 403
+    if item.is_purchased:
+        return jsonify({"error": "This gift has already been claimed and can't be changed anymore."}), 403
     data = request.json or {}
     if data.get("item_name"):
         item.item_name = data["item_name"].strip()[:200]
@@ -119,6 +121,8 @@ def delete_item(item_id):
     item = WishlistItem.query.get_or_404(item_id)
     if item.user_id != g.user.id:
         return jsonify({"error": "You can only edit your own list."}), 403
+    if item.is_purchased:
+        return jsonify({"error": "This gift has already been claimed and can't be removed anymore."}), 403
     db.session.delete(item)
     db.session.commit()
     return jsonify({"ok": True})
@@ -181,7 +185,9 @@ def clan_wishlists(event_id):
 @bp.get("/events/<int:event_id>/wishlists")
 @require_auth
 def all_wishlists(event_id):
-    """Admin: every participant's wishlist (still no purchase info — keeps surprises)."""
+    """Admin: every participant's wishlist. Purchase status visible the same
+    way as My Clan (everyone except the item's own owner) so admins can also
+    buy/coordinate gifts from here, not just view the lists."""
     ev = Event.query.get_or_404(event_id)
     _, err = require_family_admin(ev.family_id)
     if err:
@@ -192,5 +198,5 @@ def all_wishlists(event_id):
         items = (WishlistItem.query.filter_by(event_id=ev.id, user_id=p.user_id)
                  .order_by(WishlistItem.priority).all())
         out.append({"user": p.user.to_dict(),
-                    "items": [i.to_dict(include_purchase=False) for i in items]})
+                    "items": [i.to_dict(include_purchase=(p.user_id != g.user.id)) for i in items]})
     return jsonify(out)

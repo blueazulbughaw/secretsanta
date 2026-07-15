@@ -134,13 +134,13 @@ All JSON, prefixed `/api`. 🔒 = auth required, 👑 = family admin.
 - `DELETE /events/:id/assignments` 👑 — only while status ≠ completed; re-roll
 
 **Wishlists**
-- `GET /events/:id/wishlists/mine` 🔒
+- `GET /events/:id/wishlists/mine` 🔒 — never includes `is_purchased`; each item does carry `locked` (true once purchased) so the owner's UI can hide the delete control without exposing who/when
 - `POST /events/:id/wishlists` 🔒 — enforces `wishlist_limit`; JSON or multipart (optional `photo`)
-- `PATCH|DELETE /wishlists/:itemId` 🔒 — owner only
+- `PATCH|DELETE /wishlists/:itemId` 🔒 — owner only, and rejected once the item is locked (purchased)
 - `GET /events/:id/wishlists/giftee` 🔒 — giver's view (purchase status visible)
-- `GET /events/:id/wishlists/clan` 🔒 — every participant's wishlist for the whole family (My Clan); purchase status visible for everyone except the item's own owner
+- `GET /events/:id/wishlists/clan` 🔒 — every participant's wishlist for the whole family (My Clan), sorted alphabetically by name; purchase status visible for everyone except the item's own owner
 - `POST /wishlists/:itemId/purchase` 🔒 — any family member except the owner can mark/unmark purchased
-- `GET /events/:id/wishlists` 👑 — all wishlists (admin view, no purchase info)
+- `GET /events/:id/wishlists` 👑 — all wishlists (admin view), same per-viewer purchase visibility as My Clan, sorted alphabetically
 
 **Messages**
 - `GET /events/:id/messages` 🔒 — my two threads (with my giver, with my giftee)
