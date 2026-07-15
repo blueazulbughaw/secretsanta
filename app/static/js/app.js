@@ -9,6 +9,7 @@ const $badge = document.getElementById("bellBadge");
 const $sidebar = document.getElementById("sidebar");
 const $sidebarOverlay = document.getElementById("sidebarOverlay");
 const $menuBtn = document.getElementById("menuBtn");
+const $shell = document.getElementById("shell");
 
 let ME = null;          // { user, families }
 let FAMILY = null;      // active family {id, name, role}
@@ -193,11 +194,13 @@ async function boot() {
     await refreshCurrentEvent();
     $sidebar.hidden = false;
     $menuBtn.hidden = false;
+    $shell.classList.add("authed");
     refreshBadge();
     navigate();
   } catch (_) {
     $topbar.hidden = true;
     $sidebar.hidden = true;
+    $shell.classList.remove("authed");
     $menuBtn.hidden = true;
     if (IS_REGISTER_ENTRY) pageRegisterStart();
     else pageLogin();

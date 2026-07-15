@@ -9,17 +9,21 @@
   --yellow: #F5C518;
   --line: #E0E0E0;
   --radius: 8px;
-  --touch: 40px;
+  --touch: 44px;
 }
 
 * { box-sizing: border-box; }
-html { font-size: 15px; }
+html { font-size: 17px; }
 body {
   margin: 0; background: var(--bg); color: var(--ink);
   font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   line-height: 1.5;
 }
 [hidden] { display: none !important; }
+
+/* Plain, non-SPA pages (e.g. privacy_terms.html) that use a bare <main> */
+body > main:not(#app) { max-width: 760px; margin: 0 auto; padding: 1.5rem 2rem; }
+@media (max-width: 780px) { body > main:not(#app) { padding: 1.25rem 1.5rem; } }
 
 header#topbar {
   display: flex; align-items: center; gap: .5rem;
@@ -38,10 +42,16 @@ header#topbar {
   font-size: .62rem; padding: 1px 5px; font-weight: 700;
 }
 
-/* Persistent left nav (WordPress-admin density) + content pane */
+/* Persistent left nav (WordPress-admin density) + content pane.
+   Signed-in app pages fill the space beside the sidebar (like a real web
+   app's content area) instead of floating as a narrow centered column -
+   individual form controls are capped to a comfortable width instead. Pages
+   with no sidebar yet (sign in, registration, onboarding) stay centered,
+   like a normal login screen. */
 #shell { display: flex; align-items: flex-start; }
-main#app { flex: 1 1 auto; min-width: 0; padding: 1.5rem 2rem; max-width: 760px; margin: 0 auto; }
-main#app.wide { max-width: 1320px; }
+main#app { flex: 1 1 auto; min-width: 0; padding: 1.5rem 2rem; max-width: 640px; margin: 0 auto; }
+#shell.authed main#app { max-width: 1100px; margin: 0; }
+#shell.authed main#app.wide { max-width: 1320px; }
 
 /* My Dashboard — flat sections, no card boxes */
 .dash-section { padding: 1rem 0; border-bottom: 1px solid var(--line); }
@@ -145,9 +155,11 @@ p  { font-size: .92rem; }
 .muted { color: var(--muted); }
 .center { text-align: center; }
 
-/* Buttons */
+/* Buttons — capped so a form's primary action doesn't stretch edge-to-edge
+   on the wider content pane; buttons that should size to their own content
+   (list-row actions, etc.) already set width:auto inline and are unaffected. */
 .btn {
-  display: block; width: 100%; min-height: var(--touch);
+  display: block; width: 100%; max-width: 480px; min-height: var(--touch);
   font-size: .92rem; font-weight: 600;
   border: 1px solid transparent; border-radius: var(--radius); cursor: pointer;
   padding: .5rem 1rem; margin: .4rem 0;
@@ -159,10 +171,10 @@ p  { font-size: .92rem; }
 .btn-green { background: var(--green); color: #fff; }
 .btn-quiet { background: #F4F4F4; color: var(--ink); }
 
-/* Inputs */
-label { display: block; font-weight: 600; font-size: .88rem; margin: .8rem 0 .3rem; }
+/* Inputs — same width cap as buttons, for the same reason */
+label { display: block; font-weight: 600; font-size: .88rem; margin: .8rem 0 .3rem; max-width: 480px; }
 input, textarea, select {
-  width: 100%; min-height: var(--touch); font-size: .9rem;
+  width: 100%; max-width: 480px; min-height: var(--touch); font-size: .9rem;
   padding: .45rem .7rem; border: 1px solid var(--line);
   border-radius: var(--radius); background: #fff; color: var(--ink);
 }
@@ -218,8 +230,8 @@ input:focus, textarea:focus, select:focus {
 .tag-bought { background: var(--green); color:#fff; border-radius: 999px;
   padding: .15rem .55rem; font-size: .72rem; font-weight: 700; }
 
-/* Messages */
-.bubble { max-width: 75%; padding: .5rem .75rem; border-radius: var(--radius);
+/* Messages — capped in absolute terms, not just relative to the (now wider) pane */
+.bubble { max-width: min(75%, 480px); padding: .5rem .75rem; border-radius: var(--radius);
   margin: .3rem 0; font-size: .9rem; }
 .bubble.mine { background: var(--red); color: #fff; margin-left: auto; }
 .bubble.theirs { background: #F2F2F2; }
