@@ -64,6 +64,21 @@ def get_family(family_id):
                     "join_code": fam.join_code if m.role == "admin" else None})
 
 
+@bp.patch("/families/<int:family_id>")
+@require_auth
+def rename_family(family_id):
+    _, err = require_family_admin(family_id)
+    if err:
+        return err
+    fam = Family.query.get_or_404(family_id)
+    name = ((request.json or {}).get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Please give your clan a name."}), 400
+    fam.name = name[:120]
+    db.session.commit()
+    return jsonify({"ok": True, "family": {"id": fam.id, "name": fam.name}})
+
+
 @bp.get("/families/<int:family_id>/members")
 @require_auth
 def list_members(family_id):

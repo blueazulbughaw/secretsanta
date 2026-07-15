@@ -510,13 +510,26 @@ route(/^\/admin$/, async () => {
   const fam = await api.get(`/families/${FAMILY.id}`);
   const regUrl = `${location.origin}/#/join/${fam.join_code}`;
   renderAdmin("Clan Admin Dashboard", "dashboard", `
-    <div class="card center">
+    <h2>Clan name</h2>
+    <label for="clanName">Name</label>
+    <input id="clanName" value="${esc(fam.name)}">
+    <div id="nameMsg"></div>
+    <button class="btn btn-secondary" id="saveClanName">Save Clan Name</button>
+
+    <div class="card center" style="margin-top:1.5rem">
       <p class="muted">Share this code so family can join:</p>
       <div class="reveal-name" style="font-size:1.8rem">${esc(fam.join_code)}</div>
       <button class="btn btn-quiet" id="copyLinkBtn" style="margin-top:.5rem">Copy Registration Link</button>
       <div id="copyMsg"></div>
     </div>
   `);
+  document.getElementById("saveClanName").onclick = async () => {
+    try {
+      const r = await api.patch(`/families/${FAMILY.id}`, { name: document.getElementById("clanName").value });
+      FAMILY.name = r.family.name;
+      document.getElementById("nameMsg").innerHTML = alertBox("Clan name saved!", true);
+    } catch (e) { showError(e); }
+  };
   document.getElementById("copyLinkBtn").onclick = async () => {
     try {
       await navigator.clipboard.writeText(regUrl);
@@ -544,16 +557,18 @@ route(/^\/admin\/members$/, async () => {
 
   function memberRow(m) {
     const tr = h(`<tr>
-      <td><input data-name value="${esc(m.user.full_name)}"></td>
-      <td><input data-phone value="${esc(m.user.phone || "")}" placeholder="(555) 123-4567"></td>
-      <td><input data-email value="${esc(m.user.email || "")}" placeholder="name@example.com"></td>
-      <td><select data-house>${houseOpts(m.household_id)}</select></td>
-      <td><input type="checkbox" data-role ${m.role === "admin" ? "checked" : ""} aria-label="Clan admin"></td>
-      <td>${current
+      <td data-label="Name"><input data-name value="${esc(m.user.full_name)}" title="${esc(m.user.full_name)}"></td>
+      <td data-label="Phone"><input data-phone value="${esc(m.user.phone || "")}" placeholder="(555) 123-4567" title="${esc(m.user.phone || "")}"></td>
+      <td data-label="Email"><input data-email value="${esc(m.user.email || "")}" placeholder="name@example.com" title="${esc(m.user.email || "")}"></td>
+      <td data-label="Family Group"><select data-house>${houseOpts(m.household_id)}</select></td>
+      <td data-label="Admin"><input type="checkbox" data-role ${m.role === "admin" ? "checked" : ""} aria-label="Clan admin"></td>
+      <td data-label="Joining">${current
         ? `<input type="checkbox" data-joining ${participating.has(m.user.id) ? "checked" : ""} aria-label="Joining this year">`
         : "—"}</td>
-      <td><button class="btn btn-secondary" data-save style="margin:0;min-height:44px">Save</button></td>
-      <td><button class="btn btn-quiet" data-remove style="margin:0;min-height:44px">Remove</button></td>
+      <td class="table-actions">
+        <button class="btn btn-secondary" data-save>Save</button>
+        <button class="btn btn-quiet" data-remove>Remove</button>
+      </td>
     </tr>`).firstElementChild;
     wireRow(tr, m.membership_id, m.user.id);
     return tr;
@@ -562,12 +577,14 @@ route(/^\/admin\/members$/, async () => {
   function wireRow(tr, membershipId, userId) {
     const msg = () => document.getElementById("msg");
     tr.querySelector("[data-save]").onclick = async () => {
+      const nameEl = tr.querySelector("[data-name]");
+      const phoneEl = tr.querySelector("[data-phone]");
+      const emailEl = tr.querySelector("[data-email]");
       try {
         await api.patch(`/families/${FAMILY.id}/members/${membershipId}`, {
-          full_name: tr.querySelector("[data-name]").value,
-          phone: tr.querySelector("[data-phone]").value,
-          email: tr.querySelector("[data-email]").value,
+          full_name: nameEl.value, phone: phoneEl.value, email: emailEl.value,
         });
+        nameEl.title = nameEl.value; phoneEl.title = phoneEl.value; emailEl.title = emailEl.value;
         msg().innerHTML = alertBox("Saved!", true);
       } catch (err) { showError(err); }
     };
@@ -608,9 +625,13 @@ route(/^\/admin\/members$/, async () => {
     ${current ? "" : `<div class="card center"><p class="muted">Create a gift exchange first to track who's joining this year.</p></div>`}
     <div class="table-wrap">
       <table class="data" id="membersTable">
+        <colgroup>
+          <col style="width:15%"><col style="width:13%"><col style="width:21%">
+          <col style="width:13%"><col style="width:7%"><col style="width:9%"><col style="width:22%">
+        </colgroup>
         <thead><tr>
           <th>Name</th><th>Phone</th><th>Email</th><th>Family Group</th>
-          <th>Admin</th><th>Joining${current ? ` (${esc(current.name)})` : ""}</th><th></th><th></th>
+          <th>Admin</th><th>Joining${current ? ` (${esc(current.name)})` : ""}</th><th></th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -662,42 +683,64 @@ route(/^\/admin\/members$/, async () => {
 
 route(/^\/admin\/groups$/, async () => {
   const households = await api.get(`/families/${FAMILY.id}/households`);
-  const rows = households.map(hh => `
-    <div class="card">
-      <input data-name="${hh.id}" value="${esc(hh.name)}">
-      <div style="display:flex;gap:.5rem;margin-top:.5rem">
-        <button class="btn btn-secondary" data-save="${hh.id}" style="margin:0">Save</button>
-        <button class="btn btn-quiet" data-del="${hh.id}" style="margin:0">Delete</button>
-      </div>
-    </div>`).join("") || `<div class="card center"><p class="muted">No family groups yet.</p></div>`;
+
+  function groupRow(hh) {
+    const tr = h(`<tr>
+      <td data-label="Group Name"><input data-name value="${esc(hh.name)}"></td>
+      <td class="table-actions">
+        <button class="btn btn-secondary" data-save>Save</button>
+        <button class="btn btn-quiet" data-del>Delete</button>
+      </td>
+    </tr>`).firstElementChild;
+    const msg = () => document.getElementById("msg");
+    tr.querySelector("[data-save]").onclick = async () => {
+      try {
+        await api.patch(`/households/${hh.id}`, { name: tr.querySelector("[data-name]").value });
+        msg().innerHTML = alertBox("Saved!", true);
+      } catch (e) { showError(e); }
+    };
+    tr.querySelector("[data-del]").onclick = async () => {
+      try {
+        await api.del(`/households/${hh.id}`);
+        tr.remove();
+        updateEmptyState();
+      } catch (e) { showError(e); }
+    };
+    return tr;
+  }
+
   renderAdmin("Family Groups", "groups", `
     <p class="muted">People in the same family group won't draw each other's names.</p>
     <div id="msg"></div>
-    ${rows}
+    <div class="table-wrap">
+      <table class="data" id="groupsTable">
+        <colgroup><col style="width:70%"><col style="width:30%"></colgroup>
+        <thead><tr><th>Group Name</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="muted center" id="noGroups">No family groups yet.</p>
     <h2>Add a family group</h2>
     <label>Group name</label>
     <input id="hname">
     <button class="btn btn-primary" id="addHouse">Add Family Group</button>
   `);
+  const gtbody = $app.querySelector("#groupsTable tbody");
+  const noGroups = document.getElementById("noGroups");
+  function updateEmptyState() {
+    noGroups.style.display = gtbody.children.length ? "none" : "";
+  }
+  households.forEach(hh => gtbody.append(groupRow(hh)));
+  updateEmptyState();
   document.getElementById("addHouse").onclick = async () => {
     try {
-      await api.post(`/families/${FAMILY.id}/households`, { name: document.getElementById("hname").value });
-      navigate();
+      const r = await api.post(`/families/${FAMILY.id}/households`,
+        { name: document.getElementById("hname").value });
+      document.getElementById("hname").value = "";
+      gtbody.append(groupRow(r.household));
+      updateEmptyState();
     } catch (e) { showError(e); }
   };
-  $app.querySelectorAll("[data-save]").forEach(btn => btn.onclick = async () => {
-    const input = $app.querySelector(`[data-name="${btn.dataset.save}"]`);
-    try {
-      await api.patch(`/households/${btn.dataset.save}`, { name: input.value });
-      document.getElementById("msg").innerHTML = alertBox("Saved!", true);
-    } catch (e) { showError(e); }
-  });
-  $app.querySelectorAll("[data-del]").forEach(btn => btn.onclick = async () => {
-    try {
-      await api.del(`/households/${btn.dataset.del}`);
-      navigate();
-    } catch (e) { showError(e); }
-  });
 });
 
 route(/^\/admin\/events$/, async () => {

@@ -171,6 +171,17 @@ def test_household_rename_and_delete(users):
     assert admin.delete(f"/api/households/{h['id']}").status_code == 200
 
 
+def test_clan_admin_can_rename_family(users):
+    fam = setup_family(users)
+    admin, bob = users[ADMIN_USER], users[BOB_USER]
+    assert bob.patch(f"/api/families/{fam['id']}", json={"name": "Nope"}).status_code == 403
+    r = admin.patch(f"/api/families/{fam['id']}", json={"name": "The Real Clan Name"})
+    assert r.status_code == 200
+    assert r.get_json()["family"]["name"] == "The Real Clan Name"
+    me = admin.get("/api/auth/me").get_json()
+    assert me["families"][0]["name"] == "The Real Clan Name"
+
+
 def test_household_cannot_be_deleted_while_someone_assigned(users):
     fam = setup_family(users)
     admin, bob = users[ADMIN_USER], users[BOB_USER]
