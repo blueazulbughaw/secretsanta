@@ -150,13 +150,32 @@ def mark_purchased(item_id):
         return err
     if item.user_id == g.user.id:
         return jsonify({"error": "You can't mark your own wishlist."}), 403
-    if _my_giftee(ev.id) != item.user_id:
-        return jsonify({"error": "You can only mark gifts for your own person."}), 403
     item.is_purchased = not item.is_purchased
     item.purchased_by = g.user.id if item.is_purchased else None
     item.purchased_at = datetime.utcnow() if item.is_purchased else None
     db.session.commit()
     return jsonify({"ok": True, "is_purchased": item.is_purchased})
+
+
+@bp.get("/events/<int:event_id>/wishlists/clan")
+@require_auth
+def clan_wishlists(event_id):
+    """Every participating member's wishlist, for the whole family - not just
+    the assigned Secret Santa. Purchase status is visible for everyone's
+    items except your own, so the clan can coordinate on gifts beyond just
+    the one drawn assignment. Owners still never see their own status."""
+    ev = Event.query.get_or_404(event_id)
+    _, err = require_family_member(ev.family_id)
+    if err:
+        return err
+    parts = EventParticipant.query.filter_by(event_id=ev.id, is_participating=True).all()
+    out = []
+    for p in parts:
+        items = (WishlistItem.query.filter_by(event_id=ev.id, user_id=p.user_id)
+                 .order_by(WishlistItem.priority).all())
+        out.append({"user": p.user.to_dict(),
+                    "items": [i.to_dict(include_purchase=(p.user_id != g.user.id)) for i in items]})
+    return jsonify(out)
 
 
 @bp.get("/events/<int:event_id>/wishlists")

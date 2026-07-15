@@ -135,11 +135,12 @@ All JSON, prefixed `/api`. 🔒 = auth required, 👑 = family admin.
 
 **Wishlists**
 - `GET /events/:id/wishlists/mine` 🔒
-- `POST /events/:id/wishlists` 🔒 — enforces `wishlist_limit`
+- `POST /events/:id/wishlists` 🔒 — enforces `wishlist_limit`; JSON or multipart (optional `photo`)
 - `PATCH|DELETE /wishlists/:itemId` 🔒 — owner only
 - `GET /events/:id/wishlists/giftee` 🔒 — giver's view (purchase status visible)
-- `POST /wishlists/:itemId/purchase` 🔒 — giver marks purchased; owner never sees this
-- `GET /events/:id/wishlists` 👑 — all wishlists (admin view)
+- `GET /events/:id/wishlists/clan` 🔒 — every participant's wishlist for the whole family (My Clan); purchase status visible for everyone except the item's own owner
+- `POST /wishlists/:itemId/purchase` 🔒 — any family member except the owner can mark/unmark purchased
+- `GET /events/:id/wishlists` 👑 — all wishlists (admin view, no purchase info)
 
 **Messages**
 - `GET /events/:id/messages` 🔒 — my two threads (with my giver, with my giftee)
@@ -189,9 +190,9 @@ Design tokens in `app.css`:
   --red: #C0392B;          /* primary actions */
   --green: #2E7D4F;        /* success, "purchased" */
   --yellow: #F5C518;       /* highlights, announcements */
-  --touch: 40px;           /* button/input height — desktop-web density, not oversized */
+  --touch: 44px;           /* button/input height — desktop-web density, not oversized */
   --radius: 8px;
-  font-size: 15px;         /* base font */
+  font-size: 17px;         /* base font */
 }
 ```
 
@@ -202,12 +203,12 @@ Non-negotiable UX rules baked into every component:
 - WCAG AA contrast, focus outlines, `aria-live` for confirmations, works at 200% browser zoom.
 - Sign in with a username, then either a texted 6-digit code (if a phone is on file) or a password.
 
-Pages: Login (2 steps) → persistent left sidebar nav + content pane. The sidebar stays mounted across every page — clicking a link swaps only the content pane, not the whole screen — and collapses behind a hamburger into a slide-out overlay drawer below ~780px width. First item is "My Dashboard" (also the landing page right after login), an expandable WordPress-style submenu grouping the member-facing pages: My Person, My Wishlist, My Person's Wishlist, Messages, Announcements. Admins additionally get "Manage Family", the same expandable-submenu pattern (Members, Family Groups, Gift Exchanges, Post Announcement) leading to the admin content: members, households, events, participants checklist, rules form, big "Draw Names" button, all-wishlists view, post-announcement form. "Profile & Security" and "Sign Out" sit at the top level below those two groups.
+Pages: Login (2 steps, centered like a normal sign-in screen) → persistent left sidebar nav + content pane. The sidebar stays mounted across every page — clicking a link swaps only the content pane, not the whole screen — and collapses behind a hamburger into a slide-out overlay drawer below ~780px width. Once signed in, the content pane fills the space beside the sidebar (not a narrow centered column); individual form controls/buttons are capped to a comfortable width instead. Top-level items: "My Dashboard" (the landing page right after login — a single page combining the My Giftee assignment/wishlist and Announcements, not a submenu), "My Wishlist", "My Clan" (every participating member's wishlist family-wide, with clan-wide purchase marking — see §5 Wishlists), "My Messages" (expandable submenu: Message to my Secret Santa, Message to my Giftee). Admins additionally get "Manage My Clan", the same expandable-submenu pattern (Members, Households, Gift Exchanges, Post Announcement) leading to the admin content: members, households, events, participants checklist, rules form, big "Draw Names" button, all-wishlists view, post-announcement form. "Profile & Security" and "Sign Out" sit at the top level below those two groups.
 
 ## 8. PWA
 
 - `manifest.json`: name, icons (192/512), `display: standalone`, theme color `#C0392B`.
-- `sw.js`: cache-first for static assets, network-first for `/api/*`, offline fallback page ("You're offline — your wishlist will load when you reconnect").
+- `sw.js`: network-first for the shell/static assets and `/api/*` (so deploys and data are always fresh when online), cached copies as the offline fallback only.
 - Push-ready: `push_subscriptions` table + `/api/push/subscribe` endpoint exist from day one; actually sending Web Push (pywebpush + VAPID keys) is a Phase-2 flip-of-a-switch, no schema change needed.
 
 ## 9. Security checklist

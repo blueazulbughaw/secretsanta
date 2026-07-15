@@ -55,13 +55,14 @@ function render(title, html, { back = true, wide = false } = {}) {
 const NAV = [
   { key: "dashboard", label: "My Dashboard", href: "/" },
   { key: "wishlist", label: "My Wishlist", eventPath: "wishlist" },
+  { key: "clan", label: "My Clan", eventPath: "clan" },
   { key: "messages", label: "My Messages", eventPath: "messages/giver", children: [
     { key: "messages-giver", eventPath: "messages/giver", label: "Message to my Secret Santa" },
     { key: "messages-giftee", eventPath: "messages/giftee", label: "Message to my Giftee" },
   ] },
-  { key: "admin", label: "Manage Family", href: "/admin", adminOnly: true, children: [
+  { key: "admin", label: "Manage My Clan", href: "/admin", adminOnly: true, children: [
     { key: "members", href: "/admin/members", label: "Members" },
-    { key: "groups", href: "/admin/groups", label: "Family Groups" },
+    { key: "groups", href: "/admin/groups", label: "Households" },
     { key: "events", href: "/admin/events", label: "Gift Exchanges" },
     { key: "announce", href: "/admin/announce", label: "Post Announcement" },
   ] },
@@ -592,6 +593,21 @@ route(/^\/events\/(\d+)\/giftee$/, async (id) => {
   });
 });
 
+route(/^\/events\/(\d+)\/clan$/, async (id) => {
+  const list = await api.get(`/events/${id}/wishlists/clan`);
+  const sections = list.map(entry => {
+    const items = entry.items.length
+      ? entry.items.map(i => wishItemRow(i, { showBuy: i.is_purchased !== undefined })).join("")
+      : `<p class="muted">No gift ideas yet.</p>`;
+    return `<div class="dash-section"><h2>${esc(entry.user.display_name)}</h2>${items}</div>`;
+  }).join("");
+  render("My Clan", sections
+    || `<div class="card center"><p>No one's joined this gift exchange yet.</p></div>`);
+  $app.querySelectorAll("[data-buy]").forEach(b => b.onclick = async () => {
+    await api.post(`/wishlists/${b.dataset.buy}/purchase`); navigate();
+  });
+});
+
 route(/^\/events\/(\d+)\/messages$/, async (id) => {
   const d = await api.get(`/events/${id}/messages`);
   function thread(key, label) {
@@ -728,7 +744,7 @@ route(/^\/admin\/members$/, async () => {
       <td data-label="Name"><input data-name value="${esc(m.user.full_name)}" title="${esc(m.user.full_name)}"></td>
       <td data-label="Phone"><input data-phone value="${esc(m.user.phone || "")}" placeholder="(555) 123-4567" title="${esc(m.user.phone || "")}"></td>
       <td data-label="Email"><input data-email value="${esc(m.user.email || "")}" placeholder="name@example.com" title="${esc(m.user.email || "")}"></td>
-      <td data-label="Family Group"><select data-house>${houseOpts(m.household_id)}</select></td>
+      <td data-label="Household"><select data-house>${houseOpts(m.household_id)}</select></td>
       <td data-label="Admin"><input type="checkbox" data-role ${m.role === "admin" ? "checked" : ""} aria-label="Clan admin"></td>
       <td data-label="Joining">${current
         ? `<input type="checkbox" data-joining ${participating.has(m.user.id) ? "checked" : ""} aria-label="Joining this year">`
@@ -808,7 +824,7 @@ route(/^\/admin\/members$/, async () => {
           <col style="width:13%"><col style="width:7%"><col style="width:9%"><col style="width:22%">
         </colgroup>
         <thead><tr>
-          <th>Name</th><th>Phone</th><th>Email</th><th>Family Group</th>
+          <th>Name</th><th>Phone</th><th>Email</th><th>Household</th>
           <th>Admin</th><th>Joining${current ? ` (${esc(current.name)})` : ""}</th><th></th>
         </tr></thead>
         <tbody></tbody>
@@ -864,7 +880,7 @@ route(/^\/admin\/groups$/, async () => {
 
   function groupRow(hh) {
     const tr = h(`<tr>
-      <td data-label="Group Name"><input data-name value="${esc(hh.name)}"></td>
+      <td data-label="Household Name"><input data-name value="${esc(hh.name)}"></td>
       <td class="table-actions">
         <button class="btn btn-secondary" data-save>Save</button>
         <button class="btn btn-quiet" data-del>Delete</button>
@@ -887,21 +903,21 @@ route(/^\/admin\/groups$/, async () => {
     return tr;
   }
 
-  render("Family Groups", `
-    <p class="muted">People in the same family group won't draw each other's names.</p>
+  render("Households", `
+    <p class="muted">People in the same household won't draw each other's names.</p>
     <div id="msg"></div>
     <div class="table-wrap">
       <table class="data" id="groupsTable">
         <colgroup><col style="width:70%"><col style="width:30%"></colgroup>
-        <thead><tr><th>Group Name</th><th></th></tr></thead>
+        <thead><tr><th>Household Name</th><th></th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
-    <p class="muted center" id="noGroups">No family groups yet.</p>
-    <h2>Add a family group</h2>
-    <label>Group name</label>
+    <p class="muted center" id="noGroups">No households yet.</p>
+    <h2>Add a household</h2>
+    <label>Household name</label>
     <input id="hname">
-    <button class="btn btn-primary" id="addHouse">Add Family Group</button>
+    <button class="btn btn-primary" id="addHouse">Add Household</button>
   `, { back: false, wide: true });
   const gtbody = $app.querySelector("#groupsTable tbody");
   const noGroups = document.getElementById("noGroups");
