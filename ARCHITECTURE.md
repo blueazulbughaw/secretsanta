@@ -125,6 +125,7 @@ All JSON, prefixed `/api`. 🔒 = auth required, 👑 = family admin.
 - `POST /families/:id/events` 👑 — name, date, budget, wishlist_limit, use_codenames
 - `GET /families/:id/events` 🔒
 - `GET|PATCH /events/:id` 🔒 / 👑
+- `POST /events/:id/complete` 👑 — marks the event `completed`; it drops out of `CURRENT_EVENT` selection so the next event starts with its own fresh wishlists (`WishlistItem` is already scoped by `event_id`, so nothing carries over)
 - `PUT /events/:id/participants` 👑 — `{ user_ids: [...] }` (the checkbox screen)
 - `POST /events/:id/participants/:userId/opt-out` 🔒 — self only, before matching
 

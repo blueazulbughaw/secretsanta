@@ -471,6 +471,21 @@ function pageNoFamily() {
 route(/^\/$/, async () => {
   const sections = [`<h2 style="margin-top:0">Welcome, ${esc(ME.user.full_name)}!</h2>`];
 
+  const anns = await api.get(`/families/${FAMILY.id}/announcements`);
+  const annHtml = anns.length
+    ? anns.map(a => `
+        <div class="ann-row">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem">
+            <strong>${a.is_pinned ? "📌 " : ""}${esc(a.title)}</strong>
+            ${FAMILY.role === "admin"
+              ? `<button class="icon-btn" aria-label="Delete announcement" data-del-ann="${a.id}">🗑</button>` : ""}
+          </div>
+          <p>${esc(a.body)}</p>
+          <p class="muted">${esc(a.author)} • ${new Date(a.at).toLocaleDateString()}</p>
+        </div>`).join("")
+    : `<p class="muted">No announcements yet.</p>`;
+  sections.push(`<div class="dash-section"><h2>Announcements</h2>${annHtml}</div>`);
+
   if (!CURRENT_EVENT) {
     sections.push(`
       <div class="dash-section">
@@ -506,20 +521,14 @@ route(/^\/$/, async () => {
     }
   }
 
-  const anns = await api.get(`/families/${FAMILY.id}/announcements`);
-  const annHtml = anns.length
-    ? anns.map(a => `
-        <div class="ann-row">
-          <strong>${a.is_pinned ? "📌 " : ""}${esc(a.title)}</strong>
-          <p>${esc(a.body)}</p>
-          <p class="muted">${esc(a.author)} • ${new Date(a.at).toLocaleDateString()}</p>
-        </div>`).join("")
-    : `<p class="muted">No announcements yet.</p>`;
-  sections.push(`<div class="dash-section"><h2>Announcements</h2>${annHtml}</div>`);
-
   render("My Dashboard", sections.join(""), { back: false });
   $app.querySelectorAll("[data-buy]").forEach(b => b.onclick = async () => {
     await api.post(`/wishlists/${b.dataset.buy}/purchase`); navigate();
+  });
+  $app.querySelectorAll("[data-del-ann]").forEach(b => b.onclick = async () => {
+    if (!confirm("Delete this announcement?")) return;
+    await api.del(`/announcements/${b.dataset.delAnn}`);
+    navigate();
   });
 });
 
@@ -672,11 +681,20 @@ route(/^\/announcements$/, async () => {
   const anns = await api.get(`/families/${FAMILY.id}/announcements`);
   const list = anns.map(a => `
     <div class="card ann">
-      <strong>${a.is_pinned ? "📌 " : ""}${esc(a.title)}</strong>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem">
+        <strong>${a.is_pinned ? "📌 " : ""}${esc(a.title)}</strong>
+        ${FAMILY.role === "admin"
+          ? `<button class="icon-btn" aria-label="Delete announcement" data-del-ann="${a.id}">🗑</button>` : ""}
+      </div>
       <p>${esc(a.body)}</p>
       <p class="muted">${esc(a.author)} • ${new Date(a.at).toLocaleDateString()}</p>
     </div>`).join("") || `<div class="card center"><p>No announcements yet.</p></div>`;
   render("Announcements", list);
+  $app.querySelectorAll("[data-del-ann]").forEach(b => b.onclick = async () => {
+    if (!confirm("Delete this announcement?")) return;
+    await api.del(`/announcements/${b.dataset.delAnn}`);
+    navigate();
+  });
 });
 
 route(/^\/notifications$/, async () => {
@@ -944,8 +962,9 @@ route(/^\/admin\/events$/, async () => {
   const events = await api.get(`/families/${FAMILY.id}/events`);
   const list = events.map(e => `
     <button class="card-btn" onclick="go('/admin/events/${e.id}')">
-      <span class="emoji">${e.status === "matched" ? "✅" : "🎄"}</span>
-      <span>${esc(e.name)}<span class="sub">${esc(e.event_date)} • ${e.status === "matched" ? "Names drawn" : "Not drawn yet"}</span></span>
+      <span class="emoji">${e.status === "completed" ? "🏁" : e.status === "matched" ? "✅" : "🎄"}</span>
+      <span>${esc(e.name)}<span class="sub">${esc(e.event_date)} • ${
+        e.status === "completed" ? "Completed" : e.status === "matched" ? "Names drawn" : "Not drawn yet"}</span></span>
     </button>`).join("");
   render("Gift Exchanges", `
     ${list}
@@ -981,24 +1000,30 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
     api.get(`/events/${id}/participants`),
     api.get(`/events/${id}/assignments/status`),
   ]);
+  const locked = ev.status === "matched" || ev.status === "completed";
   const rows = parts.map(p => `
     <label class="check-row">
       <input type="checkbox" data-uid="${p.user.id}" ${p.is_participating ? "checked" : ""}
-        ${ev.status === "matched" ? "disabled" : ""}>
+        ${locked ? "disabled" : ""}>
       <span>${esc(p.user.display_name)}
         <span class="muted">${p.household_name ? "• " + esc(p.household_name) : "• ⚠ no household yet"}</span></span>
     </label>`).join("");
-  const drawSection = ev.status === "matched"
-    ? `<div class="alert alert-ok">✅ Names are drawn! ${st.revealed} of ${st.matched} people have peeked.</div>
-       <button class="btn btn-quiet" id="reroll">Start Over (Re-Draw Names)</button>`
-    : `<button class="btn btn-primary" id="draw">🎲 Draw Names</button>`;
+  const drawSection = ev.status === "completed"
+    ? `<div class="alert alert-ok">🏁 This gift exchange is complete.</div>`
+    : ev.status === "matched"
+      ? `<div class="alert alert-ok">✅ Names are drawn! ${st.revealed} of ${st.matched} people have peeked.</div>
+         <button class="btn btn-quiet" id="reroll">Start Over (Re-Draw Names)</button>`
+      : `<button class="btn btn-primary" id="draw">🎲 Draw Names</button>`;
+  const doneBtn = ev.status !== "completed"
+    ? `<button class="btn btn-quiet" id="markDone" style="margin-top:.5rem">Mark Event as Done</button>` : "";
   render(ev.name, `
     <div id="msg"></div>
     <h2>Who's joining?</h2>
     ${rows}
-    ${ev.status !== "matched" ? `<button class="btn btn-secondary" id="saveParts">Save Participants</button>` : ""}
+    ${ev.status === "open" ? `<button class="btn btn-secondary" id="saveParts">Save Participants</button>` : ""}
     <hr style="margin:1.5rem 0">
     ${drawSection}
+    ${doneBtn}
     <button class="btn btn-quiet" onclick="go('/admin/events/${id}/wishlists')">View Everyone's Wishlists</button>
   `, { back: true, wide: true });
   const save = document.getElementById("saveParts");
@@ -1023,6 +1048,15 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
     if (confirm("This erases everyone's matches so you can draw again. Continue?")) {
       await api.del(`/events/${id}/assignments`); navigate();
     }
+  };
+  const markDone = document.getElementById("markDone");
+  if (markDone) markDone.onclick = async () => {
+    if (!confirm("Mark this gift exchange as done? A new exchange will need to be created next time, with its own fresh wishlists.")) return;
+    try {
+      await api.post(`/events/${id}/complete`);
+      await refreshCurrentEvent();
+      navigate();
+    } catch (e) { showError(e); }
   };
 });
 
@@ -1056,7 +1090,7 @@ route(/^\/admin\/announce$/, async () => {
         body: document.getElementById("abody").value,
         is_pinned: document.getElementById("apin").checked,
       });
-      go("/announcements");
+      go("/");
     } catch (e) { showError(e); }
   };
 });

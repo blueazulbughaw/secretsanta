@@ -98,6 +98,20 @@ def update_event(event_id):
     return jsonify({"ok": True, "event": ev.to_dict()})
 
 
+@bp.post("/events/<int:event_id>/complete")
+@require_auth
+def complete_event(event_id):
+    ev = Event.query.get_or_404(event_id)
+    _, err = require_family_admin(ev.family_id)
+    if err:
+        return err
+    if ev.status == "completed":
+        return jsonify({"error": "This event is already marked done."}), 400
+    ev.status = "completed"
+    db.session.commit()
+    return jsonify({"ok": True, "event": ev.to_dict()})
+
+
 @bp.get("/events/<int:event_id>/participants")
 @require_auth
 def list_participants(event_id):
