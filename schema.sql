@@ -20,6 +20,7 @@ CREATE TABLE users (
   phone         VARCHAR(30)  NULL UNIQUE,
   email         VARCHAR(255) NULL UNIQUE,
   password_hash VARCHAR(255) NULL,
+  must_change_password TINYINT(1) NOT NULL DEFAULT 0,
   is_app_admin  TINYINT(1)   NOT NULL DEFAULT 0,
   full_name     VARCHAR(120) NOT NULL,
   display_name  VARCHAR(60)  NULL,           -- "Lola Nena", "Tito Ben"

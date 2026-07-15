@@ -128,7 +128,7 @@ def add_member(family_id):
 
     temp_password = secrets.token_urlsafe(6)
     user = User(username=username, full_name=full_name, email=email or None, phone=phone,
-                password_hash=hash_password(temp_password))
+                password_hash=hash_password(temp_password), must_change_password=True)
     db.session.add(user)
     db.session.flush()
     mem = FamilyMember(family_id=family_id, user_id=user.id, role="member")
@@ -190,6 +190,20 @@ def update_member(family_id, membership_id):
         mem.user.phone = phone
     db.session.commit()
     return jsonify({"ok": True})
+
+
+@bp.post("/families/<int:family_id>/members/<int:membership_id>/reset-password")
+@require_auth
+def reset_member_password(family_id, membership_id):
+    _, err = require_family_admin(family_id)
+    if err:
+        return err
+    mem = FamilyMember.query.filter_by(id=membership_id, family_id=family_id).first_or_404()
+    temp_password = secrets.token_urlsafe(6)
+    mem.user.password_hash = hash_password(temp_password)
+    mem.user.must_change_password = True
+    db.session.commit()
+    return jsonify({"ok": True, "temp_password": temp_password})
 
 
 @bp.delete("/families/<int:family_id>/members/<int:membership_id>")

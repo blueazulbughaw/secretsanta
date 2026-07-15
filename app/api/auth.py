@@ -135,7 +135,8 @@ def me():
                      "join_code": f.join_code if m.role == "admin" else None})
     return jsonify({"user": g.user.to_dict(), "families": fams,
                     "can_create_family": g.user.is_app_admin,
-                    "needs_security_setup": not g.user.password_hash and not g.user.phone})
+                    "needs_security_setup": not g.user.password_hash and not g.user.phone,
+                    "must_change_password": g.user.must_change_password})
 
 
 @bp.patch("/auth/me")
@@ -159,7 +160,10 @@ def update_security():
         password = data.get("password") or ""
         if len(password) < 8:
             return jsonify({"error": "Password must be at least 8 characters."}), 400
+        if g.user.must_change_password and verify_password(password, g.user.password_hash):
+            return jsonify({"error": "Please choose a different password than the one you were given."}), 400
         g.user.password_hash = hash_password(password)
+        g.user.must_change_password = False
     if "phone" in data:
         try:
             phone = normalize_us_phone(data.get("phone", ""))

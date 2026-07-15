@@ -54,7 +54,10 @@ function render(title, html, { back = true, wide = false } = {}) {
 const NAV = [
   { key: "dashboard", label: "My Dashboard", href: "/" },
   { key: "wishlist", label: "My Wishlist", eventPath: "wishlist" },
-  { key: "messages", label: "Messages", eventPath: "messages" },
+  { key: "messages", label: "My Messages", eventPath: "messages/giver", children: [
+    { key: "messages-giver", eventPath: "messages/giver", label: "Message to my Secret Santa" },
+    { key: "messages-giftee", eventPath: "messages/giftee", label: "Message to my Giftee" },
+  ] },
   { key: "admin", label: "Manage Family", href: "/admin", adminOnly: true, children: [
     { key: "members", href: "/admin/members", label: "Members" },
     { key: "groups", href: "/admin/groups", label: "Family Groups" },
@@ -80,6 +83,7 @@ function navChildHtml(item, activePath) {
 function navItemHtml(item, activePath) {
   const href = navHref(item);
   if (item.children) {
+    if (!href) return `<span class="nav-link nav-disabled">${esc(item.label)}</span>`;
     const childHrefs = item.children.map(navHref);
     const isActive = activePath === href || childHrefs.some(h => h && activePath === h);
     const kids = item.children.map(c => navChildHtml(c, activePath)).join("");
@@ -182,6 +186,7 @@ async function boot() {
     ME = await api.get("/auth/me");
     $topbar.hidden = false;
     if (!ME.user.full_name) return pageName();
+    if (ME.must_change_password) return pageForcedPasswordChange();
     if (ME.needs_security_setup) return pageSecuritySetup(true);
     if (ME.families.length === 0) return pageNoFamily();
     FAMILY = ME.families[0];
@@ -213,11 +218,6 @@ function pageLogin() {
     <input id="password" type="password" autocomplete="current-password">
     <div id="msg"></div>
     <button class="btn btn-primary" id="loginBtn">Sign In</button>
-    <p class="muted center" style="font-size:.78rem;margin-top:2rem">
-      By continuing you agree to our
-      <a href="/privacy_terms#terms" target="_blank" rel="noopener">Terms of Service</a>
-      and <a href="/privacy_terms#privacy" target="_blank" rel="noopener">Privacy Policy</a>.
-    </p>
   `, { back: false });
   document.getElementById("loginBtn").onclick = async () => {
     const username = document.getElementById("username").value.trim();
@@ -315,6 +315,23 @@ function pageName() {
   document.getElementById("saveBtn").onclick = async () => {
     try {
       await api.patch("/auth/me", { full_name: document.getElementById("name").value });
+      boot();
+    } catch (e) { showError(e); }
+  };
+}
+
+function pageForcedPasswordChange() {
+  render("Set a New Password", `
+    <h2>Please set a new password</h2>
+    <p class="muted">Your clan admin gave you a temporary password. Choose a new one only you know.</p>
+    <label for="newPw">New password</label>
+    <input id="newPw" type="password" autocomplete="new-password">
+    <div id="msg"></div>
+    <button class="btn btn-primary" id="setPwBtn">Save Password</button>
+  `, { back: false });
+  document.getElementById("setPwBtn").onclick = async () => {
+    try {
+      await api.patch("/auth/security", { password: document.getElementById("newPw").value });
       boot();
     } catch (e) { showError(e); }
   };
@@ -462,7 +479,7 @@ route(/^\/$/, async () => {
           <h2>My Giftee: ${esc(d.giftee_display_name)}</h2>
           ${budget}
           ${itemsHtml}
-          <button class="btn btn-secondary" style="width:auto;margin-top:.5rem" onclick="go('/events/${CURRENT_EVENT.id}/messages')">Send a Message</button>
+          <button class="btn btn-secondary" style="width:auto;margin-top:.5rem" onclick="go('/events/${CURRENT_EVENT.id}/messages/giftee')">Send a Message</button>
         </div>`);
     }
   }
@@ -495,7 +512,7 @@ route(/^\/events\/(\d+)\/my-person$/, async (id) => {
     ${budget}
     <p class="center muted">Shh — it's a secret! 🤫</p>
     <button class="btn btn-primary" onclick="go('/events/${id}/giftee')">See Their Wishlist</button>
-    <button class="btn btn-secondary" onclick="go('/events/${id}/messages')">Send Them a Secret Message</button>
+    <button class="btn btn-secondary" onclick="go('/events/${id}/messages/giftee')">Send Them a Secret Message</button>
   `);
 });
 
@@ -550,7 +567,7 @@ route(/^\/events\/(\d+)\/giftee$/, async (id) => {
     ? d.items.map(i => wishItemRow(i, { showBuy: true })).join("")
     : `<p class="muted">They haven't added any gift ideas yet. Send them a friendly nudge!</p>`;
   render("Their Wishlist", items + `
-    <button class="btn btn-secondary" style="width:auto;margin-top:.5rem" onclick="go('/events/${id}/messages')">Send a Secret Message</button>`);
+    <button class="btn btn-secondary" style="width:auto;margin-top:.5rem" onclick="go('/events/${id}/messages/giftee')">Send a Secret Message</button>`);
   $app.querySelectorAll("[data-buy]").forEach(b => b.onclick = async () => {
     await api.post(`/wishlists/${b.dataset.buy}/purchase`); navigate();
   });
@@ -584,6 +601,34 @@ route(/^\/events\/(\d+)\/messages$/, async (id) => {
     catch (e) { showError(e); }
   });
 });
+
+async function renderMessageThread(id, key, label) {
+  const d = await api.get(`/events/${id}/messages`);
+  const t = d[key];
+  if (!t) {
+    render(label, `<div class="card center"><p>Messages open up after names are drawn.</p></div>`);
+    return;
+  }
+  const msgs = t.messages.map(m =>
+    `<div class="bubble ${m.mine ? "mine" : "theirs"}">${esc(m.body)}</div>`).join("")
+    || `<p class="muted center">No messages yet. Say hello!</p>`;
+  render(label, `
+    <div id="msg"></div>
+    <h2>${esc(t.with_display_name)}</h2>
+    <div>${msgs}</div>
+    <label for="msgin">Write a message</label>
+    <input id="msgin" maxlength="2000" placeholder="Type here…">
+    <button class="btn btn-primary" id="sendBtn">Send</button>
+  `);
+  document.getElementById("sendBtn").onclick = async () => {
+    const input = document.getElementById("msgin");
+    if (!input.value.trim()) return;
+    try { await api.post(`/events/${id}/messages`, { to: key, body: input.value }); navigate(); }
+    catch (e) { showError(e); }
+  };
+}
+route(/^\/events\/(\d+)\/messages\/giver$/, (id) => renderMessageThread(id, "giver", "Message to my Secret Santa"));
+route(/^\/events\/(\d+)\/messages\/giftee$/, (id) => renderMessageThread(id, "giftee", "Message to my Giftee"));
 
 route(/^\/announcements$/, async () => {
   const anns = await api.get(`/families/${FAMILY.id}/announcements`);
@@ -671,6 +716,7 @@ route(/^\/admin\/members$/, async () => {
         : "—"}</td>
       <td class="table-actions">
         <button class="btn btn-secondary" data-save>Save</button>
+        <button class="btn btn-quiet" data-reset>Reset Password</button>
         <button class="btn btn-quiet" data-remove>Remove</button>
       </td>
     </tr>`).firstElementChild;
@@ -713,6 +759,15 @@ route(/^\/admin\/members$/, async () => {
         await api.put(`/events/${current.id}/participants`, { user_ids: [...participating] });
         msg().innerHTML = alertBox("Saved!", true);
       } catch (err) { e.target.checked = !e.target.checked; showError(err); }
+    };
+    tr.querySelector("[data-reset]").onclick = async () => {
+      if (!confirm("Reset this person's password? Their old password will stop working.")) return;
+      try {
+        const r = await api.post(`/families/${FAMILY.id}/members/${membershipId}/reset-password`);
+        msg().innerHTML = alertBox(
+          `Password reset! New password: ${r.temp_password} (write this down, it won't be shown again). ` +
+          `They'll be asked to choose their own password next time they sign in.`, true);
+      } catch (err) { showError(err); }
     };
     tr.querySelector("[data-remove]").onclick = async () => {
       if (!confirm("Remove this person from the clan? This can't be undone.")) return;

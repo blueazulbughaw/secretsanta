@@ -12,6 +12,7 @@ class User(db.Model):
     phone = db.Column(db.String(30), unique=True, nullable=True, index=True)
     email = db.Column(db.String(255), unique=True, nullable=True, index=True)
     password_hash = db.Column(db.String(255), nullable=True)
+    must_change_password = db.Column(db.Boolean, nullable=False, default=False)
     is_app_admin = db.Column(db.Boolean, nullable=False, default=False)
     full_name = db.Column(db.String(120), nullable=False, default="")
     display_name = db.Column(db.String(60))

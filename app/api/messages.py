@@ -86,6 +86,7 @@ def send_message(event_id):
     # Notification never reveals identity
     sender_label = ("Your Secret Santa" if to == "giftee"
                     else _display_for(ev, recipient, g.user.id, "giftee"))
+    recipient_thread = "giver" if to == "giftee" else "giftee"
     notify(recipient, "message", f"New message from {sender_label} 💌",
-           "Tap to read it.", link_path=f"/events/{ev.id}/messages")
+           "Tap to read it.", link_path=f"/events/{ev.id}/messages/{recipient_thread}")
     return jsonify({"ok": True}), 201
