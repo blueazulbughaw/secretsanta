@@ -59,7 +59,11 @@ def delete_household(household_id):
     _, err = require_family_admin(h.family_id)
     if err:
         return err
-    FamilyMember.query.filter_by(household_id=h.id).update({"household_id": None})
+    assigned = FamilyMember.query.filter_by(household_id=h.id).count()
+    if assigned:
+        return jsonify({"error": f"Can't remove — {assigned} "
+                        f"{'person is' if assigned == 1 else 'people are'} still assigned to this group. "
+                        "Move them to another group first."}), 400
     db.session.delete(h)
     db.session.commit()
     return jsonify({"ok": True})

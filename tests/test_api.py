@@ -171,6 +171,26 @@ def test_household_rename_and_delete(users):
     assert admin.delete(f"/api/households/{h['id']}").status_code == 200
 
 
+def test_household_cannot_be_deleted_while_someone_assigned(users):
+    fam = setup_family(users)
+    admin, bob = users[ADMIN_USER], users[BOB_USER]
+    h = admin.post(f"/api/families/{fam['id']}/households",
+                    json={"name": "Occupied"}).get_json()["household"]
+    members = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    bob_membership = next(m for m in members if m["user"]["username"] == BOB_USER)
+    admin.patch(f"/api/families/{fam['id']}/members/{bob_membership['membership_id']}",
+                json={"household_id": h["id"]})
+
+    r = admin.delete(f"/api/households/{h['id']}")
+    assert r.status_code == 400
+    assert "still assigned" in r.get_json()["error"]
+
+    # unassign, then deletion works
+    admin.patch(f"/api/families/{fam['id']}/members/{bob_membership['membership_id']}",
+                json={"household_id": None})
+    assert admin.delete(f"/api/households/{h['id']}").status_code == 200
+
+
 def test_admin_can_add_edit_and_remove_member(app, users):
     fam = setup_family(users)
     admin, bob = users[ADMIN_USER], users[BOB_USER]

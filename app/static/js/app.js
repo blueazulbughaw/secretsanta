@@ -552,6 +552,7 @@ route(/^\/admin\/members$/, async () => {
       <td>${current
         ? `<input type="checkbox" data-joining ${participating.has(m.user.id) ? "checked" : ""} aria-label="Joining this year">`
         : "—"}</td>
+      <td><button class="btn btn-secondary" data-save style="margin:0;min-height:44px">Save</button></td>
       <td><button class="btn btn-quiet" data-remove style="margin:0;min-height:44px">Remove</button></td>
     </tr>`).firstElementChild;
     wireRow(tr, m.membership_id, m.user.id);
@@ -560,21 +561,13 @@ route(/^\/admin\/members$/, async () => {
 
   function wireRow(tr, membershipId, userId) {
     const msg = () => document.getElementById("msg");
-    tr.querySelector("[data-name]").onblur = async e => {
+    tr.querySelector("[data-save]").onclick = async () => {
       try {
-        await api.patch(`/families/${FAMILY.id}/members/${membershipId}`, { full_name: e.target.value });
-        msg().innerHTML = alertBox("Saved!", true);
-      } catch (err) { showError(err); }
-    };
-    tr.querySelector("[data-phone]").onblur = async e => {
-      try {
-        await api.patch(`/families/${FAMILY.id}/members/${membershipId}`, { phone: e.target.value });
-        msg().innerHTML = alertBox("Saved!", true);
-      } catch (err) { showError(err); }
-    };
-    tr.querySelector("[data-email]").onblur = async e => {
-      try {
-        await api.patch(`/families/${FAMILY.id}/members/${membershipId}`, { email: e.target.value });
+        await api.patch(`/families/${FAMILY.id}/members/${membershipId}`, {
+          full_name: tr.querySelector("[data-name]").value,
+          phone: tr.querySelector("[data-phone]").value,
+          email: tr.querySelector("[data-email]").value,
+        });
         msg().innerHTML = alertBox("Saved!", true);
       } catch (err) { showError(err); }
     };
@@ -617,7 +610,7 @@ route(/^\/admin\/members$/, async () => {
       <table class="data" id="membersTable">
         <thead><tr>
           <th>Name</th><th>Phone</th><th>Email</th><th>Family Group</th>
-          <th>Admin</th><th>Joining${current ? ` (${esc(current.name)})` : ""}</th><th></th>
+          <th>Admin</th><th>Joining${current ? ` (${esc(current.name)})` : ""}</th><th></th><th></th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -626,11 +619,16 @@ route(/^\/admin\/members$/, async () => {
     <h2>Add a member</h2>
     <p class="muted">Adds their account directly — you'll get a username and password to give them.</p>
     <label for="newName">Name</label>
-    <input id="newName" placeholder="e.g. Tito Ben">
+    <input id="newName">
     <label for="newPhone">Phone number (optional)</label>
     <input id="newPhone" type="tel" inputmode="tel" placeholder="(555) 123-4567">
     <label for="newEmail">Email (optional)</label>
     <input id="newEmail" type="email" placeholder="name@example.com">
+    ${current ? `
+    <div class="check-row">
+      <input type="checkbox" id="newJoining">
+      <label for="newJoining" style="margin:0">Joining ${esc(current.name)} this year</label>
+    </div>` : ""}
     <div id="addMsg"></div>
     <button class="btn btn-primary" id="addMemberBtn">Add Member</button>
   `);
@@ -644,11 +642,17 @@ route(/^\/admin\/members$/, async () => {
         phone: document.getElementById("newPhone").value,
         email: document.getElementById("newEmail").value,
       });
+      const newJoining = document.getElementById("newJoining");
+      if (current && newJoining && newJoining.checked) {
+        participating.add(r.user.id);
+        await api.put(`/events/${current.id}/participants`, { user_ids: [...participating] });
+      }
       document.getElementById("addMsg").innerHTML = alertBox(
         `Added! Username: ${r.username} — Password: ${r.temp_password} (write this down, it won't be shown again)`, true);
       document.getElementById("newName").value = "";
       document.getElementById("newPhone").value = "";
       document.getElementById("newEmail").value = "";
+      if (newJoining) newJoining.checked = false;
       tbody.append(memberRow({
         membership_id: r.membership_id, role: "member", household_id: null, user: r.user,
       }));
@@ -672,7 +676,7 @@ route(/^\/admin\/groups$/, async () => {
     ${rows}
     <h2>Add a family group</h2>
     <label>Group name</label>
-    <input id="hname" placeholder="e.g. The Reyes House">
+    <input id="hname">
     <button class="btn btn-primary" id="addHouse">Add Family Group</button>
   `);
   document.getElementById("addHouse").onclick = async () => {
