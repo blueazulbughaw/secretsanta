@@ -220,6 +220,7 @@ CREATE TABLE announcements (
   title       VARCHAR(200) NOT NULL,
   body        TEXT NOT NULL,
   is_pinned   TINYINT(1) NOT NULL DEFAULT 0,
+  is_published TINYINT(1) NOT NULL DEFAULT 1,   -- shown on the member Dashboard when true
   created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_an_family FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE,
   CONSTRAINT fk_an_event  FOREIGN KEY (event_id)  REFERENCES events(id)   ON DELETE CASCADE,

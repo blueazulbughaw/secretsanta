@@ -10,6 +10,9 @@ const $sidebar = document.getElementById("sidebar");
 const $sidebarOverlay = document.getElementById("sidebarOverlay");
 const $menuBtn = document.getElementById("menuBtn");
 const $shell = document.getElementById("shell");
+const $lightbox = document.getElementById("lightbox");
+const $lightboxImg = document.getElementById("lightboxImg");
+const $lightboxClose = document.getElementById("lightboxClose");
 
 let ME = null;          // { user, families }
 let FAMILY = null;      // active family {id, name, role}
@@ -118,6 +121,16 @@ function renderSidebar(activePath) {
 }
 function openSidebar() { $sidebar.classList.add("open"); $sidebarOverlay.classList.add("open"); }
 function closeSidebar() { $sidebar.classList.remove("open"); $sidebarOverlay.classList.remove("open"); }
+
+function openLightbox(url) { $lightboxImg.src = url; $lightbox.hidden = false; }
+function closeLightbox() { $lightbox.hidden = true; $lightboxImg.src = ""; }
+document.addEventListener("click", (e) => {
+  const trigger = e.target.closest("[data-photo]");
+  if (trigger) { openLightbox(trigger.dataset.photo); return; }
+  if (e.target === $lightbox) closeLightbox();
+});
+$lightboxClose.onclick = closeLightbox;
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLightbox(); });
 function alertBox(msg, ok = false) {
   return `<div class="alert ${ok ? "alert-ok" : "alert-error"}" role="alert">${esc(msg)}</div>`;
 }
@@ -130,7 +143,8 @@ function go(hash) { location.hash = hash; }
 
 function wishItemRow(item, { showBuy = false, showDelete = false } = {}) {
   const thumb = item.photo_url
-    ? `<img src="${esc(item.photo_url)}" alt="" class="wish-thumb">`
+    ? `<button type="button" class="wish-thumb-btn" data-photo="${esc(item.photo_url)}" aria-label="View photo of ${esc(item.item_name)} full size">
+         <img src="${esc(item.photo_url)}" alt="" class="wish-thumb"></button>`
     : `<div class="wish-thumb wish-thumb-empty">🎁</div>`;
   const meta = [
     item.description ? esc(item.description) : "",
@@ -1076,19 +1090,65 @@ route(/^\/admin\/events\/(\d+)\/wishlists$/, async (id) => {
 });
 
 route(/^\/admin\/announce$/, async () => {
-  render("Post Announcement", `
+  const anns = await api.get(`/families/${FAMILY.id}/announcements?scope=all`);
+
+  function annRow(a) {
+    const row = h(`<div class="card">
+      <label>Title</label>
+      <input data-title value="${esc(a.title)}">
+      <label>Message</label>
+      <textarea data-body rows="3">${esc(a.body)}</textarea>
+      <div class="check-row"><input type="checkbox" data-pinned ${a.is_pinned ? "checked" : ""}><label style="margin:0">Pin to the top</label></div>
+      <div class="check-row"><input type="checkbox" data-published ${a.is_published ? "checked" : ""}><label style="margin:0">Show on Clan Dashboard</label></div>
+      <div class="table-actions" style="margin-top:.5rem">
+        <button class="btn btn-secondary" data-save>Save</button>
+        <button class="btn btn-quiet" data-del>Delete</button>
+      </div>
+    </div>`).firstElementChild;
+    row.querySelector("[data-save]").onclick = async () => {
+      try {
+        await api.patch(`/announcements/${a.id}`, {
+          title: row.querySelector("[data-title]").value,
+          body: row.querySelector("[data-body]").value,
+          is_pinned: row.querySelector("[data-pinned]").checked,
+          is_published: row.querySelector("[data-published]").checked,
+        });
+        document.getElementById("msg").innerHTML = alertBox("Saved!", true);
+      } catch (e) { showError(e); }
+    };
+    row.querySelector("[data-del]").onclick = async () => {
+      if (!confirm("Delete this announcement?")) return;
+      try {
+        await api.del(`/announcements/${a.id}`);
+        row.remove();
+      } catch (e) { showError(e); }
+    };
+    return row;
+  }
+
+  render("Announcements", `
+    <div id="msg"></div>
+    <h2>Existing announcements</h2>
+    <div id="annList">${anns.length ? "" : `<p class="muted">No announcements yet.</p>`}</div>
+    <hr style="margin:1.5rem 0">
+    <h2>Post a new announcement</h2>
     <label>Title</label><input id="atitle" placeholder="e.g. Party is at 6pm!">
     <label>Message</label><textarea id="abody" rows="4"></textarea>
     <div class="check-row"><input type="checkbox" id="apin"><label for="apin" style="margin:0">Pin to the top</label></div>
-    <div id="msg"></div>
+    <div class="check-row"><input type="checkbox" id="apub" checked><label for="apub" style="margin:0">Show on Clan Dashboard</label></div>
     <button class="btn btn-primary" id="postBtn">Post to the Family</button>
   `, { back: false, wide: true });
+
+  const list = document.getElementById("annList");
+  anns.forEach(a => list.append(annRow(a)));
+
   document.getElementById("postBtn").onclick = async () => {
     try {
       await api.post(`/families/${FAMILY.id}/announcements`, {
         title: document.getElementById("atitle").value,
         body: document.getElementById("abody").value,
         is_pinned: document.getElementById("apin").checked,
+        is_published: document.getElementById("apub").checked,
       });
       go("/");
     } catch (e) { showError(e); }

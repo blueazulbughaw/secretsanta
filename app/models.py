@@ -206,6 +206,7 @@ class Announcement(db.Model):
     title = db.Column(db.String(200), nullable=False)
     body = db.Column(db.Text, nullable=False)
     is_pinned = db.Column(db.Boolean, nullable=False, default=False)
+    is_published = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
     author = db.relationship("User")
