@@ -107,8 +107,9 @@ nav#sidebar {
 /* Data table (admin views) */
 .table-wrap { width: 100%; overflow-x: auto; }
 table.data { width: 100%; border-collapse: collapse; font-size: .85rem; table-layout: fixed; }
+table.data tr { border-bottom: 1px solid var(--line); }
 table.data th, table.data td {
-  padding: .5rem .4rem; border-bottom: 1px solid var(--line); text-align: left;
+  padding: .5rem .4rem; text-align: left;
   vertical-align: middle; overflow: hidden;
 }
 table.data th { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; }
@@ -119,6 +120,10 @@ table.data td input[type=checkbox] { width: 18px; height: 18px; accent-color: va
 table.data td input:not([type=checkbox]) {
   min-height: 32px; padding: .3rem .5rem; font-size: .82rem; width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+table.data tr.group-header td {
+  background: #FAFAFA; font-weight: 700; font-size: .85rem; color: var(--ink);
+  padding-top: .6rem; padding-bottom: .4rem;
 }
 table.data .table-actions { display: flex; gap: .35rem; flex-wrap: wrap; }
 table.data .table-actions button {
@@ -134,9 +139,10 @@ table.data .table-actions button {
     border: 1px solid var(--line); border-radius: var(--radius);
     padding: .75rem; margin-bottom: 1rem;
   }
-  table.data td {
-    border-bottom: none; padding: .4rem 0;
+  table.data tr.group-header {
+    border: none; border-radius: 0; padding: .5rem 0 .2rem; margin-bottom: 0;
   }
+  table.data td { padding: .4rem 0; }
   table.data td[data-label]::before {
     content: attr(data-label); display: block;
     font-size: .7rem; font-weight: 700; color: var(--muted);

@@ -706,12 +706,15 @@ route(/^\/events\/(\d+)\/giftee$/, async (id) => {
 route(/^\/events\/(\d+)\/clan$/, async (id) => {
   const list = await api.get(`/events/${id}/wishlists/clan`);
   list.sort((a, b) => a.user.display_name.localeCompare(b.user.display_name));
-  const rows = list.flatMap(entry => entry.items.length
-    ? entry.items.map(i => wishRowReadOnly(i, { showBuy: i.is_purchased !== undefined, personName: entry.user.display_name }))
-    : [`<tr><td data-label="Person">${esc(entry.user.display_name)}</td><td colspan="4" class="muted">No gift ideas yet.</td></tr>`]
-  ).join("");
+  const rows = list.map(entry => {
+    const header = `<tr class="group-header"><td colspan="4">${esc(entry.user.display_name)}</td></tr>`;
+    const itemRows = entry.items.length
+      ? entry.items.map(i => wishRowReadOnly(i, { showBuy: i.is_purchased !== undefined })).join("")
+      : `<tr><td colspan="4" class="muted">No gift ideas yet.</td></tr>`;
+    return header + itemRows;
+  }).join("");
   render("My Clan", list.length
-    ? wishTable(rows, { showPerson: true })
+    ? wishTable(rows, { showPerson: false })
     : `<div class="card center"><p>No one's joined this gift exchange yet.</p></div>`);
   $app.querySelectorAll("[data-buy]").forEach(b => b.onclick = async () => {
     await api.post(`/wishlists/${b.dataset.buy}/purchase`); navigate();
