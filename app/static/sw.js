@@ -1,4 +1,4 @@
-const CACHE = "giftcircle-v1";
+const CACHE = "giftcircle-v2";
 const STATIC = [
   "/",
   "/static/css/app.css",
@@ -36,16 +36,14 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
-  // Cache-first for the shell & static assets
+  // Network-first for the shell & static assets, so deploys show up on the next
+  // reload instead of being masked by a stale cache; cache is just the offline fallback.
   e.respondWith(
-    caches.match(e.request).then((hit) =>
-      hit ||
-      fetch(e.request).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(e.request, copy));
-        return res;
-      }).catch(() => caches.match("/"))
-    )
+    fetch(e.request).then((res) => {
+      const copy = res.clone();
+      caches.open(CACHE).then((c) => c.put(e.request, copy));
+      return res;
+    }).catch(() => caches.match(e.request).then((hit) => hit || caches.match("/")))
   );
 });
 
