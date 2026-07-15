@@ -218,10 +218,26 @@ function pageLogin() {
     <label for="username">Username</label>
     <input id="username" autocomplete="username">
     <label for="password">Password</label>
-    <input id="password" type="password" autocomplete="current-password">
+    <div class="password-field">
+      <input id="password" type="password" autocomplete="current-password">
+      <button type="button" class="password-toggle" id="togglePw" aria-label="Show password">👁</button>
+    </div>
     <div id="msg"></div>
     <button class="btn btn-primary" id="loginBtn">Sign In</button>
+    <p class="muted center" style="font-size:.78rem;margin-top:2rem">
+      By continuing you agree to our
+      <a href="/privacy_terms#terms" target="_blank" rel="noopener">Terms of Service</a>
+      and <a href="/privacy_terms#privacy" target="_blank" rel="noopener">Privacy Policy</a>.
+    </p>
   `, { back: false });
+  document.getElementById("togglePw").onclick = () => {
+    const pw = document.getElementById("password");
+    const btn = document.getElementById("togglePw");
+    const showing = pw.type === "password";
+    pw.type = showing ? "text" : "password";
+    btn.textContent = showing ? "🙈" : "👁";
+    btn.setAttribute("aria-label", showing ? "Hide password" : "Show password");
+  };
   document.getElementById("loginBtn").onclick = async () => {
     const username = document.getElementById("username").value.trim();
     const password = document.getElementById("password").value;
