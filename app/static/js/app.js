@@ -141,11 +141,15 @@ function showError(e) {
 }
 function go(hash) { location.hash = hash; }
 
-function wishItemRow(item, { showBuy = false, showDelete = false } = {}) {
-  const thumb = item.photo_url
+function wishThumbCell(item) {
+  return item.photo_url
     ? `<button type="button" class="wish-thumb-btn" data-photo="${esc(item.photo_url)}" aria-label="View photo of ${esc(item.item_name)} full size">
          <img src="${esc(item.photo_url)}" alt="" class="wish-thumb"></button>`
     : `<div class="wish-thumb wish-thumb-empty">🎁</div>`;
+}
+
+// Read-only table row: My Giftee, Their Wishlist, My Clan, admin All Wishlists.
+function wishRowReadOnly(item, { showBuy = false, personName = null } = {}) {
   const meta = [
     item.description ? esc(item.description) : "",
     item.link_url ? `<a href="${esc(item.link_url)}" target="_blank" rel="noopener">See it online</a>` : "",
@@ -153,21 +157,101 @@ function wishItemRow(item, { showBuy = false, showDelete = false } = {}) {
   let action = "";
   if (showBuy) {
     action = `<button class="btn ${item.is_purchased ? "btn-quiet" : "btn-green"}" style="width:auto" data-buy="${item.id}">${item.is_purchased ? "Unbought" : "I Bought This"}</button>`;
-  } else if (showDelete) {
-    action = item.locked
-      ? `<span class="muted wish-locked" title="This gift can no longer be changed">🔒</span>`
-      : `<button class="icon-btn" aria-label="Remove ${esc(item.item_name)}" data-del="${item.id}">🗑</button>`;
+  } else if (item.is_purchased) {
+    action = `<span class="tag-bought">✓ Bought</span>`;
   }
   return `
-    <div class="wish-row ${item.is_purchased ? "bought" : ""}">
-      ${thumb}
-      <div class="wish-info">
-        <strong>${esc(item.item_name)}</strong>
-        <span class="wish-priority">P${item.priority}</span>
-        ${meta ? `<div class="muted wish-meta">${meta}</div>` : ""}
-        ${item.is_purchased ? `<span class="tag-bought">✓ Bought</span>` : ""}
-      </div>
-      ${action}
+    <tr class="${item.is_purchased ? "bought" : ""}">
+      ${personName !== null ? `<td data-label="Person">${esc(personName)}</td>` : ""}
+      <td data-label="Photo">${wishThumbCell(item)}</td>
+      <td data-label="Item"><strong>${esc(item.item_name)}</strong>${meta ? `<div class="muted wish-meta">${meta}</div>` : ""}</td>
+      <td data-label="Priority">P${item.priority}</td>
+      <td data-label="" class="table-actions">${action}</td>
+    </tr>`;
+}
+
+// Editable table row for My Wishlist (own items): name/description/link/priority
+// inputs + Save/Delete, or a plain sentence once the item is locked (bought).
+function myWishRow(item, eventId, limit) {
+  const priorityOpts = Array.from({ length: limit }, (_, n) => n + 1)
+    .map(n => `<option value="${n}" ${n === item.priority ? "selected" : ""}>${n}</option>`).join("");
+  const actions = item.locked
+    ? `<span class="muted wish-locked-msg">Cannot edit this item as it has already been bought.</span>`
+    : `<div class="table-actions">
+         <button class="btn btn-secondary" data-save>Save</button>
+         <button class="btn btn-quiet" data-del>Delete</button>
+       </div>`;
+  const tr = h(`<tr>
+    <td data-label="Photo">${wishThumbCell(item)}</td>
+    <td data-label="Item"><input data-name value="${esc(item.item_name)}" ${item.locked ? "disabled" : ""}></td>
+    <td data-label="Description"><input data-desc value="${esc(item.description || "")}" ${item.locked ? "disabled" : ""}></td>
+    <td data-label="Link"><input data-link type="url" value="${esc(item.link_url || "")}" ${item.locked ? "disabled" : ""}></td>
+    <td data-label="Priority"><select data-priority ${item.locked ? "disabled" : ""}>${priorityOpts}</select></td>
+    <td data-label="">${actions}</td>
+  </tr>`).firstElementChild;
+  if (!item.locked) {
+    tr.querySelector("[data-save]").onclick = async () => {
+      try {
+        await api.patch(`/wishlists/${item.id}`, {
+          item_name: tr.querySelector("[data-name]").value,
+          description: tr.querySelector("[data-desc]").value,
+          link_url: tr.querySelector("[data-link]").value,
+          priority: tr.querySelector("[data-priority]").value,
+        });
+        document.getElementById("msg").innerHTML = alertBox("Saved!", true);
+      } catch (e) { showError(e); }
+    };
+    tr.querySelector("[data-del]").onclick = async () => {
+      if (!confirm("Remove this gift from your list?")) return;
+      try { await api.del(`/wishlists/${item.id}`); tr.remove(); }
+      catch (e) { showError(e); }
+    };
+  }
+  return tr;
+}
+
+function annRowReadOnly(a) {
+  const del = FAMILY.role === "admin"
+    ? `<button class="icon-btn" aria-label="Delete announcement" data-del-ann="${a.id}">🗑</button>` : "";
+  return `
+    <tr>
+      <td data-label="Title"><strong>${a.is_pinned ? "📌 " : ""}${esc(a.title)}</strong></td>
+      <td data-label="Message" class="wrap-cell">${esc(a.body)}</td>
+      <td data-label="From">${esc(a.author)}</td>
+      <td data-label="Date">${new Date(a.at).toLocaleDateString()}</td>
+      <td data-label="" class="table-actions">${del}</td>
+    </tr>`;
+}
+function annTable(anns) {
+  return `
+    <div class="table-wrap">
+      <table class="data">
+        <colgroup>
+          <col style="width:18%"><col style="width:42%">
+          <col style="width:15%"><col style="width:15%"><col style="width:10%">
+        </colgroup>
+        <thead><tr><th>Title</th><th>Message</th><th>From</th><th>Date</th><th></th></tr></thead>
+        <tbody>${anns.map(annRowReadOnly).join("")}</tbody>
+      </table>
+    </div>`;
+}
+
+// Wraps read-only wishlist rows (from wishRowReadOnly) in a table.data shell.
+function wishTable(rowsHtml, { showPerson = false } = {}) {
+  return `
+    <div class="table-wrap">
+      <table class="data">
+        <colgroup>
+          ${showPerson ? `<col style="width:18%">` : ""}
+          <col style="width:10%"><col style="width:${showPerson ? "42%" : "55%"}">
+          <col style="width:10%"><col style="width:${showPerson ? "20%" : "25%"}">
+        </colgroup>
+        <thead><tr>
+          ${showPerson ? `<th>Person</th>` : ""}
+          <th></th><th>Item</th><th>Priority</th><th></th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
     </div>`;
 }
 
@@ -486,18 +570,7 @@ route(/^\/$/, async () => {
   const sections = [`<h2 style="margin-top:0">Welcome, ${esc(ME.user.full_name)}!</h2>`];
 
   const anns = await api.get(`/families/${FAMILY.id}/announcements`);
-  const annHtml = anns.length
-    ? anns.map(a => `
-        <div class="ann-row">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem">
-            <strong>${a.is_pinned ? "📌 " : ""}${esc(a.title)}</strong>
-            ${FAMILY.role === "admin"
-              ? `<button class="icon-btn" aria-label="Delete announcement" data-del-ann="${a.id}">🗑</button>` : ""}
-          </div>
-          <p>${esc(a.body)}</p>
-          <p class="muted">${esc(a.author)} • ${new Date(a.at).toLocaleDateString()}</p>
-        </div>`).join("")
-    : `<p class="muted">No announcements yet.</p>`;
+  const annHtml = anns.length ? annTable(anns) : `<p class="muted">No announcements yet.</p>`;
   sections.push(`<div class="dash-section"><h2>Announcements</h2>${annHtml}</div>`);
 
   if (!CURRENT_EVENT) {
@@ -523,7 +596,7 @@ route(/^\/$/, async () => {
       const budget = d.budget_amount
         ? `<p class="muted">Gift budget: <strong>${esc(d.budget_currency)} ${d.budget_amount}</strong></p>` : "";
       const itemsHtml = giftItems.length
-        ? giftItems.map(i => wishItemRow(i, { showBuy: true })).join("")
+        ? wishTable(giftItems.map(i => wishRowReadOnly(i, { showBuy: true })).join(""))
         : `<p class="muted">They haven't added any gift ideas yet. Send them a friendly nudge!</p>`;
       sections.push(`
         <div class="dash-section">
@@ -565,10 +638,8 @@ route(/^\/events\/(\d+)\/wishlist$/, async (id) => {
   const d = await api.get(`/events/${id}/wishlists/mine`);
   const priorityOptions = Array.from({ length: d.limit }, (_, n) => n + 1)
     .map(n => `<option value="${n}" ${n === Math.min(3, d.limit) ? "selected" : ""}>${n}</option>`).join("");
-  const items = d.items.length
-    ? d.items.map(i => wishItemRow(i, { showDelete: true })).join("")
-    : `<p class="muted">Your list is empty. Add your first gift idea!</p>`;
   render("My Wishlist", `
+    <div id="msg"></div>
     <p class="muted">${d.items.length} of ${d.limit} gifts</p>
     <h2>Add a gift idea</h2>
     <label>What would you love?</label>
@@ -581,11 +652,22 @@ route(/^\/events\/(\d+)\/wishlist$/, async (id) => {
     <select id="ipriority">${priorityOptions}</select>
     <label>Photo <span class="muted">(optional)</span></label>
     <input id="iphoto" type="file" accept="image/*">
-    <div id="msg"></div>
     <button class="btn btn-primary" id="addBtn">Add to My List</button>
     <h2 style="margin-top:1.5rem">Your gift ideas</h2>
-    ${items}
+    ${d.items.length ? `
+      <div class="table-wrap">
+        <table class="data" id="myWishTable">
+          <colgroup>
+            <col style="width:10%"><col style="width:27%"><col style="width:27%">
+            <col style="width:16%"><col style="width:10%"><col style="width:10%">
+          </colgroup>
+          <thead><tr><th></th><th>Item</th><th>Description</th><th>Link</th><th>Priority</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>` : `<p class="muted">Your list is empty. Add your first gift idea!</p>`}
   `);
+  const tbody = document.querySelector("#myWishTable tbody");
+  if (tbody) d.items.forEach(i => tbody.append(myWishRow(i, id, d.limit)));
   document.getElementById("addBtn").onclick = async () => {
     try {
       const fd = new FormData();
@@ -599,9 +681,6 @@ route(/^\/events\/(\d+)\/wishlist$/, async (id) => {
       navigate();
     } catch (e) { showError(e); }
   };
-  $app.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => {
-    if (confirm("Remove this gift from your list?")) { await api.del(`/wishlists/${b.dataset.del}`); navigate(); }
-  });
 });
 
 route(/^\/events\/(\d+)\/giftee$/, async (id) => {
@@ -609,7 +688,7 @@ route(/^\/events\/(\d+)\/giftee$/, async (id) => {
   try { d = await api.get(`/events/${id}/wishlists/giftee`); }
   catch (e) { return render("Their Wishlist", alertBox(e.message)); }
   const items = d.items.length
-    ? d.items.map(i => wishItemRow(i, { showBuy: true })).join("")
+    ? wishTable(d.items.map(i => wishRowReadOnly(i, { showBuy: true })).join(""))
     : `<p class="muted">They haven't added any gift ideas yet. Send them a friendly nudge!</p>`;
   render("Their Wishlist", items + `
     <button class="btn btn-secondary" style="width:auto;margin-top:.5rem" onclick="go('/events/${id}/messages/giftee')">Send a Secret Message</button>`);
@@ -621,14 +700,13 @@ route(/^\/events\/(\d+)\/giftee$/, async (id) => {
 route(/^\/events\/(\d+)\/clan$/, async (id) => {
   const list = await api.get(`/events/${id}/wishlists/clan`);
   list.sort((a, b) => a.user.display_name.localeCompare(b.user.display_name));
-  const sections = list.map(entry => {
-    const items = entry.items.length
-      ? entry.items.map(i => wishItemRow(i, { showBuy: i.is_purchased !== undefined })).join("")
-      : `<p class="muted">No gift ideas yet.</p>`;
-    return `<div class="dash-section"><h2>${esc(entry.user.display_name)}</h2>${items}</div>`;
-  }).join("");
-  render("My Clan", sections
-    || `<div class="card center"><p>No one's joined this gift exchange yet.</p></div>`);
+  const rows = list.flatMap(entry => entry.items.length
+    ? entry.items.map(i => wishRowReadOnly(i, { showBuy: i.is_purchased !== undefined, personName: entry.user.display_name }))
+    : [`<tr><td data-label="Person">${esc(entry.user.display_name)}</td><td colspan="4" class="muted">No gift ideas yet.</td></tr>`]
+  ).join("");
+  render("My Clan", list.length
+    ? wishTable(rows, { showPerson: true })
+    : `<div class="card center"><p>No one's joined this gift exchange yet.</p></div>`);
   $app.querySelectorAll("[data-buy]").forEach(b => b.onclick = async () => {
     await api.post(`/wishlists/${b.dataset.buy}/purchase`); navigate();
   });
@@ -693,16 +771,7 @@ route(/^\/events\/(\d+)\/messages\/giftee$/, (id) => renderMessageThread(id, "gi
 
 route(/^\/announcements$/, async () => {
   const anns = await api.get(`/families/${FAMILY.id}/announcements`);
-  const list = anns.map(a => `
-    <div class="card ann">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.5rem">
-        <strong>${a.is_pinned ? "📌 " : ""}${esc(a.title)}</strong>
-        ${FAMILY.role === "admin"
-          ? `<button class="icon-btn" aria-label="Delete announcement" data-del-ann="${a.id}">🗑</button>` : ""}
-      </div>
-      <p>${esc(a.body)}</p>
-      <p class="muted">${esc(a.author)} • ${new Date(a.at).toLocaleDateString()}</p>
-    </div>`).join("") || `<div class="card center"><p>No announcements yet.</p></div>`;
+  const list = anns.length ? annTable(anns) : `<div class="card center"><p>No announcements yet.</p></div>`;
   render("Announcements", list);
   $app.querySelectorAll("[data-del-ann]").forEach(b => b.onclick = async () => {
     if (!confirm("Delete this announcement?")) return;
@@ -1077,13 +1146,13 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
 route(/^\/admin\/events\/(\d+)\/wishlists$/, async (id) => {
   const all = await api.get(`/events/${id}/wishlists`);
   all.sort((a, b) => a.user.display_name.localeCompare(b.user.display_name));
-  const list = all.map(w => {
-    const items = w.items.length
-      ? w.items.map(i => wishItemRow(i, { showBuy: i.is_purchased !== undefined })).join("")
-      : `<p class="muted">No gift ideas yet.</p>`;
-    return `<div class="dash-section"><h2>${esc(w.user.display_name)}</h2>${items}</div>`;
-  }).join("");
-  render("All Wishlists", list, { back: true, wide: true });
+  const rows = all.flatMap(w => w.items.length
+    ? w.items.map(i => wishRowReadOnly(i, { showBuy: i.is_purchased !== undefined, personName: w.user.display_name }))
+    : [`<tr><td data-label="Person">${esc(w.user.display_name)}</td><td colspan="4" class="muted">No gift ideas yet.</td></tr>`]
+  ).join("");
+  render("All Wishlists", all.length
+    ? wishTable(rows, { showPerson: true })
+    : `<p class="muted">No one's joined this gift exchange yet.</p>`, { back: true, wide: true });
   $app.querySelectorAll("[data-buy]").forEach(b => b.onclick = async () => {
     await api.post(`/wishlists/${b.dataset.buy}/purchase`); navigate();
   });
@@ -1093,43 +1162,51 @@ route(/^\/admin\/announce$/, async () => {
   const anns = await api.get(`/families/${FAMILY.id}/announcements?scope=all`);
 
   function annRow(a) {
-    const row = h(`<div class="card">
-      <label>Title</label>
-      <input data-title value="${esc(a.title)}">
-      <label>Message</label>
-      <textarea data-body rows="3">${esc(a.body)}</textarea>
-      <div class="check-row"><input type="checkbox" data-pinned ${a.is_pinned ? "checked" : ""}><label style="margin:0">Pin to the top</label></div>
-      <div class="check-row"><input type="checkbox" data-published ${a.is_published ? "checked" : ""}><label style="margin:0">Show on Clan Dashboard</label></div>
-      <div class="table-actions" style="margin-top:.5rem">
+    const tr = h(`<tr>
+      <td data-label="Title"><input data-title value="${esc(a.title)}"></td>
+      <td data-label="Message"><textarea data-body rows="2">${esc(a.body)}</textarea></td>
+      <td data-label="Pinned"><input type="checkbox" data-pinned ${a.is_pinned ? "checked" : ""} aria-label="Pin to the top"></td>
+      <td data-label="On Dashboard"><input type="checkbox" data-published ${a.is_published ? "checked" : ""} aria-label="Show on Clan Dashboard"></td>
+      <td class="table-actions">
         <button class="btn btn-secondary" data-save>Save</button>
         <button class="btn btn-quiet" data-del>Delete</button>
-      </div>
-    </div>`).firstElementChild;
-    row.querySelector("[data-save]").onclick = async () => {
+      </td>
+    </tr>`).firstElementChild;
+    tr.querySelector("[data-save]").onclick = async () => {
       try {
         await api.patch(`/announcements/${a.id}`, {
-          title: row.querySelector("[data-title]").value,
-          body: row.querySelector("[data-body]").value,
-          is_pinned: row.querySelector("[data-pinned]").checked,
-          is_published: row.querySelector("[data-published]").checked,
+          title: tr.querySelector("[data-title]").value,
+          body: tr.querySelector("[data-body]").value,
+          is_pinned: tr.querySelector("[data-pinned]").checked,
+          is_published: tr.querySelector("[data-published]").checked,
         });
         document.getElementById("msg").innerHTML = alertBox("Saved!", true);
       } catch (e) { showError(e); }
     };
-    row.querySelector("[data-del]").onclick = async () => {
+    tr.querySelector("[data-del]").onclick = async () => {
       if (!confirm("Delete this announcement?")) return;
       try {
         await api.del(`/announcements/${a.id}`);
-        row.remove();
+        tr.remove();
       } catch (e) { showError(e); }
     };
-    return row;
+    return tr;
   }
 
   render("Announcements", `
     <div id="msg"></div>
     <h2>Existing announcements</h2>
-    <div id="annList">${anns.length ? "" : `<p class="muted">No announcements yet.</p>`}</div>
+    ${anns.length ? `
+      <div class="table-wrap">
+        <table class="data" id="annTable">
+          <colgroup>
+            <col style="width:20%"><col style="width:38%">
+            <col style="width:12%"><col style="width:12%"><col style="width:18%">
+          </colgroup>
+          <thead><tr><th>Title</th><th>Message</th><th>Pinned</th><th>On Dashboard</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>` : `<p class="muted">No announcements yet.</p>`}
     <hr style="margin:1.5rem 0">
     <h2>Post a new announcement</h2>
     <label>Title</label><input id="atitle" placeholder="e.g. Party is at 6pm!">
@@ -1139,8 +1216,8 @@ route(/^\/admin\/announce$/, async () => {
     <button class="btn btn-primary" id="postBtn">Post to the Family</button>
   `, { back: false, wide: true });
 
-  const list = document.getElementById("annList");
-  anns.forEach(a => list.append(annRow(a)));
+  const tbody = document.querySelector("#annTable tbody");
+  if (tbody) anns.forEach(a => tbody.append(annRow(a)));
 
   document.getElementById("postBtn").onclick = async () => {
     try {

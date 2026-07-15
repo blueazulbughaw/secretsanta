@@ -49,14 +49,14 @@ header#topbar {
    with no sidebar yet (sign in, registration, onboarding) stay centered,
    like a normal login screen. */
 #shell { display: flex; align-items: flex-start; }
-main#app { flex: 1 1 auto; min-width: 0; padding: 1.5rem 2rem; max-width: 640px; margin: 0 auto; }
+main#app { flex: 1 1 auto; min-width: 0; padding: 1.25rem 1.5rem; max-width: 640px; margin: 0 auto; }
 #shell.authed main#app { max-width: 1100px; margin: 0; }
 #shell.authed main#app.wide { max-width: 1320px; }
 
 /* My Dashboard — flat sections, no card boxes */
-.dash-section { padding: 1rem 0; border-bottom: 1px solid var(--line); }
+.dash-section { padding: .6rem 0; border-bottom: 1px solid var(--line); }
 .dash-section:last-child { border-bottom: none; }
-.dash-section h2 { margin: 0 0 .5rem; }
+.dash-section h2 { margin: 0 0 .35rem; }
 
 #menuBtn { display: none; }
 #sidebarOverlay { display: none; }
@@ -150,7 +150,7 @@ table.data .table-actions button {
   table.data .table-actions button { flex: 1 1 auto; min-height: var(--touch); }
 }
 
-h2 { font-size: 1.15rem; margin: .4rem 0 .7rem; }
+h2 { font-size: 1.1rem; margin: .3rem 0 .5rem; }
 p  { font-size: .92rem; }
 .muted { color: var(--muted); }
 .center { text-align: center; }
@@ -218,44 +218,32 @@ input:focus, textarea:focus, select:focus {
   width: 18px; height: 18px; min-height: 0; accent-color: var(--green);
 }
 
-/* Wishlist items — dense row, not a bordered card */
-.wish-row {
-  display: flex; align-items: center; gap: .6rem;
-  padding: .5rem 0; border-bottom: 1px solid var(--line);
-}
-.wish-row:last-child { border-bottom: none; }
+/* Wishlist/announcement photo thumbnail + table-cell wrap overrides.
+   table.data defaults to overflow:hidden/single-line (right for inputs),
+   but the locked-item message and announcement bodies are plain wrapping
+   text, so they need it switched back on. */
 .wish-thumb {
-  width: 36px; height: 36px; border-radius: 6px; object-fit: cover;
+  width: 28px; height: 28px; border-radius: 6px; object-fit: cover;
   flex: 0 0 auto; background: #F4F4F4;
 }
-.wish-thumb-empty { display: flex; align-items: center; justify-content: center; font-size: 1rem; }
+.wish-thumb-empty { display: flex; align-items: center; justify-content: center; font-size: .85rem; }
 button.wish-thumb-btn {
-  padding: 0; border: none; background: none; cursor: zoom-in;
-  flex: 0 0 auto; border-radius: 6px;
+  padding: 0; border: none; background: none; cursor: zoom-in; border-radius: 6px;
 }
 button.wish-thumb-btn:focus-visible { outline: 3px solid var(--yellow); }
 button.wish-thumb-btn .wish-thumb { display: block; }
-.wish-info { flex: 1; min-width: 0; }
-.wish-priority {
-  display: inline-block; margin-left: .4rem; color: var(--muted);
-  font-size: .72rem; font-weight: 600; vertical-align: middle;
-}
-.wish-meta { font-size: .82rem; }
-.wish-row.bought .wish-info strong { text-decoration: line-through; color: var(--muted); }
+.wish-meta { font-size: .8rem; color: var(--muted); overflow: visible; white-space: normal; }
+tr.bought td strong { text-decoration: line-through; color: var(--muted); }
 .tag-bought { background: var(--green); color:#fff; border-radius: 999px;
   padding: .15rem .55rem; font-size: .72rem; font-weight: 700; }
+.wish-locked-msg { overflow: visible; white-space: normal; font-size: .82rem; }
+table.data td.wrap-cell { overflow: visible; white-space: normal; }
 
 /* Messages — capped in absolute terms, not just relative to the (now wider) pane */
 .bubble { max-width: min(75%, 480px); padding: .5rem .75rem; border-radius: var(--radius);
   margin: .3rem 0; font-size: .9rem; }
 .bubble.mine { background: var(--red); color: #fff; margin-left: auto; }
 .bubble.theirs { background: #F2F2F2; }
-
-/* Announcements */
-.ann { border-left: 4px solid var(--yellow); }
-.ann-row { padding: .6rem 0; border-bottom: 1px solid var(--line); }
-.ann-row:last-child { border-bottom: none; }
-.ann-row p { margin: .25rem 0; }
 
 /* Alerts */
 .alert { border-radius: var(--radius); padding: .7rem .9rem; margin: .6rem 0;
