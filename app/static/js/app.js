@@ -6,9 +6,13 @@ const $back = document.getElementById("backBtn");
 const $topbar = document.getElementById("topbar");
 const $bell = document.getElementById("bellBtn");
 const $badge = document.getElementById("bellBadge");
+const $sidebar = document.getElementById("sidebar");
+const $sidebarOverlay = document.getElementById("sidebarOverlay");
+const $menuBtn = document.getElementById("menuBtn");
 
 let ME = null;          // { user, families }
 let FAMILY = null;      // active family {id, name, role}
+let CURRENT_EVENT = null; // the family's active (non completed/cancelled) event, or null
 let PENDING_JOIN_CODE = null;
 let IS_REGISTER_ENTRY = false;
 
@@ -47,26 +51,64 @@ function render(title, html, { back = true, wide = false } = {}) {
   window.scrollTo(0, 0);
 }
 
-const ADMIN_NAV = [
-  { key: "dashboard", href: "/admin", label: "Dashboard" },
-  { key: "members", href: "/admin/members", label: "Members" },
-  { key: "groups", href: "/admin/groups", label: "Family Groups" },
-  { key: "events", href: "/admin/events", label: "Gift Exchanges" },
-  { key: "announce", href: "/admin/announce", label: "Post Announcement" },
+const NAV = [
+  { key: "my-person", label: "My Person", eventPath: "my-person" },
+  { key: "wishlist", label: "My Wishlist", eventPath: "wishlist" },
+  { key: "giftee", label: "My Person's Wishlist", eventPath: "giftee" },
+  { key: "messages", label: "Messages", eventPath: "messages" },
+  { key: "announcements", label: "Announcements", href: "/announcements" },
+  { key: "admin", label: "Manage Family", href: "/admin", adminOnly: true, children: [
+    { key: "members", href: "/admin/members", label: "Members" },
+    { key: "groups", href: "/admin/groups", label: "Family Groups" },
+    { key: "events", href: "/admin/events", label: "Gift Exchanges" },
+    { key: "announce", href: "/admin/announce", label: "Post Announcement" },
+  ] },
+  { key: "security", label: "Profile & Security", href: "/security" },
 ];
-function renderAdmin(title, activeKey, contentHtml, { back = false } = {}) {
-  const links = ADMIN_NAV.map(item => `
-    <a href="#${item.href}" class="${item.key === activeKey ? "active" : ""}">${esc(item.label)}</a>`).join("");
-  render(title, `
-    <div class="admin-layout">
-      <nav class="admin-sidebar">
-        ${links}
-        <a href="#/" class="leave">← Back to My Dashboard</a>
-      </nav>
-      <div class="admin-content">${contentHtml}</div>
-    </div>
-  `, { back, wide: true });
+
+async function refreshCurrentEvent() {
+  const events = await api.get(`/families/${FAMILY.id}/events`);
+  CURRENT_EVENT = events.find(e => e.status !== "completed" && e.status !== "cancelled") || null;
 }
+
+function navHref(item) {
+  return item.eventPath ? (CURRENT_EVENT ? `/events/${CURRENT_EVENT.id}/${item.eventPath}` : null) : item.href;
+}
+function navItemHtml(item, activePath) {
+  const href = navHref(item);
+  if (item.children) {
+    const isActive = activePath === href || item.children.some(c => activePath === c.href);
+    const kids = item.children.map(c => `
+      <a href="#${c.href}" class="nav-link nav-child ${activePath === c.href ? "active" : ""}">${esc(c.label)}</a>`).join("");
+    return `
+      <div class="nav-group ${isActive ? "expanded" : ""}">
+        <a href="#${href}" class="nav-link nav-parent ${isActive ? "active" : ""}">
+          <span>${esc(item.label)}</span><span class="nav-caret">${isActive ? "▾" : "▸"}</span>
+        </a>
+        <div class="nav-children">${kids}</div>
+      </div>`;
+  }
+  if (!href) return `<span class="nav-link nav-disabled">${esc(item.label)}</span>`;
+  return `<a href="#${href}" class="nav-link ${activePath === href ? "active" : ""}">${esc(item.label)}</a>`;
+}
+function renderSidebar(activePath) {
+  if (!FAMILY) return;
+  const items = NAV.filter(i => !i.adminOnly || FAMILY.role === "admin")
+    .map(i => navItemHtml(i, activePath)).join("");
+  $sidebar.innerHTML = `
+    <div class="sidebar-brand">${esc(FAMILY.name)}</div>
+    <div class="nav-scroll">${items}</div>
+    <a href="#" id="logoutLink" class="nav-link nav-logout">Sign Out</a>
+  `;
+  document.getElementById("logoutLink").onclick = async (e) => {
+    e.preventDefault();
+    await api.post("/auth/logout");
+    location.reload();
+  };
+  $sidebar.querySelectorAll("a.nav-link").forEach(a => a.addEventListener("click", closeSidebar));
+}
+function openSidebar() { $sidebar.classList.add("open"); $sidebarOverlay.classList.add("open"); }
+function closeSidebar() { $sidebar.classList.remove("open"); $sidebarOverlay.classList.remove("open"); }
 function alertBox(msg, ok = false) {
   return `<div class="alert ${ok ? "alert-ok" : "alert-error"}" role="alert">${esc(msg)}</div>`;
 }
@@ -90,6 +132,8 @@ const routes = [];
 function route(pattern, fn) { routes.push({ pattern, fn }); }
 async function navigate() {
   const path = location.hash.replace(/^#/, "") || "/";
+  renderSidebar(path);
+  closeSidebar();
   for (const r of routes) {
     const m = path.match(r.pattern);
     if (m) { try { await r.fn(...m.slice(1)); } catch (e) { render("Oops", alertBox(e.message)); } return; }
@@ -99,6 +143,8 @@ async function navigate() {
 window.addEventListener("hashchange", navigate);
 $back.onclick = () => history.back();
 $bell.onclick = () => go("/notifications");
+$menuBtn.onclick = () => { $sidebar.classList.contains("open") ? closeSidebar() : openSidebar(); };
+$sidebarOverlay.onclick = closeSidebar;
 
 // ---------- boot ----------
 async function boot() {
@@ -109,10 +155,15 @@ async function boot() {
     if (ME.needs_security_setup) return pageSecuritySetup(true);
     if (ME.families.length === 0) return pageNoFamily();
     FAMILY = ME.families[0];
+    await refreshCurrentEvent();
+    $sidebar.hidden = false;
+    $menuBtn.hidden = false;
     refreshBadge();
     navigate();
   } catch (_) {
     $topbar.hidden = true;
+    $sidebar.hidden = true;
+    $menuBtn.hidden = true;
     if (IS_REGISTER_ENTRY) pageRegisterStart();
     else pageLogin();
   }
@@ -344,35 +395,20 @@ function pageNoFamily() {
 
 // ---------- main pages ----------
 route(/^\/$/, async () => {
-  const events = await api.get(`/families/${FAMILY.id}/events`);
-  const current = events.find(e => e.status !== "completed" && e.status !== "cancelled");
-  let cards = "";
-  if (current) {
-    cards += `
-      <button class="card-btn" onclick="go('/events/${current.id}/my-person')">
-        <span class="emoji">🎅</span><span>See My Person<span class="sub">${esc(current.name)}</span></span></button>
-      <button class="card-btn" onclick="go('/events/${current.id}/wishlist')">
-        <span class="emoji">📝</span><span>My Wishlist<span class="sub">Tell your Santa what you'd love</span></span></button>
-      <button class="card-btn" onclick="go('/events/${current.id}/giftee')">
-        <span class="emoji">🎁</span><span>My Person's Wishlist<span class="sub">See their gift ideas</span></span></button>
-      <button class="card-btn" onclick="go('/events/${current.id}/messages')">
-        <span class="emoji">💌</span><span>Messages<span class="sub">Chat without spoiling the surprise</span></span></button>`;
-  } else {
-    cards += `<div class="card center"><p>No gift exchange is happening right now.</p></div>`;
-  }
-  cards += `
-    <button class="card-btn" onclick="go('/announcements')">
-      <span class="emoji">📢</span><span>Announcements</span></button>`;
-  if (FAMILY.role === "admin") {
-    cards += `<button class="card-btn" onclick="go('/admin')">
-      <span class="emoji">⚙️</span><span>Manage Family<span class="sub">Members, households & events</span></span></button>`;
-  }
-  cards += `
-    <button class="card-btn" onclick="go('/security')">
-      <span class="emoji">🔒</span><span>Profile & Security<span class="sub">Your name, password & phone sign-in</span></span></button>`;
-  cards += `<button class="btn btn-quiet" id="logoutBtn" style="margin-top:2rem">Sign Out</button>`;
-  render(FAMILY.name, cards, { back: false });
-  document.getElementById("logoutBtn").onclick = async () => { await api.post("/auth/logout"); location.reload(); };
+  const status = CURRENT_EVENT
+    ? `<div class="card center">
+         <p class="muted">This year's exchange</p>
+         <h2 style="margin:.25rem 0">${esc(CURRENT_EVENT.name)}</h2>
+         <p class="muted">${esc(CURRENT_EVENT.event_date)}</p>
+       </div>`
+    : FAMILY.role === "admin"
+      ? `<div class="card center"><p>No gift exchange is happening right now.</p>
+           <button class="btn btn-primary" onclick="go('/admin/events')" style="margin-top:.75rem">Create a Gift Exchange</button></div>`
+      : `<div class="card center"><p>No gift exchange is happening right now. Check back soon!</p></div>`;
+  render(FAMILY.name, `
+    <h2 class="center" style="margin-top:1rem">Welcome, ${esc(ME.user.full_name)}!</h2>
+    ${status}
+  `, { back: false });
 });
 
 route(/^\/events\/(\d+)\/my-person$/, async (id) => {
@@ -509,7 +545,7 @@ route(/^\/notifications$/, async () => {
 route(/^\/admin$/, async () => {
   const fam = await api.get(`/families/${FAMILY.id}`);
   const regUrl = `${location.origin}/#/join/${fam.join_code}`;
-  renderAdmin("Clan Admin Dashboard", "dashboard", `
+  render("Clan Admin Dashboard", `
     <h2>Clan name</h2>
     <label for="clanName">Name</label>
     <input id="clanName" value="${esc(fam.name)}">
@@ -522,7 +558,7 @@ route(/^\/admin$/, async () => {
       <button class="btn btn-quiet" id="copyLinkBtn" style="margin-top:.5rem">Copy Registration Link</button>
       <div id="copyMsg"></div>
     </div>
-  `);
+  `, { back: false, wide: true });
   document.getElementById("saveClanName").onclick = async () => {
     try {
       const r = await api.patch(`/families/${FAMILY.id}`, { name: document.getElementById("clanName").value });
@@ -541,11 +577,8 @@ route(/^\/admin$/, async () => {
 });
 
 route(/^\/admin\/members$/, async () => {
-  const [households, events] = await Promise.all([
-    api.get(`/families/${FAMILY.id}/households`),
-    api.get(`/families/${FAMILY.id}/events`),
-  ]);
-  const current = events.find(e => e.status !== "completed" && e.status !== "cancelled");
+  const current = CURRENT_EVENT;
+  const households = await api.get(`/families/${FAMILY.id}/households`);
   const participants = current
     ? await api.get(`/events/${current.id}/participants`)
     : [];
@@ -620,7 +653,7 @@ route(/^\/admin\/members$/, async () => {
   }
 
   const members = await api.get(`/families/${FAMILY.id}/members`);
-  renderAdmin("Members", "members", `
+  render("Members", `
     <div id="msg"></div>
     ${current ? "" : `<div class="card center"><p class="muted">Create a gift exchange first to track who's joining this year.</p></div>`}
     <div class="table-wrap">
@@ -652,7 +685,7 @@ route(/^\/admin\/members$/, async () => {
     </div>` : ""}
     <div id="addMsg"></div>
     <button class="btn btn-primary" id="addMemberBtn">Add Member</button>
-  `);
+  `, { back: false, wide: true });
   const tbody = $app.querySelector("#membersTable tbody");
   members.forEach(m => tbody.append(memberRow(m)));
 
@@ -709,7 +742,7 @@ route(/^\/admin\/groups$/, async () => {
     return tr;
   }
 
-  renderAdmin("Family Groups", "groups", `
+  render("Family Groups", `
     <p class="muted">People in the same family group won't draw each other's names.</p>
     <div id="msg"></div>
     <div class="table-wrap">
@@ -724,7 +757,7 @@ route(/^\/admin\/groups$/, async () => {
     <label>Group name</label>
     <input id="hname">
     <button class="btn btn-primary" id="addHouse">Add Family Group</button>
-  `);
+  `, { back: false, wide: true });
   const gtbody = $app.querySelector("#groupsTable tbody");
   const noGroups = document.getElementById("noGroups");
   function updateEmptyState() {
@@ -750,7 +783,7 @@ route(/^\/admin\/events$/, async () => {
       <span class="emoji">${e.status === "matched" ? "✅" : "🎄"}</span>
       <span>${esc(e.name)}<span class="sub">${esc(e.event_date)} • ${e.status === "matched" ? "Names drawn" : "Not drawn yet"}</span></span>
     </button>`).join("");
-  renderAdmin("Gift Exchanges", "events", `
+  render("Gift Exchanges", `
     ${list}
     <h2>Create a new exchange</h2>
     <label>Name</label><input id="ename" placeholder="e.g. Christmas 2026">
@@ -761,7 +794,7 @@ route(/^\/admin\/events$/, async () => {
     <div class="check-row"><input type="checkbox" id="esame"><label for="esame" style="margin:0">Allow matches within the same household</label></div>
     <div id="msg"></div>
     <button class="btn btn-primary" id="createEv">Create Exchange</button>
-  `);
+  `, { back: false, wide: true });
   document.getElementById("createEv").onclick = async () => {
     try {
       await api.post(`/families/${FAMILY.id}/events`, {
@@ -772,6 +805,7 @@ route(/^\/admin\/events$/, async () => {
         use_codenames: document.getElementById("ecodes").checked,
         allow_same_household: document.getElementById("esame").checked,
       });
+      await refreshCurrentEvent();
       navigate();
     } catch (e) { showError(e); }
   };
@@ -794,7 +828,7 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
     ? `<div class="alert alert-ok">✅ Names are drawn! ${st.revealed} of ${st.matched} people have peeked.</div>
        <button class="btn btn-quiet" id="reroll">Start Over (Re-Draw Names)</button>`
     : `<button class="btn btn-primary" id="draw">🎲 Draw Names</button>`;
-  renderAdmin(ev.name, "events", `
+  render(ev.name, `
     <div id="msg"></div>
     <h2>Who's joining?</h2>
     ${rows}
@@ -802,7 +836,7 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
     <hr style="margin:1.5rem 0">
     ${drawSection}
     <button class="btn btn-quiet" onclick="go('/admin/events/${id}/wishlists')">View Everyone's Wishlists</button>
-  `, { back: true });
+  `, { back: true, wide: true });
   const save = document.getElementById("saveParts");
   if (save) save.onclick = async () => {
     const ids = [...$app.querySelectorAll("[data-uid]:checked")].map(c => Number(c.dataset.uid));
@@ -837,17 +871,17 @@ route(/^\/admin\/events\/(\d+)\/wishlists$/, async (id) => {
         ? "<ul>" + w.items.map(i => `<li>${esc(i.item_name)}</li>`).join("") + "</ul>"
         : `<p class="muted">No gift ideas yet.</p>`}
     </div>`).join("");
-  renderAdmin("All Wishlists", "events", list, { back: true });
+  render("All Wishlists", list, { back: true, wide: true });
 });
 
 route(/^\/admin\/announce$/, async () => {
-  renderAdmin("Post Announcement", "announce", `
+  render("Post Announcement", `
     <label>Title</label><input id="atitle" placeholder="e.g. Party is at 6pm!">
     <label>Message</label><textarea id="abody" rows="4"></textarea>
     <div class="check-row"><input type="checkbox" id="apin"><label for="apin" style="margin:0">Pin to the top</label></div>
     <div id="msg"></div>
     <button class="btn btn-primary" id="postBtn">Post to the Family</button>
-  `);
+  `, { back: false, wide: true });
   document.getElementById("postBtn").onclick = async () => {
     try {
       await api.post(`/families/${FAMILY.id}/announcements`, {

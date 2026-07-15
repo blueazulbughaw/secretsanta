@@ -11,6 +11,7 @@
 </head>
 <body>
   <header id="topbar" hidden>
+    <button id="menuBtn" class="icon-btn" aria-label="Menu" hidden>☰</button>
     <button id="backBtn" class="icon-btn" aria-label="Go back" hidden>← Back</button>
     <h1 id="pageTitle">Secret Santa</h1>
     <button id="bellBtn" class="icon-btn" aria-label="Notifications">
@@ -18,7 +19,11 @@
     </button>
   </header>
 
-  <main id="app" aria-live="polite"></main>
+  <div id="shell">
+    <div id="sidebarOverlay"></div>
+    <nav id="sidebar" aria-label="Main menu" hidden></nav>
+    <main id="app" aria-live="polite"></main>
+  </div>
 
   <script src="/static/js/api.js"></script>
   <script src="/static/js/app.js"></script>

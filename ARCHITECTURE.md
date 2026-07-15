@@ -202,7 +202,7 @@ Non-negotiable UX rules baked into every component:
 - WCAG AA contrast, focus outlines, `aria-live` for confirmations, works at 200% browser zoom.
 - Sign in with a username, then either a texted 6-digit code (if a phone is on file) or a password.
 
-Pages: Login (2 steps) → Home (big cards: My Person / My Wishlist / Messages / Announcements) → per-card detail pages. Admin gets one extra card, "Manage Family", leading to the admin dashboard (members, households, events, participants checklist, rules form, big "Draw Names" button, all-wishlists view, post-announcement form).
+Pages: Login (2 steps) → persistent left sidebar nav + content pane. The sidebar (My Person / My Wishlist / My Person's Wishlist / Messages / Announcements / Profile & Security / Sign Out) stays mounted across every page — clicking a link swaps only the content pane, not the whole screen — and collapses behind a hamburger into a slide-out overlay drawer below ~780px width. Admins additionally get "Manage Family", a WordPress-style expandable submenu (Members, Family Groups, Gift Exchanges, Post Announcement) leading to the admin content: members, households, events, participants checklist, rules form, big "Draw Names" button, all-wishlists view, post-announcement form. The sidebar itself intentionally uses a denser WordPress-admin scale (small text, tight padding) — the non-negotiable big-touch-target rules above still apply to all page *content* (forms, buttons, tables), just not to sidebar nav links.
 
 ## 8. PWA
 
