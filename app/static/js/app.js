@@ -156,7 +156,13 @@ function wishRowReadOnly(item, { showBuy = false, personName = null } = {}) {
   ].filter(Boolean).join(" · ");
   let action = "";
   if (showBuy) {
-    action = `<button class="btn ${item.is_purchased ? "btn-quiet" : "btn-green"}" style="width:auto" data-buy="${item.id}">${item.is_purchased ? "Unbought" : "I Bought This"}</button>`;
+    if (!item.is_purchased) {
+      action = `<button class="btn btn-green" style="width:auto" data-buy="${item.id}">I Bought This</button>`;
+    } else if (item.bought_by_me) {
+      action = `<button class="btn btn-quiet" style="width:auto" data-buy="${item.id}">Unbought</button>`;
+    } else {
+      action = `<span class="muted">This has already been bought by someone.</span>`;
+    }
   } else if (item.is_purchased) {
     action = `<span class="tag-bought">✓ Bought</span>`;
   }

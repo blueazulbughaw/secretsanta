@@ -20,6 +20,16 @@ def _my_giftee(event_id):
     return a.receiver_id if a else None
 
 
+def _item_dict(item, include_purchase):
+    """Like item.to_dict(), plus (when purchase info is included) whether the
+    current viewer is the one who bought it - only the buyer can undo a
+    purchase, everyone else just sees that it's already been claimed."""
+    d = item.to_dict(include_purchase=include_purchase)
+    if include_purchase:
+        d["bought_by_me"] = item.purchased_by == g.user.id
+    return d
+
+
 def _save_wishlist_photo(photo):
     ext = photo.filename.rsplit(".", 1)[-1].lower() if "." in photo.filename else ""
     if ext not in ALLOWED_PHOTO_EXTENSIONS:
@@ -141,7 +151,7 @@ def giftee_wishlist(event_id):
     items = (WishlistItem.query.filter_by(event_id=ev.id, user_id=giftee_id)
              .order_by(WishlistItem.priority).all())
     # Giver DOES see purchase status.
-    return jsonify({"items": [i.to_dict(include_purchase=True) for i in items]})
+    return jsonify({"items": [_item_dict(i, True) for i in items]})
 
 
 @bp.post("/wishlists/<int:item_id>/purchase")
@@ -154,6 +164,8 @@ def mark_purchased(item_id):
         return err
     if item.user_id == g.user.id:
         return jsonify({"error": "You can't mark your own wishlist."}), 403
+    if item.is_purchased and item.purchased_by != g.user.id:
+        return jsonify({"error": "Only the person who bought this can undo it."}), 403
     item.is_purchased = not item.is_purchased
     item.purchased_by = g.user.id if item.is_purchased else None
     item.purchased_at = datetime.utcnow() if item.is_purchased else None
@@ -178,7 +190,7 @@ def clan_wishlists(event_id):
         items = (WishlistItem.query.filter_by(event_id=ev.id, user_id=p.user_id)
                  .order_by(WishlistItem.priority).all())
         out.append({"user": p.user.to_dict(),
-                    "items": [i.to_dict(include_purchase=(p.user_id != g.user.id)) for i in items]})
+                    "items": [_item_dict(i, p.user_id != g.user.id) for i in items]})
     return jsonify(out)
 
 
@@ -198,5 +210,5 @@ def all_wishlists(event_id):
         items = (WishlistItem.query.filter_by(event_id=ev.id, user_id=p.user_id)
                  .order_by(WishlistItem.priority).all())
         out.append({"user": p.user.to_dict(),
-                    "items": [i.to_dict(include_purchase=(p.user_id != g.user.id)) for i in items]})
+                    "items": [_item_dict(i, p.user_id != g.user.id) for i in items]})
     return jsonify(out)
