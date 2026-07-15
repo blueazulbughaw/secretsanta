@@ -4,8 +4,9 @@ import string
 from flask import Blueprint, request, jsonify, g
 
 from ..extensions import db
-from ..models import Family, FamilyMember, Household
+from ..models import Family, FamilyMember, Household, User
 from ..middleware.auth import require_auth, require_family_member, require_family_admin
+from ..utils import normalize_us_phone, hash_password, slugify_username_base
 
 bp = Blueprint("families", __name__)
 
@@ -79,6 +80,50 @@ def list_members(family_id):
     } for mem in members])
 
 
+@bp.post("/families/<int:family_id>/members")
+@require_auth
+def add_member(family_id):
+    _, err = require_family_admin(family_id)
+    if err:
+        return err
+    data = request.json or {}
+    full_name = (data.get("full_name") or "").strip()[:120]
+    if not full_name:
+        return jsonify({"error": "Please enter their name."}), 400
+
+    email = (data.get("email") or "").strip()
+    if email and User.query.filter_by(email=email).first():
+        return jsonify({"error": "That email is already in use."}), 409
+
+    phone = None
+    if data.get("phone"):
+        try:
+            phone = normalize_us_phone(data.get("phone", ""))
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        if User.query.filter_by(phone=phone).first():
+            return jsonify({"error": "That phone number is already in use."}), 409
+
+    base = slugify_username_base(full_name)
+    username = base
+    n = 1
+    while User.query.filter_by(username=username).first():
+        n += 1
+        username = f"{base}{n}"
+
+    temp_password = secrets.token_urlsafe(6)
+    user = User(username=username, full_name=full_name, email=email or None, phone=phone,
+                password_hash=hash_password(temp_password))
+    db.session.add(user)
+    db.session.flush()
+    mem = FamilyMember(family_id=family_id, user_id=user.id, role="member")
+    db.session.add(mem)
+    db.session.flush()
+    db.session.commit()
+    return jsonify({"ok": True, "user": user.to_dict(), "membership_id": mem.id,
+                    "username": username, "temp_password": temp_password}), 201
+
+
 @bp.patch("/families/<int:family_id>/members/<int:membership_id>")
 @require_auth
 def update_member(family_id, membership_id):
@@ -103,6 +148,31 @@ def update_member(family_id, membership_id):
             if not h:
                 return jsonify({"error": "That household doesn't exist in this family."}), 400
         mem.household_id = hid
+    if "full_name" in data:
+        name = (data.get("full_name") or "").strip()[:120]
+        if not name:
+            return jsonify({"error": "Name can't be empty."}), 400
+        mem.user.full_name = name
+    if "email" in data:
+        email = (data.get("email") or "").strip()
+        if email:
+            existing = User.query.filter_by(email=email).first()
+            if existing and existing.id != mem.user_id:
+                return jsonify({"error": "That email is already in use."}), 409
+        mem.user.email = email or None
+    if "phone" in data:
+        raw = data.get("phone") or ""
+        if raw:
+            try:
+                phone = normalize_us_phone(raw)
+            except ValueError as e:
+                return jsonify({"error": str(e)}), 400
+            existing = User.query.filter_by(phone=phone).first()
+            if existing and existing.id != mem.user_id:
+                return jsonify({"error": "That phone number is already in use."}), 409
+        else:
+            phone = None
+        mem.user.phone = phone
     db.session.commit()
     return jsonify({"ok": True})
 

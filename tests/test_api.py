@@ -171,6 +171,44 @@ def test_household_rename_and_delete(users):
     assert admin.delete(f"/api/households/{h['id']}").status_code == 200
 
 
+def test_admin_can_add_edit_and_remove_member(app, users):
+    fam = setup_family(users)
+    admin, bob = users[ADMIN_USER], users[BOB_USER]
+
+    # non-admin can't add members
+    assert bob.post(f"/api/families/{fam['id']}/members",
+                     json={"full_name": "Nope"}).status_code == 403
+
+    r = admin.post(f"/api/families/{fam['id']}/members", json={
+        "full_name": "Tito Ben", "phone": "5559998888", "email": "ben@example.com",
+    })
+    assert r.status_code == 201
+    body = r.get_json()
+    assert body["username"] and body["temp_password"]
+    assert body["user"]["phone"] == "+15559998888"
+    membership_id = body["membership_id"]
+
+    # the generated account can log in with the returned credentials
+    newc = app.test_client()
+    login = newc.post("/api/auth/login-password",
+                       json={"username": body["username"], "password": body["temp_password"]})
+    assert login.status_code == 200
+
+    # admin can edit name/phone/email
+    r2 = admin.patch(f"/api/families/{fam['id']}/members/{membership_id}",
+                      json={"full_name": "Uncle Ben", "email": "uncle@example.com"})
+    assert r2.status_code == 200
+    members = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    edited = next(m for m in members if m["membership_id"] == membership_id)
+    assert edited["user"]["full_name"] == "Uncle Ben"
+    assert edited["user"]["email"] == "uncle@example.com"
+
+    # admin can remove the member
+    assert admin.delete(f"/api/families/{fam['id']}/members/{membership_id}").status_code == 200
+    members2 = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    assert all(m["membership_id"] != membership_id for m in members2)
+
+
 def test_full_flow_and_privacy(app, users):
     fam = setup_family(users)
     admin, bob, cara = (users[ADMIN_USER], users[BOB_USER], users[CARA_USER])

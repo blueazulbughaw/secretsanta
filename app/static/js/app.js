@@ -528,8 +528,7 @@ route(/^\/admin$/, async () => {
 });
 
 route(/^\/admin\/members$/, async () => {
-  const [members, households, events] = await Promise.all([
-    api.get(`/families/${FAMILY.id}/members`),
+  const [households, events] = await Promise.all([
     api.get(`/families/${FAMILY.id}/households`),
     api.get(`/families/${FAMILY.id}/events`),
   ]);
@@ -540,54 +539,121 @@ route(/^\/admin\/members$/, async () => {
   const participating = new Set(
     participants.filter(p => p.is_participating).map(p => p.user.id));
 
-  const opts = hid => `<option value="">—</option>` +
+  const houseOpts = hid => `<option value="">—</option>` +
     households.map(hh => `<option value="${hh.id}" ${hh.id === hid ? "selected" : ""}>${esc(hh.name)}</option>`).join("");
-  const rows = members.map(m => `
-    <tr>
-      <td>${esc(m.user.display_name)}</td>
-      <td>${esc(m.user.phone || "—")}</td>
-      <td>${esc(m.user.email || "—")}</td>
-      <td><select data-house="${m.membership_id}">${opts(m.household_id)}</select></td>
-      <td><input type="checkbox" data-role="${m.membership_id}" ${m.role === "admin" ? "checked" : ""} aria-label="Clan admin"></td>
+
+  function memberRow(m) {
+    const tr = h(`<tr>
+      <td><input data-name value="${esc(m.user.full_name)}"></td>
+      <td><input data-phone value="${esc(m.user.phone || "")}" placeholder="(555) 123-4567"></td>
+      <td><input data-email value="${esc(m.user.email || "")}" placeholder="name@example.com"></td>
+      <td><select data-house>${houseOpts(m.household_id)}</select></td>
+      <td><input type="checkbox" data-role ${m.role === "admin" ? "checked" : ""} aria-label="Clan admin"></td>
       <td>${current
-        ? `<input type="checkbox" data-joining="${m.user.id}" ${participating.has(m.user.id) ? "checked" : ""} aria-label="Joining this year">`
+        ? `<input type="checkbox" data-joining ${participating.has(m.user.id) ? "checked" : ""} aria-label="Joining this year">`
         : "—"}</td>
-    </tr>`).join("");
+      <td><button class="btn btn-quiet" data-remove style="margin:0;min-height:44px">Remove</button></td>
+    </tr>`).firstElementChild;
+    wireRow(tr, m.membership_id, m.user.id);
+    return tr;
+  }
+
+  function wireRow(tr, membershipId, userId) {
+    const msg = () => document.getElementById("msg");
+    tr.querySelector("[data-name]").onblur = async e => {
+      try {
+        await api.patch(`/families/${FAMILY.id}/members/${membershipId}`, { full_name: e.target.value });
+        msg().innerHTML = alertBox("Saved!", true);
+      } catch (err) { showError(err); }
+    };
+    tr.querySelector("[data-phone]").onblur = async e => {
+      try {
+        await api.patch(`/families/${FAMILY.id}/members/${membershipId}`, { phone: e.target.value });
+        msg().innerHTML = alertBox("Saved!", true);
+      } catch (err) { showError(err); }
+    };
+    tr.querySelector("[data-email]").onblur = async e => {
+      try {
+        await api.patch(`/families/${FAMILY.id}/members/${membershipId}`, { email: e.target.value });
+        msg().innerHTML = alertBox("Saved!", true);
+      } catch (err) { showError(err); }
+    };
+    tr.querySelector("[data-house]").onchange = async e => {
+      try {
+        await api.patch(`/families/${FAMILY.id}/members/${membershipId}`,
+          { household_id: e.target.value ? Number(e.target.value) : null });
+        msg().innerHTML = alertBox("Saved!", true);
+      } catch (err) { showError(err); }
+    };
+    tr.querySelector("[data-role]").onchange = async e => {
+      try {
+        await api.patch(`/families/${FAMILY.id}/members/${membershipId}`,
+          { role: e.target.checked ? "admin" : "member" });
+        msg().innerHTML = alertBox("Saved!", true);
+      } catch (err) { e.target.checked = !e.target.checked; showError(err); }
+    };
+    const joining = tr.querySelector("[data-joining]");
+    if (joining) joining.onchange = async e => {
+      if (e.target.checked) participating.add(userId); else participating.delete(userId);
+      try {
+        await api.put(`/events/${current.id}/participants`, { user_ids: [...participating] });
+        msg().innerHTML = alertBox("Saved!", true);
+      } catch (err) { e.target.checked = !e.target.checked; showError(err); }
+    };
+    tr.querySelector("[data-remove]").onclick = async () => {
+      if (!confirm("Remove this person from the clan? This can't be undone.")) return;
+      try {
+        await api.del(`/families/${FAMILY.id}/members/${membershipId}`);
+        tr.remove();
+      } catch (err) { showError(err); }
+    };
+  }
+
+  const members = await api.get(`/families/${FAMILY.id}/members`);
   renderAdmin("Members", "members", `
     <div id="msg"></div>
     ${current ? "" : `<div class="card center"><p class="muted">Create a gift exchange first to track who's joining this year.</p></div>`}
     <div class="table-wrap">
-      <table class="data">
+      <table class="data" id="membersTable">
         <thead><tr>
           <th>Name</th><th>Phone</th><th>Email</th><th>Family Group</th>
-          <th>Admin</th><th>Joining${current ? ` (${esc(current.name)})` : ""}</th>
+          <th>Admin</th><th>Joining${current ? ` (${esc(current.name)})` : ""}</th><th></th>
         </tr></thead>
-        <tbody>${rows}</tbody>
+        <tbody></tbody>
       </table>
     </div>
+
+    <h2>Add a member</h2>
+    <p class="muted">Adds their account directly — you'll get a username and password to give them.</p>
+    <label for="newName">Name</label>
+    <input id="newName" placeholder="e.g. Tito Ben">
+    <label for="newPhone">Phone number (optional)</label>
+    <input id="newPhone" type="tel" inputmode="tel" placeholder="(555) 123-4567">
+    <label for="newEmail">Email (optional)</label>
+    <input id="newEmail" type="email" placeholder="name@example.com">
+    <div id="addMsg"></div>
+    <button class="btn btn-primary" id="addMemberBtn">Add Member</button>
   `);
-  $app.querySelectorAll("[data-house]").forEach(sel => sel.onchange = async () => {
+  const tbody = $app.querySelector("#membersTable tbody");
+  members.forEach(m => tbody.append(memberRow(m)));
+
+  document.getElementById("addMemberBtn").onclick = async () => {
     try {
-      await api.patch(`/families/${FAMILY.id}/members/${sel.dataset.house}`,
-        { household_id: sel.value ? Number(sel.value) : null });
-      document.getElementById("msg").innerHTML = alertBox("Saved!", true);
+      const r = await api.post(`/families/${FAMILY.id}/members`, {
+        full_name: document.getElementById("newName").value,
+        phone: document.getElementById("newPhone").value,
+        email: document.getElementById("newEmail").value,
+      });
+      document.getElementById("addMsg").innerHTML = alertBox(
+        `Added! Username: ${r.username} — Password: ${r.temp_password} (write this down, it won't be shown again)`, true);
+      document.getElementById("newName").value = "";
+      document.getElementById("newPhone").value = "";
+      document.getElementById("newEmail").value = "";
+      tbody.append(memberRow({
+        membership_id: r.membership_id, role: "member", household_id: null, user: r.user,
+      }));
     } catch (e) { showError(e); }
-  });
-  $app.querySelectorAll("[data-role]").forEach(cb => cb.onchange = async () => {
-    try {
-      await api.patch(`/families/${FAMILY.id}/members/${cb.dataset.role}`,
-        { role: cb.checked ? "admin" : "member" });
-      document.getElementById("msg").innerHTML = alertBox("Saved!", true);
-    } catch (e) { cb.checked = !cb.checked; showError(e); }
-  });
-  $app.querySelectorAll("[data-joining]").forEach(cb => cb.onchange = async () => {
-    const uid = Number(cb.dataset.joining);
-    if (cb.checked) participating.add(uid); else participating.delete(uid);
-    try {
-      await api.put(`/events/${current.id}/participants`, { user_ids: [...participating] });
-      document.getElementById("msg").innerHTML = alertBox("Saved!", true);
-    } catch (e) { cb.checked = !cb.checked; showError(e); }
-  });
+  };
 });
 
 route(/^\/admin\/groups$/, async () => {

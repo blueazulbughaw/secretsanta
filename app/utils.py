@@ -14,6 +14,12 @@ def normalize_username(raw: str) -> str:
     return username
 
 
+def slugify_username_base(full_name: str) -> str:
+    """Best-effort username base from a display name, e.g. "Bob Smith" -> "bobsmith"."""
+    base = re.sub(r"[^a-z0-9]", "", (full_name or "").lower())[:40]
+    return base or "member"
+
+
 def hash_password(raw: str) -> str:
     return generate_password_hash(raw)
 
