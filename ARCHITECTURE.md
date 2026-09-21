@@ -131,13 +131,13 @@ All JSON, prefixed `/api`. 🔒 = auth required, 👑 = family admin.
 - `PUT /events/:id/dishes/mine` 🔒 `{ dishes: [names] }` / `DELETE /events/:id/dishes/mine` 🔒 — the caller's single entry (replace / remove). Only people joining, only while names are drawn and the event isn't completed; max 10 dishes, blanks and repeats dropped
 - `GET /events/:id/attendees` 🔒 — who's coming, for any family member: profile-safe fields only (`User.public_dict()`: no username/phone/email), sorted by name
 - `DELETE /events/:id` 👑 — any event, however old or archived; permanently removes the event and everything scoped to it (participants, assignments, wishlists + photos, messages, its announcements)
-- `POST /events/:id/complete` 👑 — **archives** the event (status `completed`); it drops out of `CURRENT_EVENT` selection so the next event starts with its own fresh wishlists (`WishlistItem` is already scoped by `event_id`, so nothing carries over). An archived event is view-only: every write endpoint scoped to it (messages, wishlists incl. reorder/purchase, dishes, PATCH event, participants, opt-out, re-draw) answers 400 "archived" (`archived_error` in `middleware/auth.py`), while every GET keeps working. `wishlists/mine` and `wishlists/giftee` also return `archived`.
+- `POST /events/:id/complete` 👑 — **archives** the event (status `completed`); it drops out of `CURRENT_EVENT` selection so the next event starts with its own fresh wishlists (`WishlistItem` is already scoped by `event_id`, so nothing carries over). An archived event is view-only: every write endpoint scoped to it (messages, wishlists incl. reorder/purchase, dishes, PATCH event, participants, opt-out, re-draw) answers 400 "archived" (`archived_error` in `middleware/auth.py`), while every GET keeps working. `wishlists/mine` also returns `archived`.
 - `PUT /events/:id/participants` 👑 — `{ user_ids: [...] }` (the checkbox screen)
 - `POST /events/:id/participants/:userId/opt-out` 🔒 — self only, before matching
 
 **Assignments**
 - `POST /events/:id/assignments/generate` 👑 — runs validation + matcher (see §6)
-- `GET /events/:id/assignments/mine` 🔒 — my giftee (name or codename) + their wishlist
+- `GET /events/:id/assignments/mine` 🔒 — my giftee (name or codename, plus `giftee_user_id`); their wishlist is on their profile, i.e. `GET /events/:id/wishlists/clan` (there is no separate giver-only wishlist endpoint)
 - `DELETE /events/:id/assignments` 👑 — only while status ≠ completed; re-roll
 
 **Wishlists**
@@ -145,7 +145,6 @@ All JSON, prefixed `/api`. 🔒 = auth required, 👑 = family admin.
 - `POST /events/:id/wishlists` 🔒 — enforces `wishlist_limit`; JSON or multipart (optional `photo`, max 8MB, stored shrunk to 1200px); `link_url` must be a valid web link and is saved as an absolute http(s) URL (`https://` is added when missing)
 - `PATCH|DELETE /wishlists/:itemId` 🔒 — owner only, and rejected once the item is locked (purchased)
 - `PUT /events/:id/wishlists/order` 🔒 — `{ item_ids: [...] }`, every one of the caller's gifts for the event; position = priority (first = wanted most). There is no separate priority input: new gifts are appended, PATCH ignores `priority`, and all wishlist reads sort by (priority, id)
-- `GET /events/:id/wishlists/giftee` 🔒 — giver's view (purchase status visible)
 - `GET /events/:id/wishlists/clan` 🔒 — every participant's wishlist for the whole family (My Clan), sorted alphabetically by name; purchase status visible for everyone except the item's own owner
 - `POST /wishlists/:itemId/purchase` 🔒 — any family member except the owner can mark/unmark purchased
 - `GET /events/:id/wishlists` 👑 — all wishlists (admin view), same per-viewer purchase visibility as My Clan, sorted alphabetically

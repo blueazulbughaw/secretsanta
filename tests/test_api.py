@@ -295,7 +295,8 @@ def test_full_flow_and_privacy(app, users):
     santa = next(c for c in (admin, cara)
                  if c.get(f"/api/events/{ev['id']}/assignments/mine")
                      .get_json()["giftee_user_id"] == bobs_view["items"][0]["user_id"])
-    giftee_view = santa.get(f"/api/events/{ev['id']}/wishlists/giftee").get_json()
+    giftee_view = next(e for e in santa.get(f"/api/events/{ev['id']}/wishlists/clan").get_json()
+                       if e["user"]["id"] == bobs_view["items"][0]["user_id"])
     assert giftee_view["items"][0]["is_purchased"] is False
     item_id = giftee_view["items"][0]["id"]
     assert santa.post(f"/api/wishlists/{item_id}/purchase").status_code == 200
@@ -953,3 +954,30 @@ def test_announcement_notification_title(users):
     admin.post(f"/api/families/{fam['id']}/announcements",
                json={"title": "Draft", "body": "later", "is_published": False})
     assert len(bob.get("/api/notifications").get_json()["items"]) == 1
+
+
+def test_new_gift_notification_opens_the_owners_profile(users):
+    admin, bob = users[ADMIN_USER], users[BOB_USER]
+    ev = _drawn_event(users)
+    bob_id = bob.get("/api/auth/me").get_json()["user"]["id"]
+    santa = next(c for c in (admin, users[CARA_USER])
+                 if c.get(f"/api/events/{ev['id']}/assignments/mine").get_json()["giftee_user_id"] == bob_id)
+    bob.post(f"/api/events/{ev['id']}/wishlists", json={"item_name": "Boots"})
+    latest = santa.get("/api/notifications").get_json()["items"][0]
+    assert latest["link_path"] == f"/events/{ev['id']}/clan/{bob_id}"
+
+    # with codenames on, the profile would name them, so it opens the reveal page instead
+    fam = users["_family"]
+    coded = admin.post(f"/api/families/{fam['id']}/events",
+                       json={"name": "Coded", "event_date": future_date(45), "use_codenames": True}).get_json()["event"]
+    members = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    admin.put(f"/api/events/{coded['id']}/participants", json={"user_ids": [m["user"]["id"] for m in members]})
+    assert admin.post(f"/api/events/{coded['id']}/assignments/generate").status_code == 200
+    santa = next(c for c in (admin, users[CARA_USER])
+                 if c.get(f"/api/events/{coded['id']}/assignments/mine").get_json()["giftee_user_id"] == bob_id)
+    bob.post(f"/api/events/{coded['id']}/wishlists", json={"item_name": "Hat"})
+    assert santa.get("/api/notifications").get_json()["items"][0]["link_path"] == f"/events/{coded['id']}/my-person"
+
+    # the old giver-only list endpoint is gone
+    gone = santa.get(f"/api/events/{ev['id']}/wishlists/giftee")
+    assert "items" not in (gone.get_json(silent=True) or {})

@@ -45,6 +45,13 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
 - Messages belong to one gift exchange: threads come from that event's draw and every
   thread page says which event it is. Notifications are links to what they're about.
 - A giftee's profile shows the Secret Santa a Message button with a note that it's anonymous.
+- A giftee's wishlist is viewed on their profile (`/events/:id/clan/:userId`, top bar = their
+  name); there is no separate "Their Wishlist" page (`/events/:id/giftee` only redirects, for
+  old notifications). With codenames on, links go to the reveal page (`/my-person`) instead.
+- Admins see an "Admin" card at the bottom of the dashboard (Manage My Clan). Manage My Clan
+  (`/admin`) is a stack of centred cards: clan name, then name-only lists of gift exchanges,
+  members and households, each with its Manage... button underneath, then Post Announcement,
+  and the registration code card LAST.
 - Links (wishlist `link_url`) are validated and stored as absolute http(s) URLs
   (`normalize_link_url`; mirrored by `normalizeUrl` in app.js). Never put a raw
   user-typed URL in an href.

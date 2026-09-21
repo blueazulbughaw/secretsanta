@@ -12,11 +12,6 @@ from ..utils import normalize_link_url
 bp = Blueprint("wishlists", __name__)
 
 
-def _my_giftee(event_id):
-    a = Assignment.query.filter_by(event_id=event_id, giver_id=g.user.id).first()
-    return a.receiver_id if a else None
-
-
 def _item_dict(item, include_purchase):
     """Like item.to_dict(), plus (when purchase info is included) whether the
     current viewer is the one who bought it - only the buyer can undo a
@@ -90,9 +85,11 @@ def add_item(event_id):
     # Nudge their Secret Santa if names are drawn
     giver = Assignment.query.filter_by(event_id=ev.id, receiver_id=g.user.id).first()
     if giver:
+        # Their profile shows the wishlist; with codenames on it would name them, so
+        # those events go to the reveal page (which shows the codename) instead.
+        link = f"/events/{ev.id}/my-person" if ev.use_codenames else f"/events/{ev.id}/clan/{g.user.id}"
         notify(giver.giver_id, "wishlist", "Your person added a gift idea 🎁",
-               "Take a look at their updated wishlist.",
-               link_path=f"/events/{ev.id}/giftee")
+               "Take a look at their updated wishlist.", link_path=link)
     return jsonify({"ok": True, "item": item.to_dict()}), 201
 
 
@@ -172,22 +169,6 @@ def delete_item(item_id):
     db.session.delete(item)
     db.session.commit()
     return jsonify({"ok": True})
-
-
-@bp.get("/events/<int:event_id>/wishlists/giftee")
-@require_auth
-def giftee_wishlist(event_id):
-    ev = Event.query.get_or_404(event_id)
-    _, err = require_family_member(ev.family_id)
-    if err:
-        return err
-    giftee_id = _my_giftee(ev.id)
-    if not giftee_id:
-        return jsonify({"error": "Names haven't been drawn yet."}), 400
-    items = (WishlistItem.query.filter_by(event_id=ev.id, user_id=giftee_id)
-             .order_by(WishlistItem.priority, WishlistItem.id).all())
-    # Giver DOES see purchase status.
-    return jsonify({"items": [_item_dict(i, True) for i in items], "archived": ev.status == "completed"})
 
 
 @bp.post("/wishlists/<int:item_id>/purchase")

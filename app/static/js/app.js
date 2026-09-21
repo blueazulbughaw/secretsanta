@@ -839,6 +839,13 @@ route(/^\/$/, async () => {
         <button class="btn btn-primary" onclick="go('/events/${clanEvent.id}/clan')">View My Clan</button>` : ""}
       </div>
     </section>`);
+  if (FAMILY.role === "admin") {
+    sections.push(`
+    <section class="card">
+      <h2>Admin</h2>
+      <button class="btn btn-primary btn-block" onclick="go('/admin')">Manage My Clan</button>
+    </section>`);
+  }
 
   render("My Dashboard", sections.join(""));
   $app.querySelectorAll("[data-del-ann]").forEach(b => b.onclick = async () => {
@@ -1017,7 +1024,7 @@ route(/^\/events\/(\d+)\/my-person$/, async (id) => {
     <div class="reveal-name">🎁 ${esc(d.giftee_display_name)}</div>
     ${budget}
     ${archived ? "" : `<p class="center muted">Shh — it's a secret! 🤫</p>`}
-    <button class="btn btn-primary" onclick="go('/events/${id}/giftee')">See Their Wishlist</button>
+    ${ev.use_codenames || !d.giftee_user_id ? "" : `<button class="btn btn-primary" onclick="go('/events/${id}/clan/${d.giftee_user_id}')">See Their Wishlist</button>`}
     ${archived ? "" : `<button class="btn btn-secondary" onclick="go('/events/${id}/messages/giftee')">Send Them a Secret Message</button>`}
   `, { card: true });
 });
@@ -1120,16 +1127,12 @@ route(/^\/events\/(\d+)\/wishlist\/(\d+)\/edit$/, async (id, itemId) => {
   renderWishForm(id, d, item);
 });
 
+// The old "Their Wishlist" page is gone (a giftee's wishlist lives on their profile).
+// Notifications sent before that still link here, so pass them on.
 route(/^\/events\/(\d+)\/giftee$/, async (id) => {
-  let d;
-  try { d = await api.get(`/events/${id}/wishlists/giftee`); }
-  catch (e) { return render("Their Wishlist", alertBox(e.message)); }
-  const items = d.items.length
-    ? clanWishGrid(d.items, d.archived)
-    : `<div class="card"><p class="muted" style="margin:0">${d.archived ? "They didn't add any gift ideas." : "They haven't added any gift ideas yet. Send them a friendly nudge!"}</p></div>`;
-  render("Their Wishlist", (d.archived ? archivedBanner() : "") + items + (d.archived ? "" : `
-    <button class="btn btn-secondary" style="width:auto;margin-top:.75rem" onclick="go('/events/${id}/messages/giftee')">Send a Secret Message</button>`));
-  wireBuyButtons();
+  const [d, ev] = await Promise.all([api.get(`/events/${id}/assignments/mine`), api.get(`/events/${id}`)]);
+  location.replace(d.assigned && d.giftee_user_id && !ev.use_codenames
+    ? `#/events/${id}/clan/${d.giftee_user_id}` : `#/events/${id}/my-person`);
 });
 
 // The person's profile shown like an ID: photo on the side, details beside it
@@ -1201,7 +1204,7 @@ route(/^\/events\/(\d+)\/clan\/(\d+)$/, async (id, uid) => {
   const n = entry.items.length;
   const name = entry.user.display_name;
   const isMyGiftee = mine.assigned && mine.giftee_user_id === entry.user.id && !archived;
-  render("My Clan", `
+  render(name, `
     ${archived ? archivedBanner() : ""}
     ${idCardHtml(entry.user)}
     ${isMyGiftee ? `
@@ -1316,16 +1319,44 @@ route(/^\/notifications$/, async () => {
 });
 
 // ---------- admin ----------
+// A card that just lists names, with the button that manages them underneath.
+function nameListCard(title, names, empty, path, buttonLabel) {
+  const list = names.length
+    ? `<ul class="name-list">${names.map(n => `<li>${esc(n)}</li>`).join("")}</ul>`
+    : `<p class="muted" style="margin-top:0">${empty}</p>`;
+  return `
+    <section class="card form-card">
+      <h2>${title}</h2>
+      ${list}
+      <button class="btn btn-primary" onclick="go('${path}')">${buttonLabel}</button>
+    </section>`;
+}
+
 route(/^\/admin$/, async () => {
-  const fam = await api.get(`/families/${FAMILY.id}`);
+  const [fam, events, members, households] = await Promise.all([
+    api.get(`/families/${FAMILY.id}`),
+    api.get(`/families/${FAMILY.id}/events`),
+    api.get(`/families/${FAMILY.id}/members`),
+    api.get(`/families/${FAMILY.id}/households`),
+  ]);
   const regUrl = `${location.origin}/#/join/${fam.join_code}`;
-  render("Clan Admin Dashboard", `
+  const byName = (x, y) => x.localeCompare(y);
+  render("Manage My Clan", `
     <section class="card form-card">
       <h2>Clan name</h2>
       <label for="clanName">Name</label>
       <input id="clanName" value="${esc(fam.name)}">
       <div id="nameMsg"></div>
       <button class="btn btn-secondary" id="saveClanName">Save Clan Name</button>
+    </section>
+
+    ${nameListCard("Gift Exchanges", events.map(e => e.name), "No gift exchanges yet.", "/admin/events", "Manage Events")}
+    ${nameListCard("Clan Members", members.map(m => m.user.display_name).sort(byName), "No members yet.", "/admin/members", "Manage Clan Members")}
+    ${nameListCard("Households", households.map(h => h.name).sort(byName), "No households yet.", "/admin/groups", "Manage Household Names")}
+
+    <section class="card form-card">
+      <h2>Announcements</h2>
+      <button class="btn btn-primary" onclick="go('/admin/announce')">Post Announcement</button>
     </section>
 
     <div class="card form-card center">
@@ -1953,7 +1984,7 @@ route(/^\/admin\/announce$/, async () => {
     <label>Title</label><input id="atitle">
     <label>Message</label><textarea id="abody" rows="4"></textarea>
     <div class="check-row"><input type="checkbox" id="apub" checked><label for="apub" style="margin:0">Show on Clan Dashboard</label></div>
-    <button class="btn btn-primary" id="postBtn">Post to the Family</button>
+    <button class="btn btn-primary" id="postBtn">Post to My Clan</button>
     </section>
   `, { wide: true });
 

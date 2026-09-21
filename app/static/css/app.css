@@ -542,3 +542,8 @@ body.dragging-cards, body.dragging-cards * { cursor: grabbing !important; }
 
 .event-title { margin: 0 0 .5rem; font-size: 1.15rem; }
 .giftee-name { margin: 0; font-size: 1.2rem; }
+
+/* Manage My Clan: cards that just list names */
+.name-list { list-style: none; margin: 0 0 .9rem; padding: 0; }
+.name-list li { padding: .45rem 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.name-list li:last-child { border-bottom: none; }
