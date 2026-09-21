@@ -995,6 +995,7 @@ route(/^\/events\/(\d+)$/, async (id) => {
         ${ev.i_am_participating ? `<button class="btn btn-primary" onclick="go('/events/${id}/messages')">View My Messages</button>` : ""}
         ${isAdmin && ev.status !== "completed" ? `<button class="btn btn-secondary" onclick="go('/admin/events/${id}/edit')">Edit Details</button>` : ""}
         ${isAdmin ? `<button class="btn btn-quiet" onclick="go('/admin/events/${id}')">Manage Gift Exchange</button>` : ""}
+        ${isAdmin ? `<button class="btn btn-quiet" id="deleteEventBtn">Delete Gift Exchange</button>` : ""}
       </div>
     </section>
     ${mine && mine.assigned ? `
@@ -1010,6 +1011,8 @@ route(/^\/events\/(\d+)$/, async (id) => {
         : `<p class="muted" style="margin:0">No one has been added to this gift exchange yet.</p>`}
     </section>
   `, { wide: true });
+  const deleteEventBtn = document.getElementById("deleteEventBtn");
+  if (deleteEventBtn) deleteEventBtn.onclick = () => deleteEvent(ev, () => go("/admin/events"));
   mountDishes(document.getElementById("dishCard"), ev, dishes);
 });
 
