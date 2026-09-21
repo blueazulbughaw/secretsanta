@@ -7,6 +7,7 @@ from ..models import Event, WishlistItem, Assignment, User, EventParticipant
 from ..middleware.auth import require_auth, require_family_member, require_family_admin
 from ..services.notification_service import notify
 from ..services.photo_service import save_photo, remove_photo
+from ..utils import normalize_link_url
 
 bp = Blueprint("wishlists", __name__)
 
@@ -56,6 +57,11 @@ def add_item(event_id):
     if not name:
         return jsonify({"error": "Please tell us what the gift is."}), 400
 
+    try:
+        link_url = normalize_link_url(data.get("link_url")) or None
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
     photo_path = None
     photo = request.files.get("photo")
     if photo and photo.filename:
@@ -67,7 +73,7 @@ def add_item(event_id):
     item = WishlistItem(
         event_id=ev.id, user_id=g.user.id, item_name=name[:200],
         description=(data.get("description") or "").strip() or None,
-        link_url=(data.get("link_url") or "").strip()[:500] or None,
+        link_url=link_url,
         price_estimate=data.get("price_estimate"),
         priority=int(data.get("priority") or 3),
         photo_path=photo_path,
@@ -94,6 +100,12 @@ def edit_item(item_id):
     data = request.form if request.form else (request.get_json(silent=True) or {})
     if "item_name" in data and not (data.get("item_name") or "").strip():
         return jsonify({"error": "Please tell us what the gift is."}), 400
+    link_url = item.link_url
+    if "link_url" in data:
+        try:
+            link_url = normalize_link_url(data.get("link_url")) or None
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
     old_photo = None
     photo = request.files.get("photo")
     if photo and photo.filename:
@@ -104,9 +116,9 @@ def edit_item(item_id):
         old_photo, item.photo_path = item.photo_path, new_photo
     if data.get("item_name"):
         item.item_name = data["item_name"].strip()[:200]
-    for f in ("description", "link_url"):
-        if f in data:
-            setattr(item, f, (data.get(f) or "").strip() or None)
+    item.link_url = link_url
+    if "description" in data:
+        item.description = (data.get("description") or "").strip() or None
     if "price_estimate" in data:
         item.price_estimate = data["price_estimate"]
     if "priority" in data:

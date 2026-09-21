@@ -173,7 +173,7 @@ def set_my_photo():
     if not photo or not photo.filename:
         return jsonify({"error": "Please choose a photo."}), 400
     try:
-        new_path = save_photo(photo, "avatars")
+        new_path = save_photo(photo, "avatars", square=True)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     old_path, g.user.photo_path = g.user.photo_path, new_path

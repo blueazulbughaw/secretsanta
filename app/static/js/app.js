@@ -44,6 +44,28 @@ function esc(s) {
   d.textContent = s == null ? "" : String(s);
   return d.innerHTML;
 }
+// Turns what someone typed into a full http(s) link ("amazon.com/x" becomes
+// "https://amazon.com/x"). Returns "" for nothing, or null when it isn't a valid
+// web link. Mirrors normalize_link_url on the server.
+function normalizeUrl(raw) {
+  let url = (raw || "").trim();
+  if (!url) return "";
+  if (url.length > 500 || /\s/.test(url)) return null;
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) {
+    if (/^[a-z][a-z0-9+.-]*:(?!\d)/i.test(url)) return null;   // mailto:, javascript: ...
+    url = "https://" + url.replace(/^\/+/, "");
+  }
+  let u;
+  try { u = new URL(url); } catch (_) { return null; }
+  if (!/^https?:$/.test(u.protocol) || !/^([a-z0-9-]+\.)+[a-z]{2,}$/i.test(u.hostname)) return null;
+  return url;
+}
+const LINK_HELP = "Please enter a valid web link, like https://www.example.com/item";
+
+const MAX_PHOTO_MB = 8;
+function photoTooBig(file) { return !!file && file.size > MAX_PHOTO_MB * 1024 * 1024; }
+const PHOTO_TOO_BIG = `Photos must be smaller than ${MAX_PHOTO_MB}MB.`;
+
 function h(html) { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content; }
 // card: put the whole page in one white card (forms, threads); pages made of
 // several sections build their own cards instead.
@@ -206,7 +228,7 @@ function wishCardBody(item) {
       </div>
     </div>
     ${item.description ? `<p class="wish-card-desc">${esc(item.description)}</p>` : ""}
-    ${item.link_url ? `<a class="wish-link" href="${esc(item.link_url)}" target="_blank" rel="noopener">See it online ↗</a>` : ""}`;
+    ${normalizeUrl(item.link_url) ? `<a class="wish-link" href="${esc(normalizeUrl(item.link_url))}" target="_blank" rel="noopener">See it online ↗</a>` : ""}`;
 }
 
 // A gift as seen by someone other than its owner: the card, plus whether it's
@@ -502,6 +524,7 @@ function pageSecuritySetup(forced) {
         <div>
           <label for="photoInput" style="margin-top:0" id="photoLabel"></label>
           <input id="photoInput" type="file" accept="image/*">
+          <p class="muted" style="margin:0 0 .4rem;font-size:.8rem">Up to ${MAX_PHOTO_MB}MB. It's cropped to a square.</p>
           <button class="btn btn-quiet" style="width:auto" id="removePhotoBtn">Remove Photo</button>
         </div>
       </div>
@@ -555,6 +578,11 @@ function pageSecuritySetup(forced) {
     const file = e.target.files[0];
     if (!file) return;
     const msg = document.getElementById("photoMsg");
+    if (photoTooBig(file)) {
+      msg.innerHTML = alertBox(PHOTO_TOO_BIG);
+      e.target.value = "";
+      return;
+    }
     try {
       const fd = new FormData();
       fd.append("photo", file);
@@ -648,44 +676,55 @@ function detailRow(label, valueHtml, cls = "") {
 }
 const TBA = `<span class="muted">To be announced</span>`;
 
+// One upcoming gift exchange on the dashboard. `d` is my assignment there (null when I'm not in it).
+function dashEventBlock(e, d) {
+  // With codenames on, the giftee is shown as a codename - don't link to a profile that names them.
+  const gifteeHtml = !d ? `<span class="muted">You're not in this gift exchange.</span>`
+    : !d.assigned ? `<span class="muted">${esc(d.message)}</span>`
+    : e.use_codenames || !d.giftee_user_id
+      ? `<strong>${esc(d.giftee_display_name)}</strong>`
+      : `<a class="person-link" href="#/events/${e.id}/clan/${d.giftee_user_id}"><strong>${esc(d.giftee_display_name)}</strong> →</a>`;
+  return `
+    <div class="event-block">
+      <dl class="detail-list">
+        <dt>What</dt><dd><a class="person-link" href="#/events/${e.id}">${esc(e.name)}</a>${e.theme ? ` <span class="muted">· ${esc(e.theme)}</span>` : ""}</dd>
+        <dt>Where</dt><dd>${e.location ? esc(e.location) : TBA}</dd>
+        <dt>Date</dt><dd>${esc(fmtEventDate(e.event_date))}</dd>
+        <dt>Time</dt><dd>${e.event_time ? esc(fmtEventTime(e.event_time)) : TBA}</dd>
+        <dt>My Giftee</dt><dd>${gifteeHtml}</dd>
+      </dl>
+      ${d && d.assigned ? `<div class="event-actions">
+        <button class="btn btn-secondary" onclick="go('/events/${e.id}/messages/giftee')">Message My Giftee</button>
+        <button class="btn btn-secondary" onclick="go('/events/${e.id}/messages/giver')">Message My Secret Santa</button>
+      </div>` : ""}
+      <button class="btn btn-secondary btn-block" onclick="go('/events/${e.id}')">View Event Details</button>
+    </div>`;
+}
+
 route(/^\/$/, async () => {
   const first = (ME.user.full_name || "").trim().split(/\s+/)[0] || "there";
-  const ev = CURRENT_EVENT;
+  const all = await api.get(`/families/${FAMILY.id}/events`);
+  const upcoming = all.filter(e => !eventHasHappened(e) && e.status !== "cancelled")
+    .sort((x, y) => x.event_date.localeCompare(y.event_date));
+  const mine = await Promise.all(upcoming.map(e =>
+    e.i_am_participating ? api.get(`/events/${e.id}/assignments/mine`) : null));
+  const clanEvent = CURRENT_EVENT || upcoming[0];
   const sections = [`
-    <section class="card greeting">
+    <div class="greeting">
       <h2>Hello, ${esc(first)}! 👋</h2>
-      <p class="muted">${ev ? "Here's what's coming up." : "Nothing is scheduled yet."}</p>
-      ${ev ? `<button class="btn btn-primary" style="width:auto" onclick="go('/events/${ev.id}/clan')">View My Clan</button>` : ""}
-    </section>`];
+      ${clanEvent ? `<button class="btn btn-primary" style="width:auto" onclick="go('/events/${clanEvent.id}/clan')">View My Clan</button>` : ""}
+    </div>`];
 
-  if (!ev) {
-    sections.push(`
-      <section class="card">
-        <h2>My upcoming gift exchange</h2>
-        <p class="muted">No gift exchange is happening right now.${FAMILY.role === "admin" ? "" : " Check back soon!"}</p>
-        ${FAMILY.role === "admin" ? `<button class="btn btn-secondary" style="width:auto" onclick="go('/admin/events')">Create a Gift Exchange</button>` : ""}
-      </section>`);
-  } else {
-    const d = await api.get(`/events/${ev.id}/assignments/mine`);
-    // With codenames on, the giftee is shown as a codename - don't link to a profile that names them.
-    const gifteeHtml = !d.assigned
-      ? `<span class="muted">${esc(d.message)}</span>`
-      : ev.use_codenames || !d.giftee_user_id
-        ? `<strong>${esc(d.giftee_display_name)}</strong>`
-        : `<a class="person-link" href="#/events/${ev.id}/clan/${d.giftee_user_id}"><strong>${esc(d.giftee_display_name)}</strong> →</a>`;
-    sections.push(`
-      <section class="card event-summary">
-        <h2>My upcoming gift exchange</h2>
-        <dl class="detail-list">
-          <dt>What</dt><dd><a class="person-link" href="#/events/${ev.id}">${esc(ev.name)}</a>${ev.theme ? ` <span class="muted">· ${esc(ev.theme)}</span>` : ""}</dd>
-          <dt>Where</dt><dd>${ev.location ? esc(ev.location) : TBA}</dd>
-          <dt>Date</dt><dd>${esc(fmtEventDate(ev.event_date))}</dd>
-          <dt>Time</dt><dd>${ev.event_time ? esc(fmtEventTime(ev.event_time)) : TBA}</dd>
-          <dt>My Giftee</dt><dd>${gifteeHtml}</dd>
-        </dl>
-        <button class="btn btn-secondary" style="width:auto" onclick="go('/events/${ev.id}')">View Event Details</button>
-      </section>`);
-  }
+  sections.push(upcoming.length ? `
+    <section class="card">
+      <h2>My upcoming gift exchange${upcoming.length === 1 ? "" : "s"}</h2>
+      ${upcoming.map((e, i) => dashEventBlock(e, mine[i])).join("")}
+    </section>` : `
+    <section class="card">
+      <h2>My upcoming gift exchange</h2>
+      <p class="muted">No gift exchange is happening right now.${FAMILY.role === "admin" ? "" : " Check back soon!"}</p>
+      ${FAMILY.role === "admin" ? `<button class="btn btn-secondary" style="width:auto" onclick="go('/admin/events')">Create a Gift Exchange</button>` : ""}
+    </section>`);
 
   const anns = await api.get(`/families/${FAMILY.id}/announcements`);
   const annHtml = anns.length ? annTable(anns) : `<p class="muted" style="margin:0">No announcements yet.</p>`;
@@ -787,10 +826,10 @@ function renderWishForm(eventId, d, item) {
     <label for="idesc">Anything else they should know? <span class="muted">(optional)</span></label>
     <input id="idesc" value="${esc(editing ? item.description || "" : "")}">
     <label for="ilink">Link to it online <span class="muted">(optional)</span></label>
-    <input id="ilink" type="url" value="${esc(editing ? item.link_url || "" : "")}">
+    <input id="ilink" type="text" inputmode="url" autocapitalize="none" autocomplete="off" spellcheck="false" value="${esc(editing ? item.link_url || "" : "")}">
     <label for="ipriority">Priority</label>
     <select id="ipriority">${priorityOptions}</select>
-    <label for="iphoto">${editing && item.photo_url ? "Replace photo" : "Photo"} <span class="muted">(optional)</span></label>
+    <label for="iphoto">${editing && item.photo_url ? "Replace photo" : "Photo"} <span class="muted">(optional, up to ${MAX_PHOTO_MB}MB)</span></label>
     ${editing && item.photo_url ? `<div style="margin-bottom:.4rem">${wishThumbCell(item)}</div>` : ""}
     <input id="iphoto" type="file" accept="image/*">
     <div class="form-actions">
@@ -800,14 +839,23 @@ function renderWishForm(eventId, d, item) {
   `, { card: true });
   const backToList = () => go(`/events/${eventId}/wishlist`);
   document.getElementById("cancelWishBtn").onclick = backToList;
+  // Fill in https:// as soon as they leave the field, so they see what will be saved.
+  document.getElementById("ilink").onchange = (e) => {
+    const link = normalizeUrl(e.target.value);
+    if (link === null) showError({ message: LINK_HELP });
+    else { e.target.value = link; document.getElementById("msg").innerHTML = ""; }
+  };
   document.getElementById("saveWishBtn").onclick = async () => {
     try {
+      const link = normalizeUrl(document.getElementById("ilink").value);
+      if (link === null) { showError({ message: LINK_HELP }); window.scrollTo(0, 0); return; }
+      const photo = document.getElementById("iphoto").files[0];
+      if (photoTooBig(photo)) { showError({ message: PHOTO_TOO_BIG }); window.scrollTo(0, 0); return; }
       const fd = new FormData();
       fd.append("item_name", document.getElementById("iname").value);
       fd.append("description", document.getElementById("idesc").value);
-      fd.append("link_url", document.getElementById("ilink").value);
+      fd.append("link_url", link);
       fd.append("priority", document.getElementById("ipriority").value);
-      const photo = document.getElementById("iphoto").files[0];
       if (photo) fd.append("photo", photo);
       if (editing) await api.patchForm(`/wishlists/${item.id}`, fd);
       else await api.postForm(`/events/${eventId}/wishlists`, fd);
@@ -905,15 +953,24 @@ route(/^\/events\/(\d+)\/clan$/, async (id) => {
 });
 
 route(/^\/events\/(\d+)\/clan\/(\d+)$/, async (id, uid) => {
-  const list = await api.get(`/events/${id}/wishlists/clan`);
+  const [list, mine] = await Promise.all([
+    api.get(`/events/${id}/wishlists/clan`), api.get(`/events/${id}/assignments/mine`),
+  ]);
   const entry = list.find(e => e.user.id === Number(uid));
   if (!entry) {
     return render("My Clan", alertBox("We couldn't find that person in this gift exchange.") + `
       <button class="btn btn-secondary" style="width:auto" onclick="go('/events/${id}/clan')">Back to My Clan</button>`);
   }
   const n = entry.items.length;
+  const name = entry.user.display_name;
+  const isMyGiftee = mine.assigned && mine.giftee_user_id === entry.user.id;
   render("My Clan", `
     ${idCardHtml(entry.user)}
+    ${isMyGiftee ? `
+    <section class="card">
+      <button class="btn btn-secondary" style="width:auto;margin-top:0" onclick="go('/events/${id}/messages/giftee')">Message ${esc(name)}</button>
+      <p class="muted" style="margin:.4rem 0 0">You're ${esc(name)}'s Secret Santa. Your message is sent anonymously, so they'll only see that it's from their Secret Santa.</p>
+    </section>` : ""}
     <h2 class="section-title">Wishlist${n ? ` <span class="muted">· ${n} gift idea${n === 1 ? "" : "s"}</span>` : ""}</h2>
     ${n ? clanWishGrid(entry.items) : `<div class="card"><p class="muted" style="margin:0">No gift ideas yet.</p></div>`}
   `);
@@ -921,7 +978,7 @@ route(/^\/events\/(\d+)\/clan\/(\d+)$/, async (id, uid) => {
 });
 
 route(/^\/events\/(\d+)\/messages$/, async (id) => {
-  const d = await api.get(`/events/${id}/messages`);
+  const [d, ev] = await Promise.all([api.get(`/events/${id}/messages`), api.get(`/events/${id}`)]);
   function thread(key, label) {
     const t = d[key];
     if (!t) return "";
@@ -936,6 +993,7 @@ route(/^\/events\/(\d+)\/messages$/, async (id) => {
   }
   render("Messages", `
     <div id="msg"></div>
+    <p class="muted" style="margin-top:0">Gift exchange: <strong>${esc(ev.name)}</strong>. These conversations are only for this gift exchange.</p>
     ${thread("giftee", "To my person")}
     ${thread("giver", "With my Secret Santa")}
     ${!d.giftee && !d.giver ? `<div class="card center"><p>Messages open up after names are drawn.</p></div>` : ""}
@@ -950,7 +1008,7 @@ route(/^\/events\/(\d+)\/messages$/, async (id) => {
 });
 
 async function renderMessageThread(id, key, label) {
-  const d = await api.get(`/events/${id}/messages`);
+  const [d, ev] = await Promise.all([api.get(`/events/${id}/messages`), api.get(`/events/${id}`)]);
   const t = d[key];
   if (!t) {
     render(label, `<div class="card center"><p>Messages open up after names are drawn.</p></div>`);
@@ -961,7 +1019,9 @@ async function renderMessageThread(id, key, label) {
     || `<p class="muted center">No messages yet. Say hello!</p>`;
   render(label, `
     <div id="msg"></div>
+    <p class="muted" style="margin-top:0">Gift exchange: <strong>${esc(ev.name)}</strong>. This conversation is only for this gift exchange.</p>
     <h2>${esc(t.with_display_name)}</h2>
+    ${key === "giftee" ? `<p class="muted" style="margin-top:0">Your messages here are sent anonymously.</p>` : ""}
     <div>${msgs}</div>
     <label for="msgin">Write a message</label>
     <input id="msgin" maxlength="2000">
@@ -990,15 +1050,23 @@ route(/^\/announcements$/, async () => {
 
 route(/^\/notifications$/, async () => {
   const d = await api.get("/notifications");
-  const list = d.items.map(n => `
-    <div class="card" style="${n.is_read ? "opacity:.65" : ""}">
+  const list = d.items.map(n => {
+    const inner = `
       <strong>${esc(n.title)}</strong>
       ${n.body ? `<p>${esc(n.body)}</p>` : ""}
-      <p class="muted">${new Date(n.at).toLocaleString()}</p>
-    </div>`).join("") || `<div class="card center"><p>Nothing here yet.</p></div>`;
+      <p class="muted">${new Date(n.at).toLocaleString()}</p>`;
+    const style = n.is_read ? "opacity:.65" : "";
+    return n.link_path
+      ? `<a class="card notif-card" href="#${esc(n.link_path)}" data-notif="${n.id}" style="${style}">${inner}</a>`
+      : `<div class="card" style="${style}">${inner}</div>`;
+  }).join("") || `<div class="card center"><p>Nothing here yet.</p></div>`;
   render("Notifications", `
     ${d.unread ? `<button class="btn btn-quiet" id="readAll">Mark All as Read</button>` : ""}
     ${list}`);
+  // Opening one marks it read; the link itself does the navigating.
+  $app.querySelectorAll("[data-notif]").forEach(a => a.addEventListener("click", () => {
+    api.post(`/notifications/${a.dataset.notif}/read`).then(refreshBadge).catch(() => {});
+  }));
   const ra = document.getElementById("readAll");
   if (ra) ra.onclick = async () => { await api.post("/notifications/read-all"); refreshBadge(); navigate(); };
   refreshBadge();
@@ -1273,6 +1341,13 @@ const EVENT_STATUS = {
 };
 function eventStatus(e) { return EVENT_STATUS[e.status] || { emoji: "🚫", label: e.status, cls: "tag-done" }; }
 
+// A gift exchange is kept as a record once its day has passed or it's marked done.
+function todayIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function eventHasHappened(e) { return e.status === "completed" || e.event_date < todayIso(); }
+
 // Permanently deletes a gift exchange after a confirmation, then runs `done`.
 async function deleteEvent(ev, done) {
   if (!confirm(`Delete "${ev.name}"? This permanently erases its wishlists, name draw and messages for everyone. It can't be undone.`)) return;
@@ -1305,13 +1380,14 @@ function eventCard(e) {
     <div class="wish-card-actions">
       <button class="btn btn-secondary" data-open>Manage</button>
       ${e.status !== "completed" ? `<button class="btn btn-quiet" data-edit>Edit</button>` : ""}
-      <button class="btn btn-quiet" data-delete>Delete</button>
+      ${!eventHasHappened(e) ? `<button class="btn btn-quiet" data-delete>Delete</button>` : ""}
     </div>
   </article>`).firstElementChild;
   card.querySelector("[data-open]").onclick = () => go(`/admin/events/${e.id}`);
   const edit = card.querySelector("[data-edit]");
   if (edit) edit.onclick = () => go(`/admin/events/${e.id}/edit`);
-  card.querySelector("[data-delete]").onclick = () => deleteEvent(e, () => navigate());
+  const del = card.querySelector("[data-delete]");
+  if (del) del.onclick = () => deleteEvent(e, () => navigate());
   return card;
 }
 
@@ -1496,7 +1572,8 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
       : `<button class="btn btn-primary" id="draw">🎲 Draw Names</button>`;
   const doneBtn = ev.status !== "completed"
     ? `<button class="btn btn-quiet" id="markDone">Mark Event as Done</button>` : "";
-  const deleteBtn = `<button class="btn btn-quiet" id="deleteEvent">Delete Gift Exchange</button>`;
+  const deleteBtn = eventHasHappened(ev)
+    ? "" : `<button class="btn btn-quiet" id="deleteEvent">Delete Gift Exchange</button>`;
   render(ev.name, `
     <div id="msg"></div>
     <div class="card">
@@ -1534,7 +1611,8 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
       await api.del(`/events/${id}/assignments`); navigate();
     }
   };
-  document.getElementById("deleteEvent").onclick = () => deleteEvent(ev, () => go("/admin/events"));
+  const deleteBtnEl = document.getElementById("deleteEvent");
+  if (deleteBtnEl) deleteBtnEl.onclick = () => deleteEvent(ev, () => go("/admin/events"));
   const markDone = document.getElementById("markDone");
   if (markDone) markDone.onclick = async () => {
     if (!confirm("Mark this gift exchange as done? A new exchange will need to be created next time, with its own fresh wishlists.")) return;

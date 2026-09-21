@@ -9,6 +9,21 @@ BOB_USER = "bob"
 CARA_USER = "cara"
 PASSWORD = "correct-horse-battery"
 
+def make_image(name, size=(64, 48), fmt="PNG", color=(200, 30, 30)):
+    """A real (tiny) image as a (file, filename) tuple, ready for a multipart upload."""
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", size, color).save(buf, fmt)
+    buf.seek(0)
+    return (buf, name)
+
+
+def future_date(days=30):
+    from datetime import date, timedelta
+    return (date.today() + timedelta(days=days)).isoformat()
+
+
 
 class TestConfig:
     TESTING = True
@@ -313,7 +328,7 @@ def test_wishlist_edit_via_form_replaces_photo_and_locks_when_bought(app, users,
     url = f"/api/events/{ev['id']}/wishlists"
 
     def png(name):
-        return (io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"0" * 16), name)
+        return make_image(name)
 
     item = bob.post(url, data={"item_name": "Slippers", "priority": "2", "photo": png("a.png")},
                     content_type="multipart/form-data").get_json()["item"]
@@ -392,7 +407,7 @@ def test_profile_photo_upload_replace_remove(app, users, tmp_path):
     bob = users[BOB_USER]
 
     def png(name):
-        return (io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"0" * 16), name)
+        return make_image(name)
 
     assert bob.get("/api/auth/me").get_json()["user"]["photo_url"] is None
     r = bob.post("/api/auth/me/photo", data={"photo": png("me.png")}, content_type="multipart/form-data")
@@ -578,7 +593,7 @@ def test_admin_can_delete_event_and_everything_in_it(app, users, tmp_path):
 
     def make(name):
         ev = admin.post(f"/api/families/{fam['id']}/events",
-                        json={"name": name, "event_date": "2026-12-25"}).get_json()["event"]
+                        json={"name": name, "event_date": future_date()}).get_json()["event"]
         admin.put(f"/api/events/{ev['id']}/participants", json={"user_ids": uid})
         return ev
 
@@ -586,7 +601,7 @@ def test_admin_can_delete_event_and_everything_in_it(app, users, tmp_path):
     for ev in (doomed, kept):
         assert admin.post(f"/api/events/{ev['id']}/assignments/generate").status_code == 200
         r = bob.post(f"/api/events/{ev['id']}/wishlists", data={
-            "item_name": "Slippers", "photo": (io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"0" * 8), "s.png")},
+            "item_name": "Slippers", "photo": make_image("s.png")},
             content_type="multipart/form-data")
         assert r.status_code == 201
     doomed_photo = tmp_path / bob.get(f"/api/events/{doomed['id']}/wishlists/mine").get_json()["items"][0]["photo_url"].removeprefix("/static/")
@@ -609,3 +624,87 @@ def test_admin_can_delete_event_and_everything_in_it(app, users, tmp_path):
     assert Assignment.query.filter_by(event_id=kept["id"]).count() == 3
     assert WishlistItem.query.filter_by(event_id=kept["id"]).count() == 1
     assert [e["name"] for e in admin.get(f"/api/families/{fam['id']}/events").get_json()] == ["Kept"]
+
+
+def test_only_events_that_havent_happened_can_be_deleted(users):
+    fam, admin = users["_family"], users[ADMIN_USER]
+
+    def make(name, when):
+        return admin.post(f"/api/families/{fam['id']}/events",
+                          json={"name": name, "event_date": when}).get_json()["event"]
+
+    from datetime import date, timedelta
+    past = make("Last year", (date.today() - timedelta(days=1)).isoformat())
+    today = make("Today", date.today().isoformat())
+    done = make("Done early", future_date())
+    admin.post(f"/api/events/{done['id']}/complete")
+
+    assert admin.delete(f"/api/events/{past['id']}").status_code == 400
+    assert admin.delete(f"/api/events/{done['id']}").status_code == 400
+    assert admin.delete(f"/api/events/{today['id']}").status_code == 200   # not over until the day is
+    assert {e["name"] for e in admin.get(f"/api/families/{fam['id']}/events").get_json()} == {"Last year", "Done early"}
+
+
+def test_photos_are_resized_and_profile_photos_cropped_square(app, users, tmp_path):
+    import io
+    from PIL import Image
+    app.static_folder = str(tmp_path)
+    fam, bob = users["_family"], users[BOB_USER]
+    ev = users[ADMIN_USER].post(f"/api/families/{fam['id']}/events",
+                                json={"name": "Xmas", "event_date": future_date()}).get_json()["event"]
+
+    def stored(photo_url):
+        return Image.open(tmp_path / photo_url.removeprefix("/static/"))
+
+    # a big gift photo is shrunk to fit 1200px, keeping its shape
+    big = make_image("big.png", size=(3000, 2000))
+    item = bob.post(f"/api/events/{ev['id']}/wishlists", data={"item_name": "Bike", "photo": big},
+                    content_type="multipart/form-data").get_json()["item"]
+    assert stored(item["photo_url"]).size == (1200, 800)
+
+    # profile photos become a square, whatever shape they arrived as
+    r = bob.post("/api/auth/me/photo", data={"photo": make_image("wide.jpg", size=(1000, 400), fmt="JPEG")},
+                 content_type="multipart/form-data")
+    assert stored(r.get_json()["user"]["photo_url"]).size == (512, 512)
+    r = bob.post("/api/auth/me/photo", data={"photo": make_image("tall.png", size=(300, 900))},
+                 content_type="multipart/form-data")
+    assert stored(r.get_json()["user"]["photo_url"]).size == (512, 512)
+
+    # too big, or not really an image, is refused with a plain message
+    huge = (io.BytesIO(b"0" * (9 * 1024 * 1024)), "huge.jpg")
+    r = bob.post("/api/auth/me/photo", data={"photo": huge}, content_type="multipart/form-data")
+    assert r.status_code == 400 and "smaller than 8MB" in r.get_json()["error"]
+    fake = (io.BytesIO(b"this is not a picture"), "fake.png")
+    r = bob.post("/api/auth/me/photo", data={"photo": fake}, content_type="multipart/form-data")
+    assert r.status_code == 400 and "doesn't look like a photo" in r.get_json()["error"]
+
+
+def test_link_urls_are_checked_and_made_absolute(users):
+    from app.utils import normalize_link_url
+    fam, bob = users["_family"], users[BOB_USER]
+    ok = {"": "", "  ": "", "amazon.com/dp/B0123": "https://amazon.com/dp/B0123",
+          "www.target.com": "https://www.target.com", "http://example.com/a?b=1": "http://example.com/a?b=1",
+          "//shop.example.org/x": "https://shop.example.org/x", "HTTPS://Example.com": "HTTPS://Example.com",
+          "amazon.com:443/x": "https://amazon.com:443/x"}
+    for raw, want in ok.items():
+        assert normalize_link_url(raw) == want, raw
+    for raw in ["hello", "not a url", "javascript:alert(1)", "mailto:a@b.com", "ftp://example.com",
+                "https://", "https://nodot", "https://exa mple.com", "http://example.c", "data:text/html,hi",
+                "https://example.com:notaport", "x" * 501]:
+        try:
+            normalize_link_url(raw)
+        except ValueError:
+            continue
+        raise AssertionError(f"should have been rejected: {raw!r}")
+
+    ev = users[ADMIN_USER].post(f"/api/families/{fam['id']}/events",
+                                json={"name": "Xmas", "event_date": future_date()}).get_json()["event"]
+    url = f"/api/events/{ev['id']}/wishlists"
+    r = bob.post(url, json={"item_name": "Lamp", "link_url": "ikea.com/lamp"})
+    assert r.status_code == 201 and r.get_json()["item"]["link_url"] == "https://ikea.com/lamp"
+    item_id = r.get_json()["item"]["id"]
+    bad = bob.post(url, json={"item_name": "Rug", "link_url": "javascript:alert(1)"})
+    assert bad.status_code == 400 and "valid web link" in bad.get_json()["error"]
+    assert bob.patch(f"/api/wishlists/{item_id}", json={"link_url": "nope"}).status_code == 400
+    assert bob.patch(f"/api/wishlists/{item_id}", json={"link_url": "target.com/x"}).get_json()["item"]["link_url"] == "https://target.com/x"
+    assert bob.patch(f"/api/wishlists/{item_id}", json={"link_url": ""}).get_json()["item"]["link_url"] is None

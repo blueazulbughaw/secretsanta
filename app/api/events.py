@@ -140,12 +140,16 @@ def update_event(event_id):
 @bp.delete("/events/<int:event_id>")
 @require_auth
 def delete_event(event_id):
-    """Permanently removes an event and everything scoped to it: who's joining,
-    the name draw, wishlists (and their photos), messages and its announcements."""
+    """Permanently removes an event that hasn't happened yet, and everything scoped
+    to it: who's joining, the name draw, wishlists (and their photos), messages
+    and its announcements. Past or completed events are kept as a record."""
     ev = Event.query.get_or_404(event_id)
     _, err = require_family_admin(ev.family_id)
     if err:
         return err
+    if ev.status == "completed" or ev.event_date < date.today():
+        return jsonify({"error": "This gift exchange has already happened, so it's kept as a record "
+                                 "and can't be deleted."}), 400
     photos = [i.photo_path for i in WishlistItem.query.filter_by(event_id=ev.id).all()]
     for model in (Message, Assignment, WishlistItem, EventParticipant, Announcement):
         model.query.filter_by(event_id=ev.id).delete()

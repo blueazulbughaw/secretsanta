@@ -1,6 +1,38 @@
 import re
+from urllib.parse import urlparse
 
 from werkzeug.security import generate_password_hash, check_password_hash
+
+
+_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*://", re.I)
+_OTHER_SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*:(?!\d)", re.I)  # mailto:, javascript: ... (not host:port)
+_HOST_RE = re.compile(r"^([a-z0-9-]+\.)+[a-z]{2,}$", re.I)
+
+
+def normalize_link_url(raw) -> str:
+    """Cleans up a web link a person typed. "" stays "" (no link). A link with no
+    scheme ("amazon.com/x") gets https:// so it opens the real site instead of
+    a path on this one. Raises ValueError for anything that isn't a plain
+    http(s) link to a real-looking host."""
+    bad = ValueError("Please enter a valid web link, like https://www.example.com/item")
+    url = (raw or "").strip()
+    if not url:
+        return ""
+    if len(url) > 500 or re.search(r"\s", url):
+        raise bad
+    if not _SCHEME_RE.match(url):
+        if _OTHER_SCHEME_RE.match(url):
+            raise bad
+        url = "https://" + url.lstrip("/")
+    try:
+        parts = urlparse(url)
+        parts.port  # raises ValueError on a junk port
+        host = (parts.hostname or "").encode("idna").decode("ascii")
+    except (ValueError, UnicodeError):
+        raise bad
+    if parts.scheme.lower() not in ("http", "https") or not _HOST_RE.match(host):
+        raise bad
+    return url
 
 
 def normalize_username(raw: str) -> str:

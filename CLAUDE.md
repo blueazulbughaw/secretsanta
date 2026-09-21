@@ -26,14 +26,22 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   light grey (`--card-done`). Never put content directly on the bg or use bare
   `<hr>`-separated sections — wrap it in a card. #C0392B red, #2E7D4F green,
   #F5C518 yellow accents.
-- Dashboard (`/`): greeting card with a View My Clan button, then a "My upcoming gift
-  exchange" card (what / where / date / time / My Giftee), then announcements. The event
-  name and My Giftee link to `/events/:id` (details: date, time, where, theme, gift amount,
-  rules, what to bring, other things to know, plus a who's-coming table) and the giftee's
-  profile; every attendee row opens that person's profile. The giftee is NOT linked when
-  the event uses codenames (the profile would reveal the real name).
-- No "← Back" link in the top bar, and no placeholder text in any input (labels only).
-- Gift exchanges can be deleted by the clan admin (erases wishlists, draw, messages).
+- Dashboard (`/`): plain greeting (not in a card) with a View My Clan button, then ONE
+  "My upcoming gift exchange(s)" card holding every upcoming event, split by a line. Each
+  event shows what / where / date / time / My Giftee, then Message My Giftee + Message My
+  Secret Santa side by side, then a full-width View Event Details. The event name and
+  giftee link to `/events/:id` and the giftee's profile; the giftee is NOT linked when the
+  event uses codenames (the profile would reveal the real name). Announcements follow.
+- Messages belong to one gift exchange: threads come from that event's draw and every
+  thread page says which event it is. Notifications are links to what they're about.
+- A giftee's profile shows the Secret Santa a Message button with a note that it's anonymous.
+- Links (wishlist `link_url`) are validated and stored as absolute http(s) URLs
+  (`normalize_link_url`; mirrored by `normalizeUrl` in app.js). Never put a raw
+  user-typed URL in an href.
+- Photos: real images only (Pillow), 8MB upload cap, gift photos shrunk to 1200px,
+  profile photos cropped to a 512px square. Tests must upload real images.
+- Only gift exchanges that haven't happened yet (today or later, not marked done) can be
+  deleted; past/completed ones are kept as a record.
 - Profile: photo, about me, likes, favorite color, "what not to give me" live on
   `users` (PATCH /auth/me + /auth/me/photo) and are shown to the clan as an ID-style
   card on `/events/:id/clan/:userId` (photo beside details, wishlist cards below).
