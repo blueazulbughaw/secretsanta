@@ -25,7 +25,11 @@ body {
 [hidden] { display: none !important; }
 
 /* Plain, non-SPA pages (e.g. privacy_terms.html) that use a bare <main> */
-body > main:not(#app) { max-width: 760px; margin: 0 auto; padding: 1.5rem 2rem; }
+body > main:not(#app) {
+  max-width: 760px; margin: 1.5rem auto; padding: 1.5rem 2rem;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.legal-nav { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: .9rem; }
 @media (max-width: 780px) { body > main:not(#app) { padding: 1.25rem 1.5rem; } }
 
 header#topbar {

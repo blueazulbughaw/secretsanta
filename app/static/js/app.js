@@ -459,10 +459,16 @@ function pageLogin() {
     </div>
     <div id="msg"></div>
     <button class="btn btn-primary" id="loginBtn">Sign In</button>
-    <p class="muted center" style="font-size:.78rem;margin-top:2rem">
+    <button class="btn btn-quiet" id="textCodeBtn">Text Me a Sign-In Code</button>
+    <p class="muted" style="font-size:.78rem;margin:.4rem 0 0">
+      By tapping &ldquo;Text Me a Sign-In Code&rdquo; you agree to receive one text message from Genri Labs
+      with a one-time code, sent to the phone number on your account. Message and data rates may apply.
+      Reply STOP to opt out, HELP for help. Texting is optional: your password always works.
+    </p>
+    <p class="muted center" style="font-size:.78rem;margin-top:1.5rem">
       By continuing you agree to our
-      <a href="/privacy_terms#terms" target="_blank" rel="noopener">Terms of Service</a>
-      and <a href="/privacy_terms#privacy" target="_blank" rel="noopener">Privacy Policy</a>.
+      <a href="/terms" target="_blank" rel="noopener">Terms of Service</a>
+      and <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.
     </p>
   `);
   document.getElementById("togglePw").onclick = () => {
@@ -481,6 +487,43 @@ function pageLogin() {
       location.hash = "/"; boot();
     } catch (e) { showError(e); }
   };
+  document.getElementById("textCodeBtn").onclick = async () => {
+    const username = document.getElementById("username").value.trim();
+    if (!username) return showError({ message: "Please type your username first." });
+    try {
+      const r = await api.post("/auth/send-code", { username });
+      pageCodeEntry(username, r.phone_hint);
+    } catch (e) { showError(e); }
+  };
+}
+
+// The second step of signing in with a texted code (the password is always one tap away).
+function pageCodeEntry(username, phoneHint) {
+  render("", `
+    <div class="center" style="margin-top:2rem"><div style="font-size:3rem">💬</div></div>
+    <h2 class="center">Enter your sign-in code</h2>
+    <p class="muted center">We texted a 6-digit code to ${esc(phoneHint)}. It works for 10 minutes.</p>
+    <label for="code">Sign-in code</label>
+    <input id="code" class="code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+    <div id="msg"></div>
+    <button class="btn btn-primary" id="verifyBtn">Sign In</button>
+    <button class="btn btn-quiet" id="resendBtn">Send Me a New Code</button>
+    <button class="btn btn-quiet" id="usePasswordBtn">Use My Password Instead</button>
+  `);
+  document.getElementById("code").focus();
+  document.getElementById("verifyBtn").onclick = async () => {
+    try {
+      await api.post("/auth/verify-otp", { username, code: document.getElementById("code").value.trim() });
+      location.hash = "/"; boot();
+    } catch (e) { showError(e); }
+  };
+  document.getElementById("resendBtn").onclick = async () => {
+    try {
+      await api.post("/auth/send-code", { username });
+      document.getElementById("msg").innerHTML = alertBox("A new code is on its way.", true);
+    } catch (e) { showError(e); }
+  };
+  document.getElementById("usePasswordBtn").onclick = () => pageLogin();
 }
 
 function pageRegisterStart() {

@@ -75,13 +75,13 @@ Enforced with two decorators: `@require_auth` (valid JWT) and `@require_family_a
 
 ```
 1. POST /api/auth/login-start   { username }
-   → unknown username: creates the account right here, issues a JWT
-     cookie immediately, user is routed to Security setup (password
-     required, phone optional) - no separate signup step
-   → existing account with a phone on file: generate a 6-digit code,
-     store SHA-256(code + PEPPER), expire 10 min, text it via Twilio
-     (rate limit: 3 requests / 15 min per phone) → { method: "otp" }
-   → existing account with a password set: → { method: "password" }
+   → unknown username: { exists: false } (the UI then shows the create-account form)
+   → existing account: { exists: true, has_phone, has_password }. It never sends a text.
+
+1b. POST /api/auth/send-code    { username }   (only when the person asks for a code)
+   → account has a phone: 6-digit code, stored as SHA-256(code + PEPPER), expires in 10
+     min, texted via Twilio (rate limit: 3 requests / 15 min per phone) →
+     { phone_hint: "••• 1234" }; no phone → 400 telling them to use their password
 
 2a. POST /api/auth/verify-otp   { username, code }
     → check hash, attempts < 5, not expired, not used → issue JWT cookie
@@ -108,7 +108,7 @@ Elderly-friendly detail: the text message says only "Your verification code is
 
 All JSON, prefixed `/api`. 🔒 = auth required, 👑 = family admin.
 
-**Auth** — `POST /auth/login-start` (creates the account if the username is new), `POST /auth/verify-otp`, `POST /auth/login-password`, `GET /auth/me` 🔒, `PATCH /auth/me` 🔒 (name — clan admins only, except a first-time name — plus profile text: `about_me`, `likes`, `favorite_color`, `avoid_gifts`), `POST|DELETE /auth/me/photo` 🔒, `PATCH /auth/security` 🔒, `POST /auth/logout` 🔒
+**Auth** — `POST /auth/login-start` (does the username exist, and which sign-in options), `POST /auth/send-code` (texts a sign-in code on request), `POST /auth/verify-otp`, `POST /auth/login-password`, `GET /auth/me` 🔒, `PATCH /auth/me` 🔒 (name — clan admins only, except a first-time name — plus profile text: `about_me`, `likes`, `favorite_color`, `avoid_gifts`), `POST|DELETE /auth/me/photo` 🔒, `PATCH /auth/security` 🔒, `POST /auth/logout` 🔒
 
 **Families**
 - `POST /families` 🔒 — create family (creator becomes admin)

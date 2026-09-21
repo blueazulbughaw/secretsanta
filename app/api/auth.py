@@ -22,22 +22,36 @@ def login_start():
     user = User.query.filter_by(username=username).first()
     if not user:
         return jsonify({"ok": True, "exists": False})
+    # Only reports what sign-in options exist. It never sends a text: that only happens
+    # when the person asks for one (POST /auth/send-code).
+    if not user.phone and not user.password_hash:
+        return jsonify({"error": "This account has no sign-in method set up yet. Contact an admin."}), 400
+    return jsonify({"ok": True, "exists": True, "has_phone": bool(user.phone),
+                    "has_password": bool(user.password_hash)})
 
-    if user.phone:
-        try:
-            code = otp_service.request_code(user.phone)
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 429
-        try:
-            sms_service.send_otp_sms(user.phone, code)
-        except sms_service.SmsSendError as e:
-            return jsonify({"error": str(e)}), 502
-        return jsonify({"ok": True, "method": "otp", "message": "We texted you a 6-digit code."})
 
-    if user.password_hash:
-        return jsonify({"ok": True, "method": "password"})
-
-    return jsonify({"error": "This account has no sign-in method set up yet. Contact an admin."}), 400
+@bp.post("/auth/send-code")
+def send_code():
+    """Texts a one-time sign-in code to the phone number on the account, on request."""
+    try:
+        username = normalize_username((request.json or {}).get("username", ""))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({"error": "We couldn't find that username."}), 404
+    if not user.phone:
+        return jsonify({"error": "This account doesn't have a phone number yet, so please use your "
+                                 "password. Your clan admin can add your phone number."}), 400
+    try:
+        code = otp_service.request_code(user.phone)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 429
+    try:
+        sms_service.send_otp_sms(user.phone, code)
+    except sms_service.SmsSendError as e:
+        return jsonify({"error": str(e)}), 502
+    return jsonify({"ok": True, "phone_hint": f"••• {user.phone[-4:]}"})
 
 
 @bp.post("/auth/register")

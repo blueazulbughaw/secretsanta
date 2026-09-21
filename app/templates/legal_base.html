@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% endblock %} — Secret Santa</title>
+  <meta name="theme-color" content="#C0392B">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <header id="topbar">
+    <h1 id="pageTitle">{% block heading %}{% endblock %}</h1>
+  </header>
+  <main>
+    <p class="muted">Last updated: September 21, 2026</p>
+    <p>Secret Santa is a private gift-exchange app for families, operated by <a href="https://www.glad.codes" target="_blank" rel="noopener">Glad.Codes</a> and <a href="https://www.genrilabs.com" target="_blank" rel="noopener">Genri Labs</a>.</p>
+    {% block body %}{% endblock %}
+    <p class="legal-nav"><a href="/privacy">Privacy Policy</a> &middot; <a href="/terms">Terms of Service</a> &middot; <a href="/">Back to sign in</a></p>
+  </main>
+</body>
+</html>

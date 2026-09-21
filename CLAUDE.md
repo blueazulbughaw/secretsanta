@@ -2,9 +2,12 @@
 Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS PWA.
 - Follow ARCHITECTURE.md exactly (structure, endpoints, roles).
 - Schema of record is schema.sql; models live in app/models.py. Use Flask-Migrate for changes.
-- Auth: username -> JWT in httpOnly cookie. Typing a new username creates the account
-  (no separate signup step). If the account has a phone on file, sign-in sends an SMS
-  OTP (Twilio); otherwise sign-in uses a password. Users set or reset their password
+- Auth: username -> JWT in httpOnly cookie. The password ALWAYS works. If the account has
+  a phone (admin-set), the sign-in page also offers "Text Me a Sign-In Code" (Twilio, POST
+  /auth/send-code then /auth/verify-otp) with the SMS consent wording beside the button; a code
+  is only ever sent when asked for (login-start never texts). Keep the password until text
+  delivery (Twilio A2P 10DLC) is confirmed. Public /privacy and /terms are server-rendered
+  pages (they carry the SMS terms Twilio reviews); don't turn them back into SPA routes. Users set or reset their password
   from Profile & Security (resetting asks for the current password, except for a
   temporary admin-issued one). The phone number is not offered on the profile page.
 - Display name: it is the name the clan sees ("Display Name" in every label), separate from

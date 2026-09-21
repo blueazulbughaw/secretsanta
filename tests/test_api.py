@@ -124,7 +124,8 @@ def test_password_login_flow(app):
 
     c2 = app.test_client()
     r = c2.post("/api/auth/login-start", json={"username": "pwuser"})
-    assert r.status_code == 200 and r.get_json()["method"] == "password"
+    assert r.status_code == 200
+    assert (r.get_json()["has_password"], r.get_json()["has_phone"]) == (True, False)
 
     assert c2.post("/api/auth/login-password",
                     json={"username": "pwuser", "password": "wrong"}).status_code == 401
@@ -132,21 +133,68 @@ def test_password_login_flow(app):
     assert r2.status_code == 200
 
 
-def test_phone_otp_login_flow(app, capsys):
+def test_phone_sign_in_code_flow(app, capsys):
     c = app.test_client()
     c.post("/api/auth/register",
            json={"username": "phoneuser", "password": PASSWORD, "full_name": "T",
                  "phone": "5551234567"})
 
+    # checking the username reports the options but never sends a text
     c2 = app.test_client()
     r = c2.post("/api/auth/login-start", json={"username": "phoneuser"})
-    assert r.status_code == 200 and r.get_json()["method"] == "otp"
+    assert r.get_json()["has_phone"] is True and r.get_json()["has_password"] is True
+    assert "sign-in code" not in capsys.readouterr().out
+
+    # a text is sent only when asked for, and only the last 4 digits are shown back
+    r = c2.post("/api/auth/send-code", json={"username": "phoneuser"})
+    assert r.status_code == 200 and r.get_json()["phone_hint"].endswith("4567")
+    assert "+15551234567" not in r.get_data(as_text=True)
     code = re.search(r"code for \+15551234567: (\d{6})", capsys.readouterr().out).group(1)
 
     assert c2.post("/api/auth/verify-otp",
                     json={"username": "phoneuser", "code": "000000"}).status_code == 401
     r2 = c2.post("/api/auth/verify-otp", json={"username": "phoneuser", "code": code})
     assert r2.status_code == 200
+    assert c2.get("/api/auth/me").status_code == 200
+    # a used code doesn't work twice
+    assert app.test_client().post("/api/auth/verify-otp",
+                                  json={"username": "phoneuser", "code": code}).status_code == 401
+    # the password still works for the same account
+    assert app.test_client().post("/api/auth/login-password",
+                                  json={"username": "phoneuser", "password": PASSWORD}).status_code == 200
+
+
+def test_send_code_needs_a_known_username_with_a_phone(app, users):
+    c = app.test_client()
+    assert c.post("/api/auth/send-code", json={"username": "nobody"}).status_code == 404
+    assert c.post("/api/auth/send-code", json={"username": "no spaces!"}).status_code == 400
+    r = c.post("/api/auth/send-code", json={"username": BOB_USER})          # bob has no phone
+    assert r.status_code == 400 and "password" in r.get_json()["error"]
+
+
+def test_send_code_is_rate_limited_per_phone(app, capsys):
+    c = app.test_client()
+    c.post("/api/auth/register", json={"username": "spammed", "password": PASSWORD,
+                                       "full_name": "S", "phone": "5559990000"})
+    codes = [c.post("/api/auth/send-code", json={"username": "spammed"}).status_code for _ in range(12)]
+    assert codes[:10] == [200] * 10 and set(codes[10:]) == {429}
+
+
+def test_privacy_and_terms_are_real_pages_reachable_without_signing_in(app):
+    c = app.test_client()
+    for path, must in [("/privacy", ["Privacy Policy", "mobile phone number", "do not share, sell, rent"]),
+                       ("/terms", ["SMS Terms", "Reply STOP", "HELP", "Message and data rates may apply",
+                                   "Text Me a Sign-In Code"]),
+                       ("/privacy_terms", ["Privacy Policy", "SMS Terms"])]:
+        r = c.get(path)
+        page = r.get_data(as_text=True)
+        assert r.status_code == 200 and "<title>" in page and 'id="app"' not in page, path   # not the JS shell
+        for text in must:
+            assert text in page, (path, text)
+    # every page links to the others and back to sign-in
+    page = c.get("/privacy").get_data(as_text=True)
+    assert 'href="/terms"' in page and 'href="/privacy"' in page and 'href="/"' in page
+
 
 
 def test_register_with_clan_name_creates_family_and_makes_admin(app):

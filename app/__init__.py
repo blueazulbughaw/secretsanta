@@ -26,6 +26,16 @@ def create_app(config_object=None):
                wishlists_bp, messages_bp, announcements_bp, notifications_bp, dishes_bp):
         app.register_blueprint(bp, url_prefix="/api")
 
+    # Real pages (not the JS app shell) so anyone - including a texting-provider reviewer -
+    # can open them without signing in or running JavaScript.
+    @app.route("/privacy")
+    def privacy():
+        return render_template("privacy.html")
+
+    @app.route("/terms")
+    def terms():
+        return render_template("terms.html")
+
     @app.route("/privacy_terms")
     def privacy_terms():
         return render_template("privacy_terms.html")
