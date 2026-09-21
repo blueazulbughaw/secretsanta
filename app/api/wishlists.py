@@ -1,18 +1,14 @@
-import os
-import uuid
 from datetime import datetime
 
-from flask import Blueprint, request, jsonify, g, current_app
+from flask import Blueprint, request, jsonify, g
 
 from ..extensions import db
 from ..models import Event, WishlistItem, Assignment, User, EventParticipant
 from ..middleware.auth import require_auth, require_family_member, require_family_admin
 from ..services.notification_service import notify
+from ..services.photo_service import save_photo, remove_photo
 
 bp = Blueprint("wishlists", __name__)
-
-ALLOWED_PHOTO_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif"}
-MAX_PHOTO_BYTES = 4 * 1024 * 1024  # 4MB
 
 
 def _my_giftee(event_id):
@@ -28,22 +24,6 @@ def _item_dict(item, include_purchase):
     if include_purchase:
         d["bought_by_me"] = item.purchased_by == g.user.id
     return d
-
-
-def _save_wishlist_photo(photo):
-    ext = photo.filename.rsplit(".", 1)[-1].lower() if "." in photo.filename else ""
-    if ext not in ALLOWED_PHOTO_EXTENSIONS:
-        raise ValueError("Photos must be a JPG, PNG, WEBP, or GIF file.")
-    photo.seek(0, os.SEEK_END)
-    size = photo.tell()
-    photo.seek(0)
-    if size > MAX_PHOTO_BYTES:
-        raise ValueError("Photos must be smaller than 4MB.")
-    upload_dir = os.path.join(current_app.static_folder, "uploads", "wishlist")
-    os.makedirs(upload_dir, exist_ok=True)
-    filename = f"{uuid.uuid4().hex}.{ext}"
-    photo.save(os.path.join(upload_dir, filename))
-    return f"uploads/wishlist/{filename}"
 
 
 @bp.get("/events/<int:event_id>/wishlists/mine")
@@ -80,7 +60,7 @@ def add_item(event_id):
     photo = request.files.get("photo")
     if photo and photo.filename:
         try:
-            photo_path = _save_wishlist_photo(photo)
+            photo_path = save_photo(photo, "wishlist")
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
 
@@ -118,7 +98,7 @@ def edit_item(item_id):
     photo = request.files.get("photo")
     if photo and photo.filename:
         try:
-            new_photo = _save_wishlist_photo(photo)
+            new_photo = save_photo(photo, "wishlist")
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
         old_photo, item.photo_path = item.photo_path, new_photo
@@ -132,11 +112,7 @@ def edit_item(item_id):
     if "priority" in data:
         item.priority = int(data["priority"])
     db.session.commit()
-    if old_photo:  # replaced - drop the old file so uploads don't pile up
-        try:
-            os.remove(os.path.join(current_app.static_folder, old_photo))
-        except OSError:
-            pass
+    remove_photo(old_photo)  # replaced - drop the old file so uploads don't pile up
     return jsonify({"ok": True, "item": item.to_dict()})
 
 

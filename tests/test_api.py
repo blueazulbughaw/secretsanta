@@ -382,3 +382,36 @@ def test_events_have_separate_participants_and_can_be_edited(users):
     # members can't edit; a drawn event can't be edited
     assert bob.patch(f"/api/events/{bday['id']}", json={"name": "x"}).status_code == 403
     assert admin.patch(f"/api/events/{xmas['id']}", json={"name": "x"}).status_code == 400
+
+
+def test_profile_photo_upload_replace_remove(app, users, tmp_path):
+    import io
+    app.static_folder = str(tmp_path)
+    bob = users[BOB_USER]
+
+    def png(name):
+        return (io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"0" * 16), name)
+
+    assert bob.get("/api/auth/me").get_json()["user"]["photo_url"] is None
+    r = bob.post("/api/auth/me/photo", data={"photo": png("me.png")}, content_type="multipart/form-data")
+    assert r.status_code == 200
+    first = r.get_json()["user"]["photo_url"]
+    first_file = tmp_path / first.removeprefix("/static/")
+    assert first.startswith("/static/uploads/avatars/") and first_file.exists()
+    assert bob.get("/api/auth/me").get_json()["user"]["photo_url"] == first
+
+    # replacing deletes the old file; the clan sees the new photo
+    second = bob.post("/api/auth/me/photo", data={"photo": png("me2.jpg")},
+                      content_type="multipart/form-data").get_json()["user"]["photo_url"]
+    assert second != first and not first_file.exists()
+    members = users[ADMIN_USER].get(f"/api/families/{users['_family']['id']}/members").get_json()
+    assert {m["user"]["username"]: m["user"]["photo_url"] for m in members}[BOB_USER] == second
+
+    # bad type / missing file are rejected
+    assert bob.post("/api/auth/me/photo", data={"photo": (io.BytesIO(b"x"), "evil.exe")},
+                    content_type="multipart/form-data").status_code == 400
+    assert bob.post("/api/auth/me/photo", data={}, content_type="multipart/form-data").status_code == 400
+
+    r = bob.delete("/api/auth/me/photo")
+    assert r.get_json()["user"]["photo_url"] is None
+    assert not (tmp_path / second.removeprefix("/static/")).exists()

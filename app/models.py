@@ -17,6 +17,7 @@ class User(db.Model):
     full_name = db.Column(db.String(120), nullable=False, default="")
     display_name = db.Column(db.String(60))
     avatar_color = db.Column(db.String(7), nullable=False, default="#C0392B")
+    photo_path = db.Column(db.String(255))  # profile photo, relative to static/
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     last_login_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
@@ -32,6 +33,7 @@ class User(db.Model):
             "full_name": self.full_name,
             "display_name": self.display_name or self.full_name,
             "avatar_color": self.avatar_color,
+            "photo_url": f"/static/{self.photo_path}" if self.photo_path else None,
         }
 
 

@@ -25,6 +25,7 @@ CREATE TABLE users (
   full_name     VARCHAR(120) NOT NULL,
   display_name  VARCHAR(60)  NULL,           -- "Lola Nena", "Tito Ben"
   avatar_color  CHAR(7)      NOT NULL DEFAULT '#C0392B', -- accessible identicon fallback
+  photo_path    VARCHAR(255) NULL,           -- profile photo, relative to app/static/
   is_active     TINYINT(1)   NOT NULL DEFAULT 1,
   last_login_at DATETIME     NULL,
   created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,

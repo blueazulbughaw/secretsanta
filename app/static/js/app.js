@@ -208,25 +208,59 @@ function wishRowReadOnly(item, { showBuy = false, personName = null } = {}) {
     </tr>`;
 }
 
-// My Wishlist card (own items): small photo, name/priority, description, link
-// last, then Edit/Delete at the bottom - or a plain sentence once the item is
-// locked (someone bought it). The locked flag is all the owner ever learns.
-function myWishCard(item, eventId) {
-  const thumb = item.photo_url ? wishThumbCell(item) : "";
-  const footer = item.locked
-    ? `<span class="muted wish-locked-msg">Cannot edit this item as it has already been bought.</span>`
-    : `<button class="btn btn-secondary" data-edit>Edit</button>
-       <button class="btn btn-quiet" data-del>Delete</button>`;
-  const card = h(`<article class="wish-card">
+// Profile photo, or the person's initials on their colour when they have none.
+function safeColor(c) { return /^#[0-9a-fA-F]{6}$/.test(c || "") ? c : "#C0392B"; }
+function initialsOf(name) {
+  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
+}
+function avatarHtml(user, cls) {
+  return user.photo_url
+    ? `<img class="avatar ${cls}" src="${esc(user.photo_url)}" alt="">`
+    : `<span class="avatar avatar-initials ${cls}" style="background:${safeColor(user.avatar_color)}" aria-hidden="true">${esc(initialsOf(user.display_name || user.full_name))}</span>`;
+}
+
+// Shared top of every wishlist card: small photo (if any), name, priority,
+// description, and the link last.
+function wishCardBody(item) {
+  return `
     <div class="wish-card-head">
-      ${thumb}
+      ${item.photo_url ? wishThumbCell(item) : ""}
       <div class="wish-card-title">
         <strong>${esc(item.item_name)}</strong>
         <span class="wish-priority">Priority ${item.priority}</span>
       </div>
     </div>
     ${item.description ? `<p class="wish-card-desc">${esc(item.description)}</p>` : ""}
-    ${item.link_url ? `<a class="wish-link" href="${esc(item.link_url)}" target="_blank" rel="noopener">See it online ↗</a>` : ""}
+    ${item.link_url ? `<a class="wish-link" href="${esc(item.link_url)}" target="_blank" rel="noopener">See it online ↗</a>` : ""}`;
+}
+
+// A clan member's gift as seen by someone else: same card, plus whether it's
+// been bought. Owners never get is_purchased for their own items, so their
+// own card just has no purchase footer.
+function clanWishCard(item) {
+  let footer = "";
+  if (item.is_purchased === undefined) footer = "";
+  else if (!item.is_purchased) footer = `<button class="btn btn-green" data-buy="${item.id}">I Bought This</button>`;
+  else if (item.bought_by_me) footer = `<span class="tag-bought">✓ Bought by you</span><button class="btn btn-quiet" data-buy="${item.id}">Unbought</button>`;
+  else footer = `<span class="tag-bought">✓ Already bought</span>`;
+  return h(`<article class="wish-card ${item.is_purchased ? "bought" : ""}">
+    ${wishCardBody(item)}
+    ${footer ? `<div class="wish-card-actions">${footer}</div>` : ""}
+  </article>`).firstElementChild;
+}
+
+// My Wishlist card (own items): small photo, name/priority, description, link
+// last, then Edit/Delete at the bottom - or a plain sentence once the item is
+// locked (someone bought it). The locked flag is all the owner ever learns.
+function myWishCard(item, eventId) {
+  const footer = item.locked
+    ? `<span class="muted wish-locked-msg">Cannot edit this item as it has already been bought.</span>`
+    : `<button class="btn btn-secondary" data-edit>Edit</button>
+       <button class="btn btn-quiet" data-del>Delete</button>`;
+  const card = h(`<article class="wish-card">
+    ${wishCardBody(item)}
     <div class="wish-card-actions">${footer}</div>
   </article>`).firstElementChild;
   if (!item.locked) {
@@ -299,6 +333,7 @@ function route(pattern, fn) { routes.push({ pattern, fn }); }
 async function navigate() {
   const path = location.hash.replace(/^#/, "") || "/";
   renderSidebar(path.replace(/^(\/events\/\d+\/wishlist)\/.+$/, "$1")
+    .replace(/^(\/events\/\d+\/clan)\/.+$/, "$1")
     .replace(/^(\/admin\/events)\/.+$/, "$1"));
   closeSidebar();
   for (const r of routes) {
@@ -492,6 +527,19 @@ function pageForcedPasswordChange() {
 
 function pageSecuritySetup(forced) {
   render("Profile & Security", `
+    <h2>Profile photo</h2>
+    <p class="muted">Optional. Your family sees it on My Clan.</p>
+    <div class="profile-photo-row">
+      <div id="avatarPreview"></div>
+      <div>
+        <label for="photoInput" style="margin-top:0" id="photoLabel"></label>
+        <input id="photoInput" type="file" accept="image/*">
+        <button class="btn btn-quiet" style="width:auto" id="removePhotoBtn">Remove Photo</button>
+      </div>
+    </div>
+    <div id="photoMsg"></div>
+
+    <hr style="margin:2rem 0">
     <h2>Your name</h2>
     <p class="muted">This is how your family will see you.</p>
     <label for="displayName">Your name</label>
@@ -526,7 +574,36 @@ function pageSecuritySetup(forced) {
     <div id="phoneMsg"></div>
     <button class="btn btn-secondary" id="savePhoneBtn">Save Phone Number</button>
     ${!forced ? `<button class="btn btn-quiet" id="doneBtn">Done</button>` : ""}
-  `, { back: !forced });
+  `, { back: false });
+  const refreshPhotoUi = () => {
+    document.getElementById("avatarPreview").innerHTML = avatarHtml(ME.user, "avatar-lg");
+    document.getElementById("photoLabel").textContent = ME.user.photo_url ? "Change photo" : "Add a photo";
+    document.getElementById("removePhotoBtn").hidden = !ME.user.photo_url;
+  };
+  refreshPhotoUi();
+  document.getElementById("photoInput").onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const msg = document.getElementById("photoMsg");
+    try {
+      const fd = new FormData();
+      fd.append("photo", file);
+      const r = await api.postForm("/auth/me/photo", fd);
+      ME.user = r.user;
+      msg.innerHTML = alertBox("Photo saved!", true);
+    } catch (err) { msg.innerHTML = alertBox(err.message); }
+    e.target.value = "";
+    refreshPhotoUi();
+  };
+  document.getElementById("removePhotoBtn").onclick = async () => {
+    const msg = document.getElementById("photoMsg");
+    try {
+      const r = await api.del("/auth/me/photo");
+      ME.user = r.user;
+      msg.innerHTML = alertBox("Photo removed.", true);
+    } catch (err) { msg.innerHTML = alertBox(err.message); }
+    refreshPhotoUi();
+  };
   document.getElementById("saveNameBtn").onclick = async () => {
     try {
       const r = await api.patch("/auth/me", { full_name: document.getElementById("displayName").value });
@@ -763,21 +840,52 @@ route(/^\/events\/(\d+)\/giftee$/, async (id) => {
   });
 });
 
+function personCard(user, eventId) {
+  const name = user.display_name || user.full_name;
+  const photo = user.photo_url
+    ? `<img class="person-img" src="${esc(user.photo_url)}" alt="">`
+    : `<span class="person-initials" style="background:${safeColor(user.avatar_color)}" aria-hidden="true">${esc(initialsOf(name))}</span>`;
+  const card = h(`<button type="button" class="person-card" aria-label="${esc(name)}'s wishlist">
+    <span class="person-photo">${photo}</span>
+    <span class="person-name">${esc(name)}</span>
+  </button>`).firstElementChild;
+  card.onclick = () => go(`/events/${eventId}/clan/${user.id}`);
+  return card;
+}
+
 route(/^\/events\/(\d+)\/clan$/, async (id) => {
   const list = await api.get(`/events/${id}/wishlists/clan`);
   list.sort((a, b) => a.user.display_name.localeCompare(b.user.display_name));
-  const rows = list.map(entry => {
-    const header = `<tr class="group-header"><td colspan="4">${esc(entry.user.display_name)}</td></tr>`;
-    const itemRows = entry.items.length
-      ? entry.items.map(i => wishRowReadOnly(i, { showBuy: i.is_purchased !== undefined })).join("")
-      : `<tr><td colspan="4" class="muted">No gift ideas yet.</td></tr>`;
-    return header + itemRows;
-  }).join("");
   render("My Clan", list.length
-    ? wishTable(rows, { showPerson: false })
-    : `<div class="card center"><p>No one's joined this gift exchange yet.</p></div>`);
+    ? `<p class="muted">Tap someone to see their wishlist.</p><div class="person-grid" id="personGrid"></div>`
+    : `<div class="card center"><p>No one's joined this gift exchange yet.</p></div>`, { back: false });
+  const grid = document.getElementById("personGrid");
+  if (grid) list.forEach(entry => grid.append(personCard(entry.user, id)));
+});
+
+route(/^\/events\/(\d+)\/clan\/(\d+)$/, async (id, uid) => {
+  const list = await api.get(`/events/${id}/wishlists/clan`);
+  const entry = list.find(e => e.user.id === Number(uid));
+  if (!entry) {
+    return render("My Clan", alertBox("We couldn't find that person in this gift exchange.") + `
+      <button class="btn btn-secondary" style="width:auto" onclick="go('/events/${id}/clan')">Back to My Clan</button>`);
+  }
+  const n = entry.items.length;
+  render("My Clan", `
+    <div class="person-head">
+      ${avatarHtml(entry.user, "avatar-md")}
+      <div>
+        <h2 style="margin:0">${esc(entry.user.display_name)}</h2>
+        <span class="muted">${n ? `${n} gift idea${n === 1 ? "" : "s"}` : "No gift ideas yet."}</span>
+      </div>
+    </div>
+    ${n ? `<div class="wish-grid" id="personWishGrid"></div>` : ""}
+  `);
+  const grid = document.getElementById("personWishGrid");
+  if (grid) entry.items.forEach(i => grid.append(clanWishCard(i)));
   $app.querySelectorAll("[data-buy]").forEach(b => b.onclick = async () => {
-    await api.post(`/wishlists/${b.dataset.buy}/purchase`); navigate();
+    try { await api.post(`/wishlists/${b.dataset.buy}/purchase`); navigate(); }
+    catch (e) { showError(e); }
   });
 });
 

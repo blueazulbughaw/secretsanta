@@ -5,6 +5,7 @@ from flask import Blueprint, request, jsonify, make_response, g
 from ..extensions import db
 from ..models import User, FamilyMember, Family
 from ..services import otp_service, sms_service
+from ..services.photo_service import save_photo, remove_photo
 from ..middleware.auth import (issue_token, set_auth_cookie, clear_auth_cookie,
                                require_auth)
 from ..utils import normalize_us_phone, normalize_username, hash_password, verify_password
@@ -149,6 +150,31 @@ def update_me():
     if "display_name" in data:
         g.user.display_name = (data.get("display_name") or "").strip()[:60] or None
     db.session.commit()
+    return jsonify({"ok": True, "user": g.user.to_dict()})
+
+
+@bp.post("/auth/me/photo")
+@require_auth
+def set_my_photo():
+    photo = request.files.get("photo")
+    if not photo or not photo.filename:
+        return jsonify({"error": "Please choose a photo."}), 400
+    try:
+        new_path = save_photo(photo, "avatars")
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    old_path, g.user.photo_path = g.user.photo_path, new_path
+    db.session.commit()
+    remove_photo(old_path)
+    return jsonify({"ok": True, "user": g.user.to_dict()})
+
+
+@bp.delete("/auth/me/photo")
+@require_auth
+def remove_my_photo():
+    old_path, g.user.photo_path = g.user.photo_path, None
+    db.session.commit()
+    remove_photo(old_path)
     return jsonify({"ok": True, "user": g.user.to_dict()})
 
 

@@ -292,6 +292,37 @@ table.data td.wrap-cell { overflow: visible; white-space: normal; }
   margin-top: auto; padding-top: .75rem; border-top: 1px solid var(--line);
 }
 .wish-card-actions .btn { width: auto; margin: 0; flex: 0 0 auto; }
+/* Avatars (profile photo, or initials on the person's colour) */
+.avatar { border-radius: 50%; object-fit: cover; flex: 0 0 auto; display: inline-flex;
+  align-items: center; justify-content: center; }
+.avatar-initials { color: #fff; font-weight: 700; }
+.avatar-md { width: 56px; height: 56px; font-size: 1.2rem; }
+.avatar-lg { width: 96px; height: 96px; font-size: 2rem; }
+.profile-photo-row { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; }
+.profile-photo-row input[type=file] { margin-bottom: .4rem; }
+
+/* My Clan: a card per person - photo on top, name at the bottom */
+.person-grid {
+  display: grid; gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 170px), 1fr));
+}
+.person-card {
+  display: flex; flex-direction: column; padding: 0; overflow: hidden;
+  border: 1px solid var(--line); border-radius: var(--radius); background: #fff;
+  cursor: pointer; text-align: center; font: inherit; color: var(--ink);
+}
+.person-card:hover { border-color: var(--red); }
+.person-card:focus-visible { outline: 3px solid var(--yellow); outline-offset: 1px; }
+.person-photo { display: block; aspect-ratio: 1 / 1; width: 100%; background: #F4F4F4; }
+.person-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.person-initials {
+  width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 3rem; font-weight: 700;
+}
+.person-name { display: block; padding: .6rem .5rem; font-weight: 600; overflow-wrap: anywhere; }
+.person-head { display: flex; align-items: center; gap: .9rem; margin-bottom: 1rem; }
+.wish-card.bought .wish-card-title strong { text-decoration: line-through; color: var(--muted); }
+
 /* Gift exchange cards + participant picker */
 .event-emoji { font-size: 1.8rem; line-height: 1; flex: 0 0 auto; }
 .event-meta { list-style: none; margin: 0; padding: 0; font-size: .9rem; display: grid; gap: .2rem; }
@@ -319,6 +350,7 @@ table.data td.wrap-cell { overflow: visible; white-space: normal; }
   .form-actions .btn { max-width: none; }
   .wish-toolbar .btn { width: 100% !important; }
   .people-picker { max-width: none; }
+  .person-grid { grid-template-columns: repeat(2, 1fr); gap: .75rem; }
 }
 
 /* Messages — capped in absolute terms, not just relative to the (now wider) pane */
