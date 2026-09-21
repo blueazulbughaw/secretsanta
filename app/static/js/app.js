@@ -780,8 +780,8 @@ function dashEventBlock(e, d) {
         <dt>My Giftee</dt><dd>${gifteeHtml}</dd>
       </dl>
       ${d && d.assigned ? `<div class="event-actions">
-        <button class="btn btn-secondary" onclick="go('/events/${e.id}/messages/giftee')">Message My Giftee</button>
-        <button class="btn btn-secondary" onclick="go('/events/${e.id}/messages/giver')">Message My Secret Santa</button>
+        <button class="btn btn-outline" onclick="go('/events/${e.id}/messages/giftee')">Message My Giftee</button>
+        <button class="btn btn-outline" onclick="go('/events/${e.id}/messages/giver')">Message My Secret Santa</button>
       </div>` : ""}
       <button class="btn btn-secondary btn-block" onclick="go('/events/${e.id}')">View Event Details</button>
     </div>`;
@@ -815,9 +815,17 @@ route(/^\/$/, async () => {
       ${FAMILY.role === "admin" ? `<button class="btn btn-secondary" style="width:auto" onclick="go('/admin/events')">Create a Gift Exchange</button>` : ""}
     </section>`);
 
-  if (clanEvent) {
-    sections.push(`<button class="btn btn-primary btn-block" onclick="go('/events/${clanEvent.id}/clan')">View My Clan</button>`);
-  }
+  // Shortcuts, in their own card at the very bottom. Wishlist and clan are per gift
+  // exchange, so they only show when there is one.
+  sections.push(`
+    <section class="card">
+      <div class="event-actions" style="margin-bottom:0">
+        <button class="btn btn-primary" onclick="go('/security')">Edit My Profile</button>
+        ${clanEvent ? `
+        <button class="btn btn-primary" onclick="go('/events/${clanEvent.id}/wishlist')">View My Wishlist</button>
+        <button class="btn btn-primary" onclick="go('/events/${clanEvent.id}/clan')">View My Clan</button>` : ""}
+      </div>
+    </section>`);
 
   render("My Dashboard", sections.join(""));
   $app.querySelectorAll("[data-del-ann]").forEach(b => b.onclick = async () => {

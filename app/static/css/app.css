@@ -410,6 +410,9 @@ table.data td.wrap-cell { overflow: visible; white-space: normal; }
 .event-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: .5rem; }
 .event-actions .btn { flex: 1 1 200px; width: auto; max-width: none; margin: 0; }
 .btn-block { width: 100%; max-width: none; margin: 0; }
+/* The two message buttons stay outlined: white background, red border, red text */
+.btn-outline { background: #fff; color: var(--red); border: 1px solid var(--red); }
+.btn-outline:hover, .btn-outline:active { background: #FBEDEB; }
 a.notif-card { display: block; color: inherit; text-decoration: none; cursor: pointer; }
 a.notif-card:hover { border-color: var(--red); }
 a.notif-card:focus-visible { outline: 3px solid var(--yellow); outline-offset: 1px; }

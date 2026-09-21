@@ -28,14 +28,17 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   #F5C518 yellow accents.
 - Dashboard (`/`), top to bottom: plain greeting (not in a card), Announcements card
   (a phone shows only the message text), ONE "My upcoming gift exchange(s)" card holding
-  every upcoming event split by lines, then a full-width View My Clan button at the bottom.
+  every upcoming event split by lines, then a shortcuts card at the very bottom (Edit My
+  Profile, View My Wishlist, View My Clan).
   Each event shows what / where / date / time / My Giftee, then Message My Giftee + Message
-  My Secret Santa side by side, then a full-width View Event Details. The event name and
+  My Secret Santa side by side (the one place buttons are white with a red border and red
+  text, `.btn-outline`), then a full-width View Event Details. The event name and
   giftee link to `/events/:id` and the giftee's profile; the giftee is NOT linked when the
   event uses codenames (the profile would reveal the real name).
 - Announcements have one visibility switch, "Show on Clan Dashboard" (`is_published`);
   there is no pinning.
-- Every button is red with white text (all `.btn-*` variants look the same). Cards that
+- Every button is red with white text (all `.btn-*` variants look the same), except
+  `.btn-outline` (the two dashboard message buttons). Cards that
   hold a form use `.form-card` (or render's `card:true` = `.page-card`): on desktop they are
   640px wide, centred, and their fields/buttons fill the card. Don't leave a form floating
   narrow on the left of a wide card.
