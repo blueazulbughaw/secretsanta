@@ -559,3 +559,18 @@ body.dragging-cards, body.dragging-cards * { cursor: grabbing !important; }
 }
 .people-head { max-width: 640px; padding-right: .4rem; }
 .list-note { flex: 0 0 auto; color: var(--muted); font-size: .88rem; text-align: right; }
+
+/* A form that fits on one line on a desktop (Add a member / Add a household); stacks on a phone */
+.inline-form .inline-form-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .75rem; }
+.inline-form .inline-form-row > div { flex: 1 1 180px; min-width: 0; }
+.inline-form label { margin-top: 0; max-width: none; }
+.inline-form input:not([type=checkbox]) { max-width: none; }
+.inline-form .btn { width: auto; flex: 0 0 auto; max-width: none; margin: 0; }
+.inline-form .inline-check {
+  display: flex; align-items: center; gap: .45rem; min-height: var(--touch); margin: 0;
+  font-weight: 400; white-space: nowrap;
+}
+.inline-form .inline-check input { width: 18px; height: 18px; min-height: 0; accent-color: var(--green); }
+@media (max-width: 780px) {
+  .inline-form .btn { width: 100%; }
+}

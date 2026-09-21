@@ -3,7 +3,7 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify, g
 
 from ..extensions import db
-from ..models import Event, WishlistItem, Assignment, User, EventParticipant
+from ..models import Event, WishlistItem, Assignment, User, EventParticipant, FamilyMember
 from ..middleware.auth import require_auth, require_family_member, require_family_admin, archived_error
 from ..services.notification_service import notify
 from ..services.photo_service import save_photo, remove_photo
@@ -209,11 +209,13 @@ def clan_wishlists(event_id):
     if err:
         return err
     parts = EventParticipant.query.filter_by(event_id=ev.id, is_participating=True).all()
+    households = {m.user_id: (m.household.name if m.household else "")
+                  for m in FamilyMember.query.filter_by(family_id=ev.family_id).all()}
     out = []
     for p in parts:
         items = (WishlistItem.query.filter_by(event_id=ev.id, user_id=p.user_id)
                  .order_by(WishlistItem.priority, WishlistItem.id).all())
-        out.append({"user": p.user.to_dict(),
+        out.append({"user": p.user.to_dict(), "household_name": households.get(p.user_id, ""),
                     "items": [_item_dict(i, p.user_id != g.user.id) for i in items]})
     return jsonify(out)
 
@@ -229,10 +231,12 @@ def all_wishlists(event_id):
     if err:
         return err
     parts = EventParticipant.query.filter_by(event_id=ev.id, is_participating=True).all()
+    households = {m.user_id: (m.household.name if m.household else "")
+                  for m in FamilyMember.query.filter_by(family_id=ev.family_id).all()}
     out = []
     for p in parts:
         items = (WishlistItem.query.filter_by(event_id=ev.id, user_id=p.user_id)
                  .order_by(WishlistItem.priority, WishlistItem.id).all())
-        out.append({"user": p.user.to_dict(),
+        out.append({"user": p.user.to_dict(), "household_name": households.get(p.user_id, ""),
                     "items": [_item_dict(i, p.user_id != g.user.id) for i in items]})
     return jsonify(out)

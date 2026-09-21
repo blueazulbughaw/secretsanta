@@ -92,11 +92,14 @@ def test_register_requires_unique_username(app):
                     json={"username": "taken", "password": PASSWORD, "full_name": "T"}).status_code == 409
 
 
-def test_register_without_full_name_defaults_to_username(app):
+def test_register_needs_a_display_name_that_isnt_just_the_username(app):
     c = app.test_client()
     r = c.post("/api/auth/register", json={"username": "noname", "password": PASSWORD})
-    assert r.status_code == 200
-    assert r.get_json()["user"]["full_name"] == "noname"
+    assert r.status_code == 400 and "display name" in r.get_json()["error"]
+    r = c.post("/api/auth/register", json={"username": "same", "password": PASSWORD, "full_name": "same"})
+    assert r.status_code == 400 and "different from your username" in r.get_json()["error"]
+    r = c.post("/api/auth/register", json={"username": "fine", "password": PASSWORD, "full_name": "Fine Person"})
+    assert r.status_code == 200 and r.get_json()["user"]["full_name"] == "Fine Person"
 
 
 def test_register_requires_password(app):
@@ -1049,3 +1052,48 @@ def test_gift_idea_notification_names_the_giftee(users):
     bob.post(f"/api/events/{coded['id']}/wishlists", json={"item_name": "Hat"})
     title = santa.get("/api/notifications").get_json()["items"][0]["title"]
     assert title.startswith("Your giftee ") and title.endswith(" added a gift idea") and "Bob" not in title
+
+
+def test_display_name_is_admin_only_however_it_is_sent(users):
+    admin, bob = users[ADMIN_USER], users[BOB_USER]
+    fam = users["_family"]
+    # a member can't change it through either field
+    assert bob.patch("/api/auth/me", json={"display_name": "Bobby"}).status_code == 403
+    assert bob.patch("/api/auth/me", json={"full_name": "Bobby"}).status_code == 403
+    assert bob.get("/api/auth/me").get_json()["user"]["display_name"] == "Bob"
+    # sending the current value back (the profile form does) is harmless
+    assert bob.patch("/api/auth/me", json={"display_name": "", "likes": "Tea"}).status_code == 200
+
+    # an admin can, but not to the username
+    r = admin.patch("/api/auth/me", json={"full_name": "Ana Cruz"})
+    assert r.status_code == 200 and r.get_json()["user"]["display_name"] == "Ana Cruz"
+    r = admin.patch("/api/auth/me", json={"full_name": ADMIN_USER})
+    assert r.status_code == 400 and "different from your username" in r.get_json()["error"]
+
+    # same rule when the admin renames someone on the Members page; unchanged names still save
+    members = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    bob_m = next(m for m in members if m["user"]["username"] == BOB_USER)
+    url = f"/api/families/{fam['id']}/members/{bob_m['membership_id']}"
+    assert admin.patch(url, json={"full_name": BOB_USER}).status_code == 400
+    assert admin.patch(url, json={"full_name": "Bob"}).status_code == 200
+    assert admin.patch(url, json={"full_name": "Bob Reyes"}).status_code == 200
+    assert bob.get("/api/auth/me").get_json()["user"]["display_name"] == "Bob Reyes"
+
+
+def test_household_shows_on_me_and_on_profiles(users):
+    admin, bob = users[ADMIN_USER], users[BOB_USER]
+    fam = users["_family"]
+    assert bob.get("/api/auth/me").get_json()["families"][0]["household_name"] is None
+    h = admin.post(f"/api/families/{fam['id']}/households", json={"name": "Reyes House"}).get_json()["household"]
+    members = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    bob_m = next(m for m in members if m["user"]["username"] == BOB_USER)
+    admin.patch(f"/api/families/{fam['id']}/members/{bob_m['membership_id']}", json={"household_id": h["id"]})
+    assert bob.get("/api/auth/me").get_json()["families"][0]["household_name"] == "Reyes House"
+
+    ev = admin.post(f"/api/families/{fam['id']}/events",
+                    json={"name": "Xmas", "event_date": future_date()}).get_json()["event"]
+    admin.put(f"/api/events/{ev['id']}/participants", json={"user_ids": [m["user"]["id"] for m in members]})
+    for path in (f"/api/events/{ev['id']}/wishlists/clan", f"/api/events/{ev['id']}/wishlists"):
+        entries = admin.get(path).get_json()
+        got = {e["user"]["username"]: e["household_name"] for e in entries}
+        assert got[BOB_USER] == "Reyes House" and got[CARA_USER] == ""

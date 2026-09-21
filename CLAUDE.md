@@ -7,8 +7,12 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   OTP (Twilio); otherwise sign-in uses a password. Users set or reset their password
   from Profile & Security (resetting asks for the current password, except for a
   temporary admin-issued one). The phone number is not offered on the profile page.
-- Names: only a clan admin can change a name (their own included; members get it
-  read-only on their profile). The admin renames people on the Members page.
+- Display name: it is the name the clan sees ("Display Name" in every label), separate from
+  the username. Sign-up asks for it (required, must differ from the username), and after that
+  only a clan admin can change it (their own included; members see it read-only on their
+  profile) - enforced for both `full_name` and `display_name` on PATCH /auth/me. The admin
+  renames people on the Members page. A profile shows Username, Display Name and Household
+  (ID cards show the household too).
 - Every endpoint must verify the user belongs to the resource's family (see middleware/auth.py helpers).
 - Wishlist privacy rule: owners NEVER see purchase status (who/when). Everyone else in
   the family can, and can toggle it — not just the assigned Secret Santa — via My Clan
@@ -60,6 +64,8 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   user-typed URL in an href.
 - Photos: real images only (Pillow), 8MB upload cap, gift photos shrunk to 1200px,
   profile photos cropped to a 512px square. Tests must upload real images.
+- Add member / Add household are one-line cards on a desktop (`.inline-form`; stacked on a
+  phone) above their tables.
 - Admin pages with a list (Members, Households, Announcements): the add/post form card
   comes first at the top, the list below it. Lists that show a household (Manage My Clan >
   Clan Members, Who's coming on the event page) put it in a right-hand column under a

@@ -167,6 +167,8 @@ def update_member(family_id, membership_id):
         name = (data.get("full_name") or "").strip()[:120]
         if not name:
             return jsonify({"error": "Name can't be empty."}), 400
+        if name != mem.user.full_name and name == mem.user.username:
+            return jsonify({"error": "A display name should be different from the username."}), 400
         mem.user.full_name = name
     if "email" in data:
         email = (data.get("email") or "").strip()

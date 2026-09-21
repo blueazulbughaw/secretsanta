@@ -530,6 +530,9 @@ function pageRegister(username) {
   render("", `
     <h2 class="center">Create your account</h2>
     <p class="muted center">Username: <strong>${esc(username)}</strong></p>
+    <label for="regName">Display Name</label>
+    <input id="regName" autocomplete="name">
+    <p class="muted" style="margin:.3rem 0 0;font-size:.8rem">This is the name your clan sees. It has to be different from your username, and only your clan admin can change it later.</p>
     <label for="regPassword">Create Password</label>
     <input id="regPassword" type="password" autocomplete="new-password">
     <div id="msg"></div>
@@ -539,6 +542,7 @@ function pageRegister(username) {
     try {
       const r = await api.post("/auth/register", {
         username,
+        full_name: document.getElementById("regName").value,
         password: document.getElementById("regPassword").value,
         clan_name: joining ? "" : `${username}'s Clan`,
       });
@@ -576,7 +580,7 @@ function pageName() {
   render("Welcome!", `
     <h2>What's your name?</h2>
     <p class="muted">This is how your family will see you.</p>
-    <label for="name">Your name</label>
+    <label for="name">Display Name</label>
     <input id="name" autocomplete="name">
     <div id="msg"></div>
     <button class="btn btn-primary" id="saveBtn">Continue</button>
@@ -625,12 +629,16 @@ function pageSecuritySetup(forced) {
       </div>
       <div id="photoMsg"></div>
 
+      <label>Username</label>
+      <p style="margin:0">${esc(ME.user.username)}</p>
       ${canEditName ? `
-      <label for="displayName">Your name</label>
+      <label for="displayName">Display Name</label>
       <input id="displayName" value="${esc(ME.user.full_name)}">` : `
-      <label>Your name</label>
+      <label>Display Name</label>
       <p style="margin:0 0 .2rem"><strong>${esc(ME.user.full_name)}</strong></p>
-      <p class="muted" style="margin:0">Only your clan admin can change your name.</p>`}
+      <p class="muted" style="margin:0">Only your clan admin can change your display name.</p>`}
+      <label>Household</label>
+      <p style="margin:0">${FAMILY?.household_name ? esc(FAMILY.household_name) : `<span class="muted">Not in a household yet</span>`}</p>
       <label for="aboutMe">About me</label>
       <textarea id="aboutMe" rows="3" maxlength="1000">${esc(ME.user.about_me)}</textarea>
       <label for="likes">My likes</label>
@@ -1185,10 +1193,11 @@ function colorSwatchHtml(color) {
   return color && window.CSS && CSS.supports("color", color)
     ? `<span class="color-swatch" style="background:${esc(color)}" aria-hidden="true"></span>` : "";
 }
-function idCardHtml(user) {
+function idCardHtml(user, household = "") {
   const name = user.display_name || user.full_name;
   const swatch = colorSwatchHtml(user.favorite_color);
   const rows = [
+    ["Household", household ? esc(household) : ""],
     ["About me", user.about_me ? esc(user.about_me) : ""],
     ["Likes", user.likes ? esc(user.likes) : ""],
     ["Favorite color", user.favorite_color ? `${swatch}${esc(user.favorite_color)}` : ""],
@@ -1239,7 +1248,7 @@ route(/^\/members\/(\d+)$/, async (uid) => {
   const members = await api.get(`/families/${FAMILY.id}/members`);
   const m = members.find(x => x.user.id === Number(uid));
   if (!m) return render("Clan Member", alertBox("We couldn't find that person in this clan."));
-  render(m.user.display_name, idCardHtml(m.user));
+  render(m.user.display_name, idCardHtml(m.user, m.household_name));
 });
 
 route(/^\/events\/(\d+)\/clan\/(\d+)$/, async (id, uid) => {
@@ -1258,7 +1267,7 @@ route(/^\/events\/(\d+)\/clan\/(\d+)$/, async (id, uid) => {
   const isMyGiftee = mine.assigned && mine.giftee_user_id === entry.user.id && !archived;
   render(name, `
     ${archived ? archivedBanner() : ""}
-    ${idCardHtml(entry.user)}
+    ${idCardHtml(entry.user, entry.household_name)}
     ${isMyGiftee ? `
     <section class="card">
       <button class="btn btn-secondary" style="width:auto;margin-top:0" onclick="go('/events/${id}/messages/giftee')">Message ${esc(name)}</button>
@@ -1532,22 +1541,17 @@ route(/^\/admin\/members$/, async () => {
   render("Members", `
     <div id="msg"></div>
     ${current ? "" : `<div class="card center"><p class="muted">Create an event first to track who's joining this year.</p></div>`}
-    <section class="card form-card">
-    <h2>Add a member</h2>
-    <p class="muted">Adds their account directly — you'll get a username and password to give them.</p>
-    <label for="newName">Name</label>
-    <input id="newName">
-    <label for="newPhone">Phone number (optional)</label>
-    <input id="newPhone" type="tel" inputmode="tel">
-    <label for="newEmail">Email (optional)</label>
-    <input id="newEmail" type="email">
-    ${current ? `
-    <div class="check-row">
-      <input type="checkbox" id="newJoining">
-      <label for="newJoining" style="margin:0">Joining ${esc(current.name)} this year</label>
-    </div>` : ""}
-    <div id="addMsg"></div>
-    <button class="btn btn-primary" id="addMemberBtn">Add Member</button>
+    <section class="card inline-form">
+      <h2>Add a member</h2>
+      <div class="inline-form-row">
+        <div><label for="newName">Display Name</label><input id="newName"></div>
+        <div><label for="newPhone">Phone (optional)</label><input id="newPhone" type="tel" inputmode="tel"></div>
+        <div><label for="newEmail">Email (optional)</label><input id="newEmail" type="email"></div>
+        ${current ? `<label class="inline-check"><input type="checkbox" id="newJoining"> Joining ${esc(current.name)}</label>` : ""}
+        <button class="btn btn-primary" id="addMemberBtn">Add Member</button>
+      </div>
+      <div id="addMsg"></div>
+      <p class="muted" style="margin:.5rem 0 0;font-size:.8rem">Adds their account directly — you'll get a username and password to give them.</p>
     </section>
 
         <div class="table-wrap">
@@ -1557,7 +1561,7 @@ route(/^\/admin\/members$/, async () => {
           <col style="width:13%"><col style="width:7%"><col style="width:9%"><col style="width:22%">
         </colgroup>
         <thead><tr>
-          <th>Name</th><th>Phone</th><th>Email</th><th>Household</th>
+          <th>Display Name</th><th>Phone</th><th>Email</th><th>Household</th>
           <th>Admin</th><th>Joining${current ? ` (${esc(current.name)})` : ""}</th><th></th>
         </tr></thead>
         <tbody></tbody>
@@ -1624,11 +1628,12 @@ route(/^\/admin\/groups$/, async () => {
   render("Households", `
     <p class="muted">People in the same household won't draw each other's names.</p>
     <div id="msg"></div>
-    <section class="card form-card">
-    <h2>Add a household</h2>
-    <label>Household name</label>
-    <input id="hname">
-    <button class="btn btn-primary" id="addHouse">Add Household</button>
+    <section class="card inline-form">
+      <h2>Add a household</h2>
+      <div class="inline-form-row">
+        <div><label for="hname">Household name</label><input id="hname"></div>
+        <button class="btn btn-primary" id="addHouse">Add Household</button>
+      </div>
     </section>
 
         <div class="table-wrap">

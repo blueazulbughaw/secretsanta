@@ -50,7 +50,13 @@ def register():
     if User.query.filter_by(username=username).first():
         return jsonify({"error": "That username is already taken."}), 409
 
-    full_name = (data.get("full_name") or "").strip()[:120] or username
+    # The display name is what the clan sees, and only a clan admin can change it later,
+    # so it has to be chosen here and can't just be the username.
+    full_name = (data.get("full_name") or "").strip()[:120]
+    if not full_name:
+        return jsonify({"error": "Please enter your display name."}), 400
+    if full_name == username:
+        return jsonify({"error": "Your display name should be different from your username."}), 400
 
     password = data.get("password") or ""
     if len(password) < 8:
@@ -133,6 +139,7 @@ def me():
     for m in memberships:
         f = Family.query.get(m.family_id)
         fams.append({"id": f.id, "name": f.name, "role": m.role,
+                     "household_name": m.household.name if m.household else None,
                      "join_code": f.join_code if m.role == "admin" else None})
     return jsonify({"user": g.user.to_dict(), "families": fams,
                     "can_create_family": g.user.is_app_admin,
@@ -144,21 +151,36 @@ def me():
 PROFILE_FIELD_LIMITS = {"about_me": 1000, "likes": 1000, "favorite_color": 40, "avoid_gifts": 1000}
 
 
+def _display_name_error(new_name):
+    """Only a clan admin can change a display name (their own included; the one
+    exception is a brand-new account with no name yet), and it has to differ from
+    the username. Returns the response to send, or None."""
+    is_admin = g.user.is_app_admin or FamilyMember.query.filter_by(
+        user_id=g.user.id, role="admin").first() is not None
+    if g.user.full_name and not is_admin:
+        return jsonify({"error": "Only your clan admin can change your display name."}), 403
+    if new_name and new_name == g.user.username:
+        return jsonify({"error": "Your display name should be different from your username."}), 400
+    return None
+
+
 @bp.patch("/auth/me")
 @require_auth
 def update_me():
     data = request.json or {}
     name = (data.get("full_name") or "").strip()[:120]
     if name and name != g.user.full_name:
-        # Only a clan admin can rename people (their own name included); the one
-        # exception is a brand-new account choosing its name for the first time.
-        is_admin = g.user.is_app_admin or FamilyMember.query.filter_by(
-            user_id=g.user.id, role="admin").first() is not None
-        if g.user.full_name and not is_admin:
-            return jsonify({"error": "Only your clan admin can change your name."}), 403
+        err = _display_name_error(name)
+        if err:
+            return err
         g.user.full_name = name
     if "display_name" in data:
-        g.user.display_name = (data.get("display_name") or "").strip()[:60] or None
+        shown = (data.get("display_name") or "").strip()[:60] or None
+        if shown != g.user.display_name:
+            err = _display_name_error(shown)
+            if err:
+                return err
+            g.user.display_name = shown
     for field, limit in PROFILE_FIELD_LIMITS.items():
         if field in data:
             setattr(g.user, field, str(data.get(field) or "").strip()[:limit] or None)
