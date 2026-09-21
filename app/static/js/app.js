@@ -1006,17 +1006,19 @@ route(/^\/events\/(\d+)$/, async (id) => {
 });
 
 route(/^\/events\/(\d+)\/my-person$/, async (id) => {
-  const d = await api.get(`/events/${id}/assignments/mine`);
+  const [d, ev] = await Promise.all([api.get(`/events/${id}/assignments/mine`), api.get(`/events/${id}`)]);
   if (!d.assigned) return render("My Giftee", `<div class="card center"><p>${esc(d.message)}</p></div>`);
+  const archived = ev.status === "completed";
   const budget = d.budget_amount
     ? `<p class="center muted">Gift budget: <strong>${esc(d.budget_currency)} ${d.budget_amount}</strong></p>` : "";
   render("My Giftee", `
-    <p class="center" style="margin-top:2rem">You are giving a gift to…</p>
+    ${archived ? archivedBanner() : ""}
+    <p class="center" style="margin-top:2rem">You ${archived ? "gave" : "are giving"} a gift to…</p>
     <div class="reveal-name">🎁 ${esc(d.giftee_display_name)}</div>
     ${budget}
-    <p class="center muted">Shh — it's a secret! 🤫</p>
+    ${archived ? "" : `<p class="center muted">Shh — it's a secret! 🤫</p>`}
     <button class="btn btn-primary" onclick="go('/events/${id}/giftee')">See Their Wishlist</button>
-    <button class="btn btn-secondary" onclick="go('/events/${id}/messages/giftee')">Send Them a Secret Message</button>
+    ${archived ? "" : `<button class="btn btn-secondary" onclick="go('/events/${id}/messages/giftee')">Send Them a Secret Message</button>`}
   `, { card: true });
 });
 
