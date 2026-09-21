@@ -791,9 +791,7 @@ function dashEventBlock(e, d) {
       </dl>
       <div class="event-actions">
         <button class="btn btn-outline" onclick="go('/events/${e.id}/wishlist')">My Wishlist</button>
-        ${d && d.assigned ? `
-        <button class="btn btn-outline" onclick="go('/events/${e.id}/messages/giftee')">Message My Giftee</button>
-        <button class="btn btn-outline" onclick="go('/events/${e.id}/messages/giver')">Message My Secret Santa</button>` : ""}
+        ${d && d.assigned ? `<button class="btn btn-outline" onclick="go('/events/${e.id}/messages/giver')">Message My Secret Santa</button>` : ""}
       </div>
       <button class="btn btn-secondary btn-block" onclick="go('/events/${e.id}')">View Event Details</button>
     </div>`;

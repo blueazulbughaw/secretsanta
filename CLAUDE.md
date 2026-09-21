@@ -34,8 +34,8 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   (a phone shows only the message text), ONE "My upcoming event(s)" card holding
   every upcoming event split by lines, then a shortcuts card at the very bottom (Edit My
   Profile, View My Wishlist when they join an event).
-  Each event shows what / where / date / time / My Giftee, then Message My Giftee + Message
-  My Secret Santa side by side (the one place buttons are white with a red border and red
+  Each event shows what / where / date / time / My Giftee, then My Wishlist + Message My Secret Santa
+  side by side (the one place buttons are white with a red border and red
   text, `.btn-outline`), then a full-width View Event Details. The event name and
   giftee link to `/events/:id` and the giftee's profile; the giftee is NOT linked when the
   event uses codenames (the profile would reveal the real name).
@@ -80,8 +80,8 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   event-scoped endpoint). There is no "My Clan" page or link: the people in an event are on that
   event's page / Clan & Wishlists. The sidebar has no per-event items
   (My Wishlist / My Messages are gone, they were ambiguous with several events): every event on
-  the dashboard has its own My Wishlist, Message My Giftee, Message My Secret Santa and View
-  Event Details, and the event page has My Wishlist / View My Messages / View Clan & Wishlists.
+  the dashboard has its own My Wishlist, Message My Secret Santa and View
+  Event Details (a giftee is messaged from their profile), and the event page has My Wishlist / View My Messages / View Clan & Wishlists.
   A member with no upcoming events sees "You're not joining any upcoming events right now. If
   that doesn't look right, please contact your clan admin." on the dashboard. Only the admin's Manage My
   Clan lists every member.
