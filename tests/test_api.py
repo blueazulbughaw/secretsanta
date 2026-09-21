@@ -1097,3 +1097,27 @@ def test_household_shows_on_me_and_on_profiles(users):
         entries = admin.get(path).get_json()
         got = {e["user"]["username"]: e["household_name"] for e in entries}
         assert got[BOB_USER] == "Reyes House" and got[CARA_USER] == ""
+
+
+def test_admin_can_choose_a_username_when_adding_a_member(app, users):
+    fam, admin, bob = users["_family"], users[ADMIN_USER], users[BOB_USER]
+    url = f"/api/families/{fam['id']}/members"
+    assert bob.post(url, json={"full_name": "Nope", "username": "nope1"}).status_code == 403
+
+    r = admin.post(url, json={"full_name": "Lola Nena", "username": "  Lola.Nena "})
+    assert r.status_code == 201 and r.get_json()["username"] == "lola.nena"     # tidied like a normal username
+    signed_in = app.test_client().post("/api/auth/login-password", json={
+        "username": "lola.nena", "password": r.get_json()["temp_password"]})
+    assert signed_in.status_code == 200
+
+    # taken, badly formed, or just the display name again -> refused with a plain message
+    assert admin.post(url, json={"full_name": "Someone", "username": "lola.nena"}).status_code == 409
+    assert admin.post(url, json={"full_name": "Someone", "username": "no spaces!"}).status_code == 400
+    r = admin.post(url, json={"full_name": "tito", "username": "tito"})
+    assert r.status_code == 400 and "different from the username" in r.get_json()["error"]
+
+    # blank username: generated from the display name, and never identical to it
+    r = admin.post(url, json={"full_name": "Eve Tan", "username": ""})
+    assert r.status_code == 201 and r.get_json()["username"] == "evetan"
+    r = admin.post(url, json={"full_name": "tita", "username": ""})
+    assert r.status_code == 201 and r.get_json()["username"] != "tita"

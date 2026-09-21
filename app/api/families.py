@@ -6,7 +6,7 @@ from flask import Blueprint, request, jsonify, g
 from ..extensions import db
 from ..models import Family, FamilyMember, Household, User
 from ..middleware.auth import require_auth, require_family_member, require_family_admin
-from ..utils import normalize_us_phone, hash_password, slugify_username_base
+from ..utils import normalize_us_phone, normalize_username, hash_password, slugify_username_base
 
 bp = Blueprint("families", __name__)
 
@@ -119,12 +119,24 @@ def add_member(family_id):
         if User.query.filter_by(phone=phone).first():
             return jsonify({"error": "That phone number is already in use."}), 409
 
-    base = slugify_username_base(full_name)
-    username = base
-    n = 1
-    while User.query.filter_by(username=username).first():
-        n += 1
-        username = f"{base}{n}"
+    wanted = (data.get("username") or "").strip()
+    if wanted:
+        try:
+            username = normalize_username(wanted)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        if User.query.filter_by(username=username).first():
+            return jsonify({"error": "That username is already taken."}), 409
+        if username == full_name:
+            return jsonify({"error": "The display name should be different from the username."}), 400
+    else:
+        # No username given: make one from the display name (never identical to it)
+        base = slugify_username_base(full_name)
+        username = base
+        n = 1
+        while username == full_name or User.query.filter_by(username=username).first():
+            n += 1
+            username = f"{base}{n}"
 
     temp_password = secrets.token_urlsafe(6)
     user = User(username=username, full_name=full_name, email=email or None, phone=phone,

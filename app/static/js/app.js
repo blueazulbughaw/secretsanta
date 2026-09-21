@@ -1545,13 +1545,13 @@ route(/^\/admin\/members$/, async () => {
       <h2>Add a member</h2>
       <div class="inline-form-row">
         <div><label for="newName">Display Name</label><input id="newName"></div>
+        <div><label for="newUsername">Username</label><input id="newUsername" autocapitalize="none" autocomplete="off" spellcheck="false"></div>
         <div><label for="newPhone">Phone (optional)</label><input id="newPhone" type="tel" inputmode="tel"></div>
         <div><label for="newEmail">Email (optional)</label><input id="newEmail" type="email"></div>
-        ${current ? `<label class="inline-check"><input type="checkbox" id="newJoining"> Joining ${esc(current.name)}</label>` : ""}
         <button class="btn btn-primary" id="addMemberBtn">Add Member</button>
       </div>
       <div id="addMsg"></div>
-      <p class="muted" style="margin:.5rem 0 0;font-size:.8rem">Adds their account directly — you'll get a username and password to give them.</p>
+      <p class="muted" style="margin:.5rem 0 0;font-size:.8rem">Adds their account directly — you'll get a password to give them. Leave the username blank and one is made from the display name. Who joins which event is set on the event.</p>
     </section>
 
         <div class="table-wrap">
@@ -1576,20 +1576,16 @@ route(/^\/admin\/members$/, async () => {
     try {
       const r = await api.post(`/families/${FAMILY.id}/members`, {
         full_name: document.getElementById("newName").value,
+        username: document.getElementById("newUsername").value,
         phone: document.getElementById("newPhone").value,
         email: document.getElementById("newEmail").value,
       });
-      const newJoining = document.getElementById("newJoining");
-      if (current && newJoining && newJoining.checked) {
-        participating.add(r.user.id);
-        await api.put(`/events/${current.id}/participants`, { user_ids: [...participating] });
-      }
       document.getElementById("addMsg").innerHTML = alertBox(
         `Added! Username: ${r.username} — Password: ${r.temp_password} (write this down, it won't be shown again)`, true);
       document.getElementById("newName").value = "";
+      document.getElementById("newUsername").value = "";
       document.getElementById("newPhone").value = "";
       document.getElementById("newEmail").value = "";
-      if (newJoining) newJoining.checked = false;
       tbody.append(memberRow({
         membership_id: r.membership_id, role: "member", household_id: null, user: r.user,
       }));
