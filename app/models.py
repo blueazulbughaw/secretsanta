@@ -26,6 +26,19 @@ class User(db.Model):
     last_login_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
+    def public_dict(self):
+        """What the rest of the clan may see: no username, phone or email."""
+        return {
+            "id": self.id,
+            "full_name": self.full_name,
+            "display_name": self.display_name or self.full_name,
+            "avatar_color": self.avatar_color,
+            "photo_url": f"/static/{self.photo_path}" if self.photo_path else None,
+            "about_me": self.about_me or "",
+            "likes": self.likes or "",
+            "favorite_color": self.favorite_color or "",
+        }
+
     def to_dict(self):
         return {
             "id": self.id,
@@ -99,6 +112,12 @@ class Event(db.Model):
                           nullable=False, index=True)
     name = db.Column(db.String(120), nullable=False)
     event_date = db.Column(db.Date, nullable=False)
+    event_time = db.Column(db.Time)
+    location = db.Column(db.String(255))
+    theme = db.Column(db.String(120))
+    rules = db.Column(db.Text)
+    what_to_bring = db.Column(db.Text)
+    other_info = db.Column(db.Text)
     budget_amount = db.Column(db.Numeric(10, 2))
     budget_currency = db.Column(db.String(3), nullable=False, default="USD")
     wishlist_limit = db.Column(db.SmallInteger, nullable=False, default=5)
@@ -113,6 +132,12 @@ class Event(db.Model):
         return {
             "id": self.id, "family_id": self.family_id, "name": self.name,
             "event_date": self.event_date.isoformat(),
+            "event_time": self.event_time.strftime("%H:%M") if self.event_time else None,
+            "location": self.location or "",
+            "theme": self.theme or "",
+            "rules": self.rules or "",
+            "what_to_bring": self.what_to_bring or "",
+            "other_info": self.other_info or "",
             "budget_amount": float(self.budget_amount) if self.budget_amount else None,
             "budget_currency": self.budget_currency,
             "wishlist_limit": self.wishlist_limit,

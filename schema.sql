@@ -112,6 +112,12 @@ CREATE TABLE events (
   family_id          BIGINT UNSIGNED NOT NULL,
   name               VARCHAR(120) NOT NULL,
   event_date         DATE NOT NULL,
+  event_time         TIME NULL,                -- shown on the dashboard / event page
+  location           VARCHAR(255) NULL,        -- "where"
+  theme              VARCHAR(120) NULL,
+  rules              TEXT NULL,                -- clan admin's notes for everyone
+  what_to_bring      TEXT NULL,
+  other_info         TEXT NULL,                -- other things to know
   budget_amount      DECIMAL(10,2) NULL,       -- NULL = no budget rule
   budget_currency    CHAR(3) NOT NULL DEFAULT 'USD',
   wishlist_limit     TINYINT UNSIGNED NOT NULL DEFAULT 5,

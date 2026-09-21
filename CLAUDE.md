@@ -23,6 +23,12 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   light grey (`--card-done`). Never put content directly on the bg or use bare
   `<hr>`-separated sections — wrap it in a card. #C0392B red, #2E7D4F green,
   #F5C518 yellow accents.
+- Dashboard (`/`): greeting card with a View My Clan button, then a "My upcoming gift
+  exchange" card (what / where / date / time / My Giftee), then announcements. The event
+  name and My Giftee link to `/events/:id` (details: date, time, where, theme, gift amount,
+  rules, what to bring, other things to know, plus a who's-coming table) and the giftee's
+  profile; every attendee row opens that person's profile. The giftee is NOT linked when
+  the event uses codenames (the profile would reveal the real name).
 - Profile: photo, about me, likes, favorite color, "what not to give me" live on
   `users` (PATCH /auth/me + /auth/me/photo) and are shown to the clan as an ID-style
   card on `/events/:id/clan/:userId` (photo beside details, wishlist cards below).

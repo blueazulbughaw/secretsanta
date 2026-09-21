@@ -1,4 +1,4 @@
-from datetime import datetime, date
+from datetime import datetime, date, time
 
 from flask import Blueprint, request, jsonify, g
 
@@ -7,6 +7,29 @@ from ..models import Event, EventParticipant, FamilyMember
 from ..middleware.auth import require_auth, require_family_member, require_family_admin
 
 bp = Blueprint("events", __name__)
+
+# Free-text details the clan admin fills in for everyone (max lengths). These
+# stay editable after names are drawn; the matching rules below do not.
+DETAIL_TEXT_LIMITS = {"location": 255, "theme": 120, "rules": 2000,
+                      "what_to_bring": 2000, "other_info": 2000}
+
+
+def _apply_details(ev, data):
+    """Copies the event-details fields present in `data` onto `ev`. Returns an
+    error message for a bad time, else None."""
+    if "event_time" in data:
+        raw = str(data.get("event_time") or "").strip()
+        if not raw:
+            ev.event_time = None
+        else:
+            try:
+                ev.event_time = time.fromisoformat(raw)
+            except ValueError:
+                return "Please choose a valid time for the event."
+    for field, limit in DETAIL_TEXT_LIMITS.items():
+        if field in data:
+            setattr(ev, field, str(data.get(field) or "").strip()[:limit] or None)
+    return None
 
 
 def _event_and_membership(event_id):
@@ -38,6 +61,9 @@ def create_event(family_id):
         allow_same_household=bool(data.get("allow_same_household")),
         status="open", created_by=g.user.id,
     )
+    bad_time = _apply_details(ev, data)
+    if bad_time:
+        return jsonify({"error": bad_time}), 400
     db.session.add(ev)
     db.session.commit()
     return jsonify({"ok": True, "event": ev.to_dict()}), 201
@@ -83,12 +109,14 @@ def update_event(event_id):
     _, err = require_family_admin(ev.family_id)
     if err:
         return err
-    if ev.status == "matched":
-        return jsonify({"error": "Names are already drawn. Re-draw to change rules."}), 400
     data = request.json or {}
-    for field in ("name",):
-        if data.get(field):
-            setattr(ev, field, data[field][:120])
+    # Once names are drawn the matching rules are locked; when/where/what to
+    # bring and the rest of the details can still change.
+    rule_fields = ("wishlist_limit", "use_codenames", "allow_same_household")
+    if ev.status == "matched" and any(f in data for f in rule_fields):
+        return jsonify({"error": "Names are already drawn. Re-draw to change rules."}), 400
+    if data.get("name"):
+        ev.name = data["name"][:120]
     if data.get("event_date"):
         try:
             ev.event_date = date.fromisoformat(data["event_date"])
@@ -100,6 +128,9 @@ def update_event(event_id):
     for field in ("use_codenames", "allow_same_household"):
         if field in data:
             setattr(ev, field, bool(data[field]))
+    bad_time = _apply_details(ev, data)
+    if bad_time:
+        return jsonify({"error": bad_time}), 400
     db.session.commit()
     return jsonify({"ok": True, "event": ev.to_dict()})
 
@@ -116,6 +147,20 @@ def complete_event(event_id):
     ev.status = "completed"
     db.session.commit()
     return jsonify({"ok": True, "event": ev.to_dict()})
+
+
+@bp.get("/events/<int:event_id>/attendees")
+@require_auth
+def list_attendees(event_id):
+    """Who's coming, for any clan member: profile-safe fields only (no phone or
+    email), sorted by name."""
+    ev, _, err = _event_and_membership(event_id)
+    if err:
+        return err
+    parts = EventParticipant.query.filter_by(event_id=ev.id, is_participating=True).all()
+    people = sorted((p.user.public_dict() for p in parts),
+                    key=lambda u: u["display_name"].lower())
+    return jsonify(people)
 
 
 @bp.get("/events/<int:event_id>/participants")

@@ -300,6 +300,7 @@ async function navigate() {
   const path = location.hash.replace(/^#/, "") || "/";
   renderSidebar(path.replace(/^(\/events\/\d+\/wishlist)\/.+$/, "$1")
     .replace(/^(\/events\/\d+\/clan)\/.+$/, "$1")
+    .replace(/^\/events\/\d+$/, "/")
     .replace(/^(\/admin\/events)\/.+$/, "$1"));
   closeSidebar();
   for (const r of routes) {
@@ -663,54 +664,113 @@ function pageNoFamily() {
 }
 
 // ---------- main pages ----------
+// One label/value row of a details list (skipped when there's no value).
+function detailRow(label, valueHtml, cls = "") {
+  return valueHtml ? `<dt>${label}</dt><dd class="${cls}">${valueHtml}</dd>` : "";
+}
+const TBA = `<span class="muted">To be announced</span>`;
+
 route(/^\/$/, async () => {
-  const sections = [`<h2 style="margin-top:0">Welcome, ${esc(ME.user.full_name)}!</h2>`];
+  const first = (ME.user.full_name || "").trim().split(/\s+/)[0] || "there";
+  const ev = CURRENT_EVENT;
+  const sections = [`
+    <section class="card greeting">
+      <h2>Hello, ${esc(first)}! 👋</h2>
+      <p class="muted">${ev ? "Here's what's coming up." : "Nothing is scheduled yet."}</p>
+      ${ev ? `<button class="btn btn-primary" style="width:auto" onclick="go('/events/${ev.id}/clan')">View My Clan</button>` : ""}
+    </section>`];
+
+  if (!ev) {
+    sections.push(`
+      <section class="card">
+        <h2>My upcoming gift exchange</h2>
+        <p class="muted">No gift exchange is happening right now.${FAMILY.role === "admin" ? "" : " Check back soon!"}</p>
+        ${FAMILY.role === "admin" ? `<button class="btn btn-secondary" style="width:auto" onclick="go('/admin/events')">Create a Gift Exchange</button>` : ""}
+      </section>`);
+  } else {
+    const d = await api.get(`/events/${ev.id}/assignments/mine`);
+    // With codenames on, the giftee is shown as a codename - don't link to a profile that names them.
+    const gifteeHtml = !d.assigned
+      ? `<span class="muted">${esc(d.message)}</span>`
+      : ev.use_codenames || !d.giftee_user_id
+        ? `<strong>${esc(d.giftee_display_name)}</strong>`
+        : `<a class="person-link" href="#/events/${ev.id}/clan/${d.giftee_user_id}"><strong>${esc(d.giftee_display_name)}</strong> →</a>`;
+    sections.push(`
+      <section class="card event-summary">
+        <h2>My upcoming gift exchange</h2>
+        <dl class="detail-list">
+          <dt>What</dt><dd><a class="person-link" href="#/events/${ev.id}">${esc(ev.name)}</a>${ev.theme ? ` <span class="muted">· ${esc(ev.theme)}</span>` : ""}</dd>
+          <dt>Where</dt><dd>${ev.location ? esc(ev.location) : TBA}</dd>
+          <dt>Date</dt><dd>${esc(fmtEventDate(ev.event_date))}</dd>
+          <dt>Time</dt><dd>${ev.event_time ? esc(fmtEventTime(ev.event_time)) : TBA}</dd>
+          <dt>My Giftee</dt><dd>${gifteeHtml}</dd>
+        </dl>
+        <button class="btn btn-secondary" style="width:auto" onclick="go('/events/${ev.id}')">View Event Details</button>
+      </section>`);
+  }
 
   const anns = await api.get(`/families/${FAMILY.id}/announcements`);
   const annHtml = anns.length ? annTable(anns) : `<p class="muted" style="margin:0">No announcements yet.</p>`;
   sections.push(`<div class="dash-section"><h2>Announcements</h2>${annHtml}</div>`);
 
-  if (!CURRENT_EVENT) {
-    sections.push(`
-      <div class="dash-section">
-        <p class="muted">No gift exchange is happening right now.${FAMILY.role === "admin" ? "" : " Check back soon!"}</p>
-        ${FAMILY.role === "admin" ? `<button class="btn btn-primary" style="width:auto" onclick="go('/admin/events')">Create a Gift Exchange</button>` : ""}
-      </div>`);
-  } else {
-    const d = await api.get(`/events/${CURRENT_EVENT.id}/assignments/mine`);
-    if (!d.assigned) {
-      sections.push(`
-        <div class="dash-section">
-          <h2>My Giftee</h2>
-          <p class="muted">${esc(d.message)}</p>
-        </div>`);
-    } else {
-      let giftItems = [];
-      try {
-        const gd = await api.get(`/events/${CURRENT_EVENT.id}/wishlists/giftee`);
-        giftItems = gd.items;
-      } catch (e) { /* names just drawn but not yet queryable — show empty state below */ }
-      const budget = d.budget_amount
-        ? `<p class="muted">Gift budget: <strong>${esc(d.budget_currency)} ${d.budget_amount}</strong></p>` : "";
-      const itemsHtml = giftItems.length
-        ? clanWishGrid(giftItems)
-        : `<div class="card"><p class="muted" style="margin:0">They haven't added any gift ideas yet. Send them a friendly nudge!</p></div>`;
-      sections.push(`
-        <div class="section-head">
-          <h2>My Giftee: ${esc(d.giftee_display_name)}</h2>
-          ${budget}
-        </div>
-        ${itemsHtml}
-        <button class="btn btn-secondary" style="width:auto;margin-top:.75rem" onclick="go('/events/${CURRENT_EVENT.id}/messages/giftee')">Send a Message</button>`);
-    }
-  }
-
   render("My Dashboard", sections.join(""), { back: false });
-  wireBuyButtons();
   $app.querySelectorAll("[data-del-ann]").forEach(b => b.onclick = async () => {
     if (!confirm("Delete this announcement?")) return;
     await api.del(`/announcements/${b.dataset.delAnn}`);
     navigate();
+  });
+});
+
+// The event page any clan member can open: what/where/when, the rules the clan
+// admin set, and who's coming (each row opens that person's profile).
+route(/^\/events\/(\d+)$/, async (id) => {
+  const [ev, people] = await Promise.all([
+    api.get(`/events/${id}`), api.get(`/events/${id}/attendees`),
+  ]);
+  const st = eventStatus(ev);
+  const extras = [
+    detailRow("Theme", esc(ev.theme)),
+    detailRow("Gift amount", ev.budget_amount ? `${esc(ev.budget_currency)} ${ev.budget_amount}` : ""),
+    detailRow("Rules", esc(ev.rules)),
+    detailRow("What to bring", esc(ev.what_to_bring)),
+    detailRow("Other things to know", esc(ev.other_info)),
+  ].join("");
+  const isAdmin = FAMILY.role === "admin";
+  const rows = people.map(u => `
+    <tr class="click-row" data-go="/events/${id}/clan/${u.id}">
+      <td data-label="Person"><a class="person-link" href="#/events/${id}/clan/${u.id}">${avatarHtml(u, "avatar-sm")}<span>${esc(u.display_name)}${u.id === ME.user.id ? ` <span class="muted">(you)</span>` : ""}</span></a></td>
+      <td data-label="Likes" class="wrap-cell">${u.likes ? esc(u.likes) : `<span class="muted">—</span>`}</td>
+      <td data-label="Favorite color" class="wrap-cell">${u.favorite_color ? colorSwatchHtml(u.favorite_color) + esc(u.favorite_color) : `<span class="muted">—</span>`}</td>
+    </tr>`).join("");
+  render(ev.name, `
+    <section class="card">
+      <h2>${esc(ev.name)} <span class="status-tag ${st.cls}">${st.label}</span></h2>
+      <dl class="detail-list">
+        <dt>Date</dt><dd>${esc(fmtEventDate(ev.event_date))}</dd>
+        <dt>Time</dt><dd>${ev.event_time ? esc(fmtEventTime(ev.event_time)) : TBA}</dd>
+        <dt>Where</dt><dd>${ev.location ? esc(ev.location) : TBA}</dd>
+        ${extras}
+      </dl>
+      ${extras ? "" : `<p class="muted">Your clan admin hasn't added rules or other details yet.</p>`}
+      ${isAdmin ? `<div class="form-actions">
+        ${ev.status !== "completed" ? `<button class="btn btn-secondary" onclick="go('/admin/events/${id}/edit')">Edit Details</button>` : ""}
+        <button class="btn btn-quiet" onclick="go('/admin/events/${id}')">Manage Gift Exchange</button>
+      </div>` : ""}
+    </section>
+    <section class="card">
+      <h2>Who's coming (${people.length})</h2>
+      ${people.length ? `
+      <div class="table-wrap">
+        <table class="data">
+          <colgroup><col style="width:34%"><col style="width:40%"><col style="width:26%"></colgroup>
+          <thead><tr><th>Person</th><th>Likes</th><th>Favorite color</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>` : `<p class="muted" style="margin:0">No one has been added to this gift exchange yet.</p>`}
+    </section>
+  `, { wide: true });
+  $app.querySelectorAll("tr[data-go]").forEach(tr => tr.onclick = (e) => {
+    if (!e.target.closest("a")) go(tr.dataset.go);
   });
 });
 
@@ -825,10 +885,13 @@ route(/^\/events\/(\d+)\/giftee$/, async (id) => {
 
 // The person's profile shown like an ID: photo on the side, details beside it
 // (stacked on a phone). Empty fields are skipped.
+function colorSwatchHtml(color) {
+  return color && window.CSS && CSS.supports("color", color)
+    ? `<span class="color-swatch" style="background:${esc(color)}" aria-hidden="true"></span>` : "";
+}
 function idCardHtml(user) {
   const name = user.display_name || user.full_name;
-  const swatch = user.favorite_color && window.CSS && CSS.supports("color", user.favorite_color)
-    ? `<span class="color-swatch" style="background:${esc(user.favorite_color)}" aria-hidden="true"></span>` : "";
+  const swatch = colorSwatchHtml(user.favorite_color);
   const rows = [
     ["About me", user.about_me ? esc(user.about_me) : ""],
     ["Likes", user.likes ? esc(user.likes) : ""],
@@ -1233,6 +1296,10 @@ function fmtEventDate(iso) {
   return new Date(y, m - 1, d).toLocaleDateString(undefined,
     { weekday: "short", month: "short", day: "numeric", year: "numeric" });
 }
+function fmtEventTime(hhmm) {
+  const [hh, mm] = hhmm.split(":").map(Number);
+  return new Date(2000, 0, 1, hh, mm).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
 const EVENT_STATUS = {
   open:      { emoji: "🎄", label: "Not drawn yet", cls: "tag-open" },
   matched:   { emoji: "✅", label: "Names drawn",   cls: "tag-drawn" },
@@ -1261,7 +1328,7 @@ function eventCard(e) {
     </ul>
     <div class="wish-card-actions">
       <button class="btn btn-secondary" data-open>Manage</button>
-      ${e.status === "open" ? `<button class="btn btn-quiet" data-edit>Edit</button>` : ""}
+      ${e.status !== "completed" ? `<button class="btn btn-quiet" data-edit>Edit</button>` : ""}
     </div>
   </article>`).firstElementChild;
   card.querySelector("[data-open]").onclick = () => go(`/admin/events/${e.id}`);
@@ -1307,14 +1374,38 @@ async function renderEventForm(ev) {
         <span class="muted">${m.household_id ? "• " + esc(houseName[m.household_id] || "") : "• ⚠ no household yet"}</span></span>
     </label>`).join("");
 
+  // After the draw, who's joining and the draw rules are locked; the event
+  // details (when, where, what to bring...) stay editable.
+  const locked = editing && ev.status === "matched";
+  const textarea = (id, label, value, hint) => `
+    <label for="${id}">${label}${hint ? ` <span class="muted">${hint}</span>` : ""}</label>
+    <textarea id="${id}" rows="3" maxlength="2000">${esc(value)}</textarea>`;
+
   render(editing ? "Edit Gift Exchange" : "Create a Gift Exchange", `
     <div id="msg"></div>
     <label for="ename">Name</label>
     <input id="ename" placeholder="e.g. Christmas 2026" value="${esc(editing ? ev.name : "")}">
     <label for="edate">Date of the exchange</label>
     <input id="edate" type="date" value="${esc(editing ? ev.event_date : "")}">
-    <label for="ebudget">Gift budget <span class="muted">(optional)</span></label>
+    <label for="etime">Time <span class="muted">(optional)</span></label>
+    <input id="etime" type="time" value="${esc(editing ? ev.event_time || "" : "")}">
+    <label for="eplace">Where <span class="muted">(optional)</span></label>
+    <input id="eplace" maxlength="255" placeholder="e.g. Lola's house, 12 Main St" value="${esc(editing ? ev.location : "")}">
+    <label for="etheme">Theme <span class="muted">(optional)</span></label>
+    <input id="etheme" maxlength="120" placeholder="e.g. Ugly sweaters" value="${esc(editing ? ev.theme : "")}">
+    <label for="ebudget">Gift amount <span class="muted">(optional)</span></label>
     <input id="ebudget" type="number" inputmode="decimal" placeholder="e.g. 30" value="${esc(editing && ev.budget_amount ? ev.budget_amount : "")}">
+
+    <h2 style="margin-top:1.5rem">Good to know</h2>
+    <p class="muted">Everyone in the clan sees these on the event page.</p>
+    ${textarea("erules", "Rules", editing ? ev.rules : "")}
+    ${textarea("ebring", "What to bring", editing ? ev.what_to_bring : "")}
+    ${textarea("eother", "Other things to know", editing ? ev.other_info : "")}
+
+    ${locked ? `
+    <div class="alert alert-ok" style="max-width:480px">🔒 Names are already drawn, so who's joining and the draw rules can't change. Use "Start Over" on the gift exchange page if you need to.</div>
+    ` : `
+    <h2 style="margin-top:1.5rem">Draw rules</h2>
     <label for="elimit">Wishlist size <span class="muted">(gifts each person can list)</span></label>
     <input id="elimit" type="number" min="1" max="20" value="${editing ? ev.wishlist_limit : 5}">
     <div class="check-row"><input type="checkbox" id="ecodes" ${editing && ev.use_codenames ? "checked" : ""}><label for="ecodes" style="margin:0">Use fun codenames instead of real names</label></div>
@@ -1328,6 +1419,7 @@ async function renderEventForm(ev) {
       <button type="button" class="btn btn-quiet" id="pickNone">Clear</button>
     </div>
     <div class="people-picker">${rows || `<p class="muted" style="padding:.6rem">No members in this clan yet.</p>`}</div>
+    `}
 
     <div class="form-actions">
       <button class="btn btn-primary" id="saveEventBtn">${editing ? "Save Changes" : "Create Gift Exchange"}</button>
@@ -1336,31 +1428,42 @@ async function renderEventForm(ev) {
   `, { back: true, wide: true, card: true });
 
   const boxes = () => [...$app.querySelectorAll("[data-uid]")];
-  const updateCount = () => {
-    const n = boxes().filter(c => c.checked).length;
-    document.getElementById("joinCount").textContent = `${n} of ${boxes().length} joining`;
-  };
-  $app.querySelector(".people-picker").addEventListener("change", updateCount);
-  document.getElementById("pickAll").onclick = () => { boxes().forEach(c => c.checked = true); updateCount(); };
-  document.getElementById("pickNone").onclick = () => { boxes().forEach(c => c.checked = false); updateCount(); };
-  updateCount();
+  if (!locked) {
+    const updateCount = () => {
+      const n = boxes().filter(c => c.checked).length;
+      document.getElementById("joinCount").textContent = `${n} of ${boxes().length} joining`;
+    };
+    $app.querySelector(".people-picker").addEventListener("change", updateCount);
+    document.getElementById("pickAll").onclick = () => { boxes().forEach(c => c.checked = true); updateCount(); };
+    document.getElementById("pickNone").onclick = () => { boxes().forEach(c => c.checked = false); updateCount(); };
+    updateCount();
+  }
   document.getElementById("cancelEventBtn").onclick = () =>
     go(editing ? `/admin/events/${ev.id}` : "/admin/events");
 
   document.getElementById("saveEventBtn").onclick = async () => {
+    const val = (id) => document.getElementById(id).value;
     const body = {
-      name: document.getElementById("ename").value,
-      event_date: document.getElementById("edate").value,
-      budget_amount: document.getElementById("ebudget").value || null,
-      wishlist_limit: Number(document.getElementById("elimit").value) || 5,
-      use_codenames: document.getElementById("ecodes").checked,
-      allow_same_household: document.getElementById("esame").checked,
+      name: val("ename"),
+      event_date: val("edate"),
+      event_time: val("etime"),
+      location: val("eplace"),
+      theme: val("etheme"),
+      budget_amount: val("ebudget") || null,
+      rules: val("erules"),
+      what_to_bring: val("ebring"),
+      other_info: val("eother"),
     };
+    if (!locked) {
+      body.wishlist_limit = Number(val("elimit")) || 5;
+      body.use_codenames = document.getElementById("ecodes").checked;
+      body.allow_same_household = document.getElementById("esame").checked;
+    }
     const ids = boxes().filter(c => c.checked).map(c => Number(c.dataset.uid));
     try {
       if (editing) {
         await api.patch(`/events/${ev.id}`, body);
-        await api.put(`/events/${ev.id}/participants`, { user_ids: ids });
+        if (!locked) await api.put(`/events/${ev.id}/participants`, { user_ids: ids });
         await refreshCurrentEvent();
         return go(`/admin/events/${ev.id}`);
       }
@@ -1388,10 +1491,8 @@ route(/^\/admin\/events\/new$/, async () => { await renderEventForm(null); });
 
 route(/^\/admin\/events\/(\d+)\/edit$/, async (id) => {
   const ev = await api.get(`/events/${id}`);
-  if (ev.status !== "open") {
-    return eventFormBlocked(id, ev.status === "matched"
-      ? "Names are already drawn. Start Over (re-draw) on the gift exchange first if you need to change its rules or who's joining."
-      : "This gift exchange is complete and can't be edited.");
+  if (ev.status === "completed") {
+    return eventFormBlocked(id, "This gift exchange is complete and can't be edited.");
   }
   await renderEventForm(ev);
 });
@@ -1424,7 +1525,10 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
       <span class="muted">&nbsp;${esc(fmtEventDate(ev.event_date))}
       ${ev.budget_amount ? ` • Budget ${esc(ev.budget_currency)} ${ev.budget_amount}` : ""}
       • Up to ${ev.wishlist_limit} gifts each</span></p>
-    ${ev.status === "open" ? `<button class="btn btn-secondary" style="width:auto" id="editEvent">Edit Gift Exchange</button>` : ""}
+    <div class="form-actions" style="margin-bottom:.5rem">
+      ${ev.status !== "completed" ? `<button class="btn btn-secondary" id="editEvent">Edit Gift Exchange</button>` : ""}
+      <button class="btn btn-quiet" onclick="go('/events/${id}')">See Event Page</button>
+    </div>
     <h2 style="margin-top:1.25rem">Who's joining (${joining.length})</h2>
     ${people}
     </div>

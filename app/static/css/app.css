@@ -365,9 +365,9 @@ table.data td.wrap-cell { overflow: visible; white-space: normal; }
 }
 .id-details { flex: 1 1 auto; min-width: 0; }
 .id-name { margin: 0 0 .6rem; font-size: 1.6rem; overflow-wrap: anywhere; }
-.id-fields { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: .5rem 1.25rem; }
-.id-fields dt { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); padding-top: .2rem; }
-.id-fields dd { margin: 0; overflow-wrap: anywhere; white-space: pre-line; }
+.id-fields, .detail-list { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: .5rem 1.25rem; }
+.id-fields dt, .detail-list dt { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); padding-top: .2rem; }
+.id-fields dd, .detail-list dd { margin: 0; overflow-wrap: anywhere; white-space: pre-line; }
 .id-fields dd.id-avoid { color: var(--red-dark); font-weight: 600; }
 .color-swatch {
   display: inline-block; width: 1em; height: 1em; border-radius: 50%; vertical-align: -.12em;
@@ -381,6 +381,25 @@ table.data td.wrap-cell { overflow: visible; white-space: normal; }
   .id-fields { grid-template-columns: 1fr; gap: .1rem; }
   .id-fields dd { margin-bottom: .6rem; }
 }
+@media (max-width: 640px) {
+  .detail-list { grid-template-columns: 1fr; gap: .1rem; }
+  .detail-list dd { margin-bottom: .6rem; }
+}
+.detail-list { margin-bottom: 1rem; }
+.card > h2 .status-tag { vertical-align: middle; margin-left: .4rem; font-size: .72rem; }
+
+/* Links that open a person or an event: bold, red, no underline until hover */
+.person-link {
+  display: inline-flex; align-items: center; gap: .6rem;
+  color: var(--red); font-weight: 600; text-decoration: none;
+}
+.person-link:hover { text-decoration: underline; }
+.person-link:focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; border-radius: 4px; }
+.avatar-sm { width: 36px; height: 36px; font-size: .85rem; }
+table.data tr.click-row { cursor: pointer; }
+table.data tr.click-row:hover { background: #FBF5F4; }
+.greeting p { margin-top: 0; }
+
 
 /* Gift exchange cards + participant picker */
 .event-emoji { font-size: 1.8rem; line-height: 1; flex: 0 0 auto; }

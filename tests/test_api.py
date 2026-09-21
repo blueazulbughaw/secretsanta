@@ -381,7 +381,9 @@ def test_events_have_separate_participants_and_can_be_edited(users):
     assert admin.patch(f"/api/events/{bday['id']}", json={"event_date": "nope"}).status_code == 400
     # members can't edit; a drawn event can't be edited
     assert bob.patch(f"/api/events/{bday['id']}", json={"name": "x"}).status_code == 403
-    assert admin.patch(f"/api/events/{xmas['id']}", json={"name": "x"}).status_code == 400
+    # a drawn event keeps its matching rules locked (details are covered below)
+    assert admin.patch(f"/api/events/{xmas['id']}", json={"use_codenames": True}).status_code == 400
+    assert admin.patch(f"/api/events/{xmas['id']}", json={"wishlist_limit": 9}).status_code == 400
 
 
 def test_profile_photo_upload_replace_remove(app, users, tmp_path):
@@ -443,3 +445,62 @@ def test_profile_details_saved_and_visible_to_clan(users):
     members = admin.get(f"/api/families/{fam}/members").get_json()
     bob_row = next(m["user"] for m in members if m["user"]["username"] == BOB_USER)
     assert bob_row["about_me"] == "Loves hiking" and bob_row["avoid_gifts"] == "Candles"
+
+
+def test_event_details_editable_after_draw_and_shown_to_members(users):
+    fam = users["_family"]
+    admin, bob = users[ADMIN_USER], users[BOB_USER]
+    r = admin.post(f"/api/families/{fam['id']}/events", json={
+        "name": "Xmas", "event_date": "2026-12-25", "event_time": "18:30",
+        "location": " Lola's house ", "theme": "Ugly sweaters", "budget_amount": 25,
+        "rules": "No re-gifting", "what_to_bring": "A dish to share", "other_info": "Parking on the left"})
+    assert r.status_code == 201
+    ev = r.get_json()["event"]
+    assert (ev["event_time"], ev["location"], ev["theme"]) == ("18:30", "Lola's house", "Ugly sweaters")
+    assert (ev["rules"], ev["what_to_bring"], ev["other_info"]) ==         ("No re-gifting", "A dish to share", "Parking on the left")
+
+    # members read the details but can't change them
+    assert bob.get(f"/api/events/{ev['id']}").get_json()["what_to_bring"] == "A dish to share"
+    assert bob.patch(f"/api/events/{ev['id']}", json={"location": "x"}).status_code == 403
+
+    # bad time is rejected; an empty time/text clears the field
+    assert admin.patch(f"/api/events/{ev['id']}", json={"event_time": "25:99"}).status_code == 400
+    cleared = admin.patch(f"/api/events/{ev['id']}", json={"event_time": "", "theme": ""}).get_json()["event"]
+    assert cleared["event_time"] is None and cleared["theme"] == ""
+
+    # after the draw the details (and date/name) can still change, the matching rules can't
+    members = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    for i, m in enumerate(members):
+        h = admin.post(f"/api/families/{fam['id']}/households", json={"name": f"H{i}"}).get_json()["household"]
+        admin.patch(f"/api/families/{fam['id']}/members/{m['membership_id']}", json={"household_id": h["id"]})
+    admin.put(f"/api/events/{ev['id']}/participants", json={"user_ids": [m["user"]["id"] for m in members]})
+    assert admin.post(f"/api/events/{ev['id']}/assignments/generate").status_code == 200
+    r = admin.patch(f"/api/events/{ev['id']}", json={"location": "The park", "event_time": "12:00",
+                                                     "event_date": "2026-12-26", "name": "Xmas Party"})
+    assert r.status_code == 200
+    got = r.get_json()["event"]
+    assert (got["location"], got["event_time"], got["event_date"], got["name"]) ==         ("The park", "12:00", "2026-12-26", "Xmas Party")
+    assert admin.patch(f"/api/events/{ev['id']}", json={"wishlist_limit": 2}).status_code == 400
+
+
+def test_attendees_visible_to_clan_without_private_contact_info(app, users):
+    fam = users["_family"]
+    admin, bob = users[ADMIN_USER], users[BOB_USER]
+    ev = admin.post(f"/api/families/{fam['id']}/events",
+                    json={"name": "Xmas", "event_date": "2026-12-25"}).get_json()["event"]
+    members = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    uid = {m["user"]["username"]: m["user"]["id"] for m in members}
+    admin.put(f"/api/events/{ev['id']}/participants", json={"user_ids": [uid[CARA_USER], uid[ADMIN_USER]]})
+    bob.patch("/api/auth/security", json={"phone": "(555) 010-1234"})
+    admin.patch("/api/auth/me", json={"likes": "Tea", "favorite_color": "Green"})
+
+    # any clan member (even one who isn't attending) sees who's coming, sorted by name
+    people = bob.get(f"/api/events/{ev['id']}/attendees").get_json()
+    assert [p["display_name"] for p in people] == ["Ana", "Cara"]
+    assert (people[0]["likes"], people[0]["favorite_color"]) == ("Tea", "Green")
+    assert all(not ({"phone", "email", "username", "avoid_gifts"} & set(p)) for p in people)
+
+    # outsiders can't
+    outsider = app.test_client()
+    outsider.post("/api/auth/register", json={"username": "zed", "password": PASSWORD, "full_name": "Zed"})
+    assert outsider.get(f"/api/events/{ev['id']}/attendees").status_code == 403

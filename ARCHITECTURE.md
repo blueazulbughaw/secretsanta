@@ -124,7 +124,8 @@ All JSON, prefixed `/api`. 🔒 = auth required, 👑 = family admin.
 **Events**
 - `POST /families/:id/events` 👑 — name, date, budget, wishlist_limit, use_codenames
 - `GET /families/:id/events` 🔒
-- `GET|PATCH /events/:id` 🔒 / 👑
+- `GET|PATCH /events/:id` 🔒 / 👑 — besides name/date/budget/rules an event carries the details the clan admin sets for everyone: `event_time`, `location`, `theme`, `rules`, `what_to_bring`, `other_info`. Once names are drawn the matching rules (`wishlist_limit`, `use_codenames`, `allow_same_household`, participants) are locked, but the name, date, budget and all of those details stay editable until the event is completed
+- `GET /events/:id/attendees` 🔒 — who's coming, for any family member: profile-safe fields only (`User.public_dict()`: no username/phone/email), sorted by name
 - `POST /events/:id/complete` 👑 — marks the event `completed`; it drops out of `CURRENT_EVENT` selection so the next event starts with its own fresh wishlists (`WishlistItem` is already scoped by `event_id`, so nothing carries over)
 - `PUT /events/:id/participants` 👑 — `{ user_ids: [...] }` (the checkbox screen)
 - `POST /events/:id/participants/:userId/opt-out` 🔒 — self only, before matching
