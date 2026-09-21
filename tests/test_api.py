@@ -301,3 +301,44 @@ def test_outsider_cannot_touch_family(app, users):
     outsider = app.test_client()
     # unauthenticated
     assert outsider.get(f"/api/families/{fam['id']}/members").status_code == 401
+
+
+def test_wishlist_edit_via_form_replaces_photo_and_locks_when_bought(app, users, tmp_path):
+    import io, os
+    app.static_folder = str(tmp_path)  # keep test uploads out of the real static dir
+    fam = users["_family"]
+    admin, bob = users[ADMIN_USER], users[BOB_USER]
+    ev = admin.post(f"/api/families/{fam['id']}/events",
+                    json={"name": "Xmas", "event_date": "2026-12-25"}).get_json()["event"]
+    url = f"/api/events/{ev['id']}/wishlists"
+
+    def png(name):
+        return (io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"0" * 16), name)
+
+    item = bob.post(url, data={"item_name": "Slippers", "priority": "2", "photo": png("a.png")},
+                    content_type="multipart/form-data").get_json()["item"]
+    old_file = tmp_path / item["photo_url"].removeprefix("/static/")
+    assert old_file.exists()
+
+    r = bob.patch(f"/api/wishlists/{item['id']}",
+                  data={"item_name": "Warm slippers", "description": "size 7",
+                        "link_url": "https://example.com", "priority": "1", "photo": png("b.png")},
+                  content_type="multipart/form-data")
+    assert r.status_code == 200
+    edited = r.get_json()["item"]
+    assert (edited["item_name"], edited["description"], edited["priority"]) == ("Warm slippers", "size 7", 1)
+    assert edited["photo_url"] != item["photo_url"]
+    assert not old_file.exists()                      # replaced photo is cleaned up
+    assert (tmp_path / edited["photo_url"].removeprefix("/static/")).exists()
+
+    # editing without a photo keeps the current one; blank name is rejected
+    r = bob.patch(f"/api/wishlists/{item['id']}", data={"item_name": "Warm slippers"},
+                  content_type="multipart/form-data")
+    assert r.get_json()["item"]["photo_url"] == edited["photo_url"]
+    assert bob.patch(f"/api/wishlists/{item['id']}", data={"item_name": "  "},
+                     content_type="multipart/form-data").status_code == 400
+
+    # once someone buys it, the owner can no longer edit or delete it
+    assert users[ADMIN_USER].post(f"/api/wishlists/{item['id']}/purchase").status_code == 200
+    assert bob.patch(f"/api/wishlists/{item['id']}", json={"item_name": "x"}).status_code == 403
+    assert bob.delete(f"/api/wishlists/{item['id']}").status_code == 403

@@ -111,7 +111,17 @@ def edit_item(item_id):
         return jsonify({"error": "You can only edit your own list."}), 403
     if item.is_purchased:
         return jsonify({"error": "This gift has already been claimed and can't be changed anymore."}), 403
-    data = request.json or {}
+    data = request.form if request.form else (request.get_json(silent=True) or {})
+    if "item_name" in data and not (data.get("item_name") or "").strip():
+        return jsonify({"error": "Please tell us what the gift is."}), 400
+    old_photo = None
+    photo = request.files.get("photo")
+    if photo and photo.filename:
+        try:
+            new_photo = _save_wishlist_photo(photo)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        old_photo, item.photo_path = item.photo_path, new_photo
     if data.get("item_name"):
         item.item_name = data["item_name"].strip()[:200]
     for f in ("description", "link_url"):
@@ -122,6 +132,11 @@ def edit_item(item_id):
     if "priority" in data:
         item.priority = int(data["priority"])
     db.session.commit()
+    if old_photo:  # replaced - drop the old file so uploads don't pile up
+        try:
+            os.remove(os.path.join(current_app.static_folder, old_photo))
+        except OSError:
+            pass
     return jsonify({"ok": True, "item": item.to_dict()})
 
 

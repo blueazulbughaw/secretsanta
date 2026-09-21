@@ -208,44 +208,36 @@ function wishRowReadOnly(item, { showBuy = false, personName = null } = {}) {
     </tr>`;
 }
 
-// Editable table row for My Wishlist (own items): name/description/link/priority
-// inputs + Save/Delete, or a plain sentence once the item is locked (bought).
-function myWishRow(item, eventId, limit) {
-  const priorityOpts = Array.from({ length: limit }, (_, n) => n + 1)
-    .map(n => `<option value="${n}" ${n === item.priority ? "selected" : ""}>${n}</option>`).join("");
-  const actions = item.locked
+// My Wishlist card (own items): small photo, name/priority, description, link
+// last, then Edit/Delete at the bottom - or a plain sentence once the item is
+// locked (someone bought it). The locked flag is all the owner ever learns.
+function myWishCard(item, eventId) {
+  const thumb = item.photo_url ? wishThumbCell(item) : "";
+  const footer = item.locked
     ? `<span class="muted wish-locked-msg">Cannot edit this item as it has already been bought.</span>`
-    : `<div class="table-actions">
-         <button class="btn btn-secondary" data-save>Save</button>
-         <button class="btn btn-quiet" data-del>Delete</button>
-       </div>`;
-  const tr = h(`<tr>
-    <td data-label="Photo">${wishThumbCell(item)}</td>
-    <td data-label="Item"><input data-name value="${esc(item.item_name)}" ${item.locked ? "disabled" : ""}></td>
-    <td data-label="Description"><input data-desc value="${esc(item.description || "")}" ${item.locked ? "disabled" : ""}></td>
-    <td data-label="Link"><input data-link type="url" value="${esc(item.link_url || "")}" ${item.locked ? "disabled" : ""}></td>
-    <td data-label="Priority"><select data-priority ${item.locked ? "disabled" : ""}>${priorityOpts}</select></td>
-    <td data-label="">${actions}</td>
-  </tr>`).firstElementChild;
+    : `<button class="btn btn-secondary" data-edit>Edit</button>
+       <button class="btn btn-quiet" data-del>Delete</button>`;
+  const card = h(`<article class="wish-card">
+    <div class="wish-card-head">
+      ${thumb}
+      <div class="wish-card-title">
+        <strong>${esc(item.item_name)}</strong>
+        <span class="wish-priority">Priority ${item.priority}</span>
+      </div>
+    </div>
+    ${item.description ? `<p class="wish-card-desc">${esc(item.description)}</p>` : ""}
+    ${item.link_url ? `<a class="wish-link" href="${esc(item.link_url)}" target="_blank" rel="noopener">See it online ↗</a>` : ""}
+    <div class="wish-card-actions">${footer}</div>
+  </article>`).firstElementChild;
   if (!item.locked) {
-    tr.querySelector("[data-save]").onclick = async () => {
-      try {
-        await api.patch(`/wishlists/${item.id}`, {
-          item_name: tr.querySelector("[data-name]").value,
-          description: tr.querySelector("[data-desc]").value,
-          link_url: tr.querySelector("[data-link]").value,
-          priority: tr.querySelector("[data-priority]").value,
-        });
-        document.getElementById("msg").innerHTML = alertBox("Saved!", true);
-      } catch (e) { showError(e); }
-    };
-    tr.querySelector("[data-del]").onclick = async () => {
+    card.querySelector("[data-edit]").onclick = () => go(`/events/${eventId}/wishlist/${item.id}/edit`);
+    card.querySelector("[data-del]").onclick = async () => {
       if (!confirm("Remove this gift from your list?")) return;
-      try { await api.del(`/wishlists/${item.id}`); tr.remove(); }
+      try { await api.del(`/wishlists/${item.id}`); navigate(); }
       catch (e) { showError(e); }
     };
   }
-  return tr;
+  return card;
 }
 
 function annRowReadOnly(a) {
@@ -306,7 +298,7 @@ const routes = [];
 function route(pattern, fn) { routes.push({ pattern, fn }); }
 async function navigate() {
   const path = location.hash.replace(/^#/, "") || "/";
-  renderSidebar(path);
+  renderSidebar(path.replace(/^(\/events\/\d+\/wishlist)\/.+$/, "$1"));
   closeSidebar();
   for (const r of routes) {
     const m = path.match(r.pattern);
@@ -676,39 +668,50 @@ route(/^\/events\/(\d+)\/my-person$/, async (id) => {
 
 route(/^\/events\/(\d+)\/wishlist$/, async (id) => {
   const d = await api.get(`/events/${id}/wishlists/mine`);
-  const priorityOptions = Array.from({ length: d.limit }, (_, n) => n + 1)
-    .map(n => `<option value="${n}" ${n === Math.min(3, d.limit) ? "selected" : ""}>${n}</option>`).join("");
+  const full = d.items.length >= d.limit;
   render("My Wishlist", `
     <div id="msg"></div>
-    <p class="muted">${d.items.length} of ${d.limit} gifts</p>
-    <h2>Add a gift idea</h2>
-    <label>What would you love?</label>
-    <input id="iname" placeholder="e.g. Warm slippers, size 7">
-    <label>Anything else they should know? <span class="muted">(optional)</span></label>
-    <input id="idesc" placeholder="e.g. Favorite color is blue">
-    <label>Link to it online <span class="muted">(optional)</span></label>
-    <input id="ilink" type="url" placeholder="https://…">
-    <label>Priority</label>
-    <select id="ipriority">${priorityOptions}</select>
-    <label>Photo <span class="muted">(optional)</span></label>
-    <input id="iphoto" type="file" accept="image/*">
-    <button class="btn btn-primary" id="addBtn">Add to My List</button>
-    <h2 style="margin-top:1.5rem">Your gift ideas</h2>
-    ${d.items.length ? `
-      <div class="table-wrap">
-        <table class="data" id="myWishTable">
-          <colgroup>
-            <col style="width:10%"><col style="width:27%"><col style="width:27%">
-            <col style="width:16%"><col style="width:10%"><col style="width:10%">
-          </colgroup>
-          <thead><tr><th></th><th>Item</th><th>Description</th><th>Link</th><th>Priority</th><th></th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>` : `<p class="muted">Your list is empty. Add your first gift idea!</p>`}
+    <div class="wish-toolbar">
+      <p class="muted" style="margin:0">${d.items.length} of ${d.limit} gifts${full ? " — your list is full" : ""}</p>
+      ${full ? "" : `<button class="btn btn-primary" style="width:auto;margin:0" id="newWishBtn">+ Add a Gift Idea</button>`}
+    </div>
+    ${d.items.length
+      ? `<div class="wish-grid" id="myWishGrid"></div>`
+      : `<p class="muted">Your list is empty. Add your first gift idea!</p>`}
   `);
-  const tbody = document.querySelector("#myWishTable tbody");
-  if (tbody) d.items.forEach(i => tbody.append(myWishRow(i, id, d.limit)));
-  document.getElementById("addBtn").onclick = async () => {
+  const grid = document.getElementById("myWishGrid");
+  if (grid) d.items.forEach(i => grid.append(myWishCard(i, id)));
+  const newBtn = document.getElementById("newWishBtn");
+  if (newBtn) newBtn.onclick = () => go(`/events/${id}/wishlist/new`);
+});
+
+// Add / edit share one form; `item` is null when adding.
+function renderWishForm(eventId, d, item) {
+  const editing = !!item;
+  const selected = editing ? item.priority : Math.min(3, d.limit);
+  const priorityOptions = Array.from({ length: d.limit }, (_, n) => n + 1)
+    .map(n => `<option value="${n}" ${n === selected ? "selected" : ""}>${n}</option>`).join("");
+  render(editing ? "Edit Gift Idea" : "Add a Gift Idea", `
+    <div id="msg"></div>
+    <label for="iname">What would you love?</label>
+    <input id="iname" placeholder="e.g. Warm slippers, size 7" value="${esc(editing ? item.item_name : "")}">
+    <label for="idesc">Anything else they should know? <span class="muted">(optional)</span></label>
+    <input id="idesc" placeholder="e.g. Favorite color is blue" value="${esc(editing ? item.description || "" : "")}">
+    <label for="ilink">Link to it online <span class="muted">(optional)</span></label>
+    <input id="ilink" type="url" placeholder="https://…" value="${esc(editing ? item.link_url || "" : "")}">
+    <label for="ipriority">Priority</label>
+    <select id="ipriority">${priorityOptions}</select>
+    <label for="iphoto">${editing && item.photo_url ? "Replace photo" : "Photo"} <span class="muted">(optional)</span></label>
+    ${editing && item.photo_url ? `<div style="margin-bottom:.4rem">${wishThumbCell(item)}</div>` : ""}
+    <input id="iphoto" type="file" accept="image/*">
+    <div class="form-actions">
+      <button class="btn btn-primary" id="saveWishBtn">${editing ? "Save Changes" : "Add to My List"}</button>
+      <button class="btn btn-quiet" id="cancelWishBtn">Cancel</button>
+    </div>
+  `);
+  const backToList = () => go(`/events/${eventId}/wishlist`);
+  document.getElementById("cancelWishBtn").onclick = backToList;
+  document.getElementById("saveWishBtn").onclick = async () => {
     try {
       const fd = new FormData();
       fd.append("item_name", document.getElementById("iname").value);
@@ -717,10 +720,32 @@ route(/^\/events\/(\d+)\/wishlist$/, async (id) => {
       fd.append("priority", document.getElementById("ipriority").value);
       const photo = document.getElementById("iphoto").files[0];
       if (photo) fd.append("photo", photo);
-      await api.postForm(`/events/${id}/wishlists`, fd);
-      navigate();
+      if (editing) await api.patchForm(`/wishlists/${item.id}`, fd);
+      else await api.postForm(`/events/${eventId}/wishlists`, fd);
+      backToList();
     } catch (e) { showError(e); }
   };
+}
+
+function wishFormBlocked(eventId, msg) {
+  render("My Wishlist", alertBox(msg) + `
+    <button class="btn btn-secondary" style="width:auto" onclick="go('/events/${eventId}/wishlist')">Back to My Wishlist</button>`);
+}
+
+route(/^\/events\/(\d+)\/wishlist\/new$/, async (id) => {
+  const d = await api.get(`/events/${id}/wishlists/mine`);
+  if (d.items.length >= d.limit) {
+    return wishFormBlocked(id, `Your list is full (${d.limit} gifts). Remove one to add another.`);
+  }
+  renderWishForm(id, d, null);
+});
+
+route(/^\/events\/(\d+)\/wishlist\/(\d+)\/edit$/, async (id, itemId) => {
+  const d = await api.get(`/events/${id}/wishlists/mine`);
+  const item = d.items.find(i => i.id === Number(itemId));
+  if (!item) return wishFormBlocked(id, "We couldn't find that gift idea.");
+  if (item.locked) return wishFormBlocked(id, "Cannot edit this item as it has already been bought.");
+  renderWishForm(id, d, item);
 });
 
 route(/^\/events\/(\d+)\/giftee$/, async (id) => {

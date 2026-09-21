@@ -266,6 +266,40 @@ tr.bought td strong { text-decoration: line-through; color: var(--muted); }
 .wish-locked-msg { overflow: visible; white-space: normal; font-size: .82rem; }
 table.data td.wrap-cell { overflow: visible; white-space: normal; }
 
+/* My Wishlist cards: photo + name/priority, description, link last, then
+   Edit/Delete pinned to the bottom of each card. */
+.wish-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: .75rem; flex-wrap: wrap; margin-bottom: .75rem;
+}
+.wish-grid {
+  display: grid; gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+}
+.wish-card {
+  display: flex; flex-direction: column; gap: .5rem;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  padding: .9rem 1rem; background: #fff;
+}
+.wish-card-head { display: flex; align-items: center; gap: .75rem; }
+.wish-card .wish-thumb { width: 56px; height: 56px; }
+.wish-card-title { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.wish-priority { font-size: .78rem; color: var(--muted); }
+.wish-card-desc { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+.wish-link { font-size: .9rem; font-weight: 600; color: var(--red); overflow-wrap: anywhere; }
+.wish-card-actions {
+  display: flex; gap: .5rem; flex-wrap: wrap; align-items: center;
+  margin-top: auto; padding-top: .75rem; border-top: 1px solid var(--line);
+}
+.wish-card-actions .btn { width: auto; margin: 0; flex: 0 0 auto; }
+.form-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .4rem; }
+.form-actions .btn { width: auto; flex: 1 1 140px; max-width: 240px; }
+@media (max-width: 780px) {
+  .wish-card-actions .btn { flex: 1 1 0; }
+  .form-actions .btn { max-width: none; }
+  .wish-toolbar .btn { width: 100% !important; }
+}
+
 /* Messages — capped in absolute terms, not just relative to the (now wider) pane */
 .bubble { max-width: min(75%, 480px); padding: .5rem .75rem; border-radius: var(--radius);
   margin: .3rem 0; font-size: .9rem; }
