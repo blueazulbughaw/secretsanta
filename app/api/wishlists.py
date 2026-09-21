@@ -4,7 +4,7 @@ from flask import Blueprint, request, jsonify, g
 
 from ..extensions import db
 from ..models import Event, WishlistItem, Assignment, User, EventParticipant, FamilyMember
-from ..middleware.auth import require_auth, require_family_member, require_family_admin, archived_error
+from ..middleware.auth import require_auth, require_family_member, require_family_admin, archived_error, require_event_access
 from ..services.notification_service import notify
 from ..services.photo_service import save_photo, remove_photo
 from ..utils import normalize_link_url
@@ -26,7 +26,7 @@ def _item_dict(item, include_purchase):
 @require_auth
 def my_wishlist(event_id):
     ev = Event.query.get_or_404(event_id)
-    _, err = require_family_member(ev.family_id)
+    _, err = require_event_access(ev)
     if err:
         return err
     items = (WishlistItem.query.filter_by(event_id=ev.id, user_id=g.user.id)
@@ -40,7 +40,7 @@ def my_wishlist(event_id):
 @require_auth
 def add_item(event_id):
     ev = Event.query.get_or_404(event_id)
-    _, err = require_family_member(ev.family_id)
+    _, err = require_event_access(ev)
     if err:
         return err
     err = archived_error(ev)
@@ -103,7 +103,7 @@ def reorder_wishlist(event_id):
     """Sets the priority of the caller's gifts from the order of `item_ids`
     (first = most wanted). Must list every one of their gifts for this event."""
     ev = Event.query.get_or_404(event_id)
-    _, err = require_family_member(ev.family_id)
+    _, err = require_event_access(ev)
     if err:
         return err
     err = archived_error(ev)
@@ -180,7 +180,7 @@ def delete_item(item_id):
 def mark_purchased(item_id):
     item = WishlistItem.query.get_or_404(item_id)
     ev = Event.query.get_or_404(item.event_id)
-    _, err = require_family_member(ev.family_id)
+    _, err = require_event_access(ev)
     if err:
         return err
     err = archived_error(ev)
@@ -205,7 +205,7 @@ def clan_wishlists(event_id):
     items except your own, so the clan can coordinate on gifts beyond just
     the one drawn assignment. Owners still never see their own status."""
     ev = Event.query.get_or_404(event_id)
-    _, err = require_family_member(ev.family_id)
+    _, err = require_event_access(ev)
     if err:
         return err
     parts = EventParticipant.query.filter_by(event_id=ev.id, is_participating=True).all()

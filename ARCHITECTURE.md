@@ -124,7 +124,7 @@ All JSON, prefixed `/api`. 🔒 = auth required, 👑 = family admin.
 
 **Events**
 - `POST /families/:id/events` 👑 — name, date, budget, wishlist_limit, use_codenames
-- `GET /families/:id/events` 🔒
+- `GET /families/:id/events` 🔒 — members get only the events they're joining (`i_am_participating`), clan admins get all. Every event-scoped endpoint (event, attendees, dishes, messages, wishlists, assignments/mine) answers 403 "You're not part of this event." to a member who isn't joining it (`require_event_access`); `GET /events/:id/participants` (the whole guest list) is admin-only
 - `GET|PATCH /events/:id` 🔒 / 👑 — besides name/date/budget/rules an event carries the details the clan admin sets for everyone: `event_time`, `location`, `theme`, `rules`, `what_to_bring`, `other_info`. Once names are drawn the matching rules (`wishlist_limit`, `use_codenames`, `allow_same_household`, participants) are locked, but the name, date, budget and all of those details stay editable until the event is completed
 - `PATCH /events/:id` also takes `game_master_id` (null clears) — must be someone joining the event; changing who's joining drops a game master who's no longer in; editable after the draw
 - `GET /events/:id/dishes` 🔒 — everyone's dish sign-up, sorted by name: `[{ user, dishes: [{id, name}] }]`
@@ -145,9 +145,9 @@ All JSON, prefixed `/api`. 🔒 = auth required, 👑 = family admin.
 - `POST /events/:id/wishlists` 🔒 — enforces `wishlist_limit`; JSON or multipart (optional `photo`, max 8MB, stored shrunk to 1200px); `link_url` must be a valid web link and is saved as an absolute http(s) URL (`https://` is added when missing)
 - `PATCH|DELETE /wishlists/:itemId` 🔒 — owner only, and rejected once the item is locked (purchased)
 - `PUT /events/:id/wishlists/order` 🔒 — `{ item_ids: [...] }`, every one of the caller's gifts for the event; position = priority (first = wanted most). There is no separate priority input: new gifts are appended, PATCH ignores `priority`, and all wishlist reads sort by (priority, id)
-- `GET /events/:id/wishlists/clan` 🔒 — every participant's wishlist for the whole family (My Clan), sorted alphabetically by name; purchase status visible for everyone except the item's own owner
+- `GET /events/:id/wishlists/clan` 🔒 — every participant's wishlist for the whole family (the event's Clan & Wishlists page), sorted alphabetically by name; purchase status visible for everyone except the item's own owner
 - `POST /wishlists/:itemId/purchase` 🔒 — any family member except the owner can mark/unmark purchased
-- `GET /events/:id/wishlists` 👑 — all wishlists (admin view), same per-viewer purchase visibility as My Clan, sorted alphabetically
+- `GET /events/:id/wishlists` 👑 — all wishlists (admin view), same per-viewer purchase visibility as the event's Clan & Wishlists page, sorted alphabetically
 
 **Messages**
 - `GET /events/:id/messages` 🔒 — my two threads (with my giver, with my giftee)

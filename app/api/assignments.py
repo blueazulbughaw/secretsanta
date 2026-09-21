@@ -4,7 +4,7 @@ from flask import Blueprint, jsonify, g
 
 from ..extensions import db
 from ..models import Event, Assignment, EventParticipant, User
-from ..middleware.auth import require_auth, require_family_member, require_family_admin
+from ..middleware.auth import require_auth, require_family_member, require_family_admin, require_event_access
 from ..services.matching_service import generate_assignments, MatchingError
 
 bp = Blueprint("assignments", __name__)
@@ -28,7 +28,7 @@ def generate(event_id):
 @require_auth
 def mine(event_id):
     ev = Event.query.get_or_404(event_id)
-    _, err = require_family_member(ev.family_id)
+    _, err = require_event_access(ev)
     if err:
         return err
     a = Assignment.query.filter_by(event_id=ev.id, giver_id=g.user.id).first()

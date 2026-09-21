@@ -4,7 +4,7 @@ from functools import wraps
 import jwt
 from flask import request, jsonify, g, current_app, make_response
 
-from ..models import User, FamilyMember
+from ..models import User, FamilyMember, EventParticipant
 
 COOKIE_NAME = "gc_token"
 
@@ -83,3 +83,17 @@ def archived_error(ev):
     if ev.status == "completed":
         return jsonify({"error": "This event is archived, so it's view-only."}), 400
     return None
+
+
+def require_event_access(ev):
+    """Multi-tenant guard for anything inside an event: 403 unless g.user is in this
+    family AND is joining this event (clan admins can open every event). People who
+    aren't joining an event don't see it, or the people and wishlists in it."""
+    m, err = require_family_member(ev.family_id)
+    if err:
+        return None, err
+    joining = EventParticipant.query.filter_by(
+        event_id=ev.id, user_id=g.user.id, is_participating=True).first()
+    if m.role != "admin" and not joining:
+        return None, (jsonify({"error": "You're not part of this event."}), 403)
+    return m, None

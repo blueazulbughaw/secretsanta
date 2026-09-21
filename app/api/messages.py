@@ -4,7 +4,7 @@ from flask import Blueprint, request, jsonify, g
 
 from ..extensions import db
 from ..models import Event, Message, Assignment, EventParticipant, User
-from ..middleware.auth import require_auth, require_family_member, archived_error
+from ..middleware.auth import require_auth, require_family_member, archived_error, require_event_access
 from ..services.notification_service import notify
 
 bp = Blueprint("messages", __name__)
@@ -35,7 +35,7 @@ def _display_for(ev, viewer_id, other_id, relation):
 @require_auth
 def get_messages(event_id):
     ev = Event.query.get_or_404(event_id)
-    _, err = require_family_member(ev.family_id)
+    _, err = require_event_access(ev)
     if err:
         return err
     giftee_id, giver_id = _threads(ev.id, g.user.id)
@@ -67,7 +67,7 @@ def get_messages(event_id):
 @require_auth
 def send_message(event_id):
     ev = Event.query.get_or_404(event_id)
-    _, err = require_family_member(ev.family_id)
+    _, err = require_event_access(ev)
     if err:
         return err
     err = archived_error(ev)

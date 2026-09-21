@@ -6,7 +6,8 @@ from ..extensions import db
 from ..models import (Event, EventParticipant, FamilyMember, Assignment, WishlistItem,
                       Message, Announcement, EventDish)
 from ..services.photo_service import remove_photo
-from ..middleware.auth import require_auth, require_family_member, require_family_admin, archived_error
+from ..middleware.auth import (require_auth, require_family_member, require_family_admin, archived_error,
+                               require_event_access)
 
 bp = Blueprint("events", __name__)
 
@@ -36,7 +37,7 @@ def _apply_details(ev, data):
 
 def _event_and_membership(event_id):
     ev = Event.query.get_or_404(event_id)
-    m, err = require_family_member(ev.family_id)
+    m, err = require_event_access(ev)
     return ev, m, err
 
 
@@ -74,7 +75,7 @@ def create_event(family_id):
 @bp.get("/families/<int:family_id>/events")
 @require_auth
 def list_events(family_id):
-    _, err = require_family_member(family_id)
+    m, err = require_family_member(family_id)
     if err:
         return err
     evs = (Event.query.filter_by(family_id=family_id)
@@ -84,6 +85,8 @@ def list_events(family_id):
         d = ev.to_dict()
         d["i_am_participating"] = EventParticipant.query.filter_by(
             event_id=ev.id, user_id=g.user.id, is_participating=True).first() is not None
+        if m.role != "admin" and not d["i_am_participating"]:
+            continue  # members only see the events they're in; clan admins see them all
         # Each event has its own set of participants (and so its own giftee/gifter pairs)
         d["participant_count"] = EventParticipant.query.filter_by(
             event_id=ev.id, is_participating=True).count()
@@ -211,7 +214,8 @@ def list_attendees(event_id):
 @bp.get("/events/<int:event_id>/participants")
 @require_auth
 def list_participants(event_id):
-    ev, m, err = _event_and_membership(event_id)
+    ev = Event.query.get_or_404(event_id)
+    _, err = require_family_admin(ev.family_id)
     if err:
         return err
     members = FamilyMember.query.filter_by(family_id=ev.family_id).all()

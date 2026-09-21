@@ -15,7 +15,7 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   (ID cards show the household too).
 - Every endpoint must verify the user belongs to the resource's family (see middleware/auth.py helpers).
 - Wishlist privacy rule: owners NEVER see purchase status (who/when). Everyone else in
-  the family can, and can toggle it — not just the assigned Secret Santa — via My Clan
+  the family can, and can toggle it — not just the assigned Secret Santa — via the event's Clan & Wishlists page
   (`/events/:id/wishlists/clan`) and the admin all-wishlists view, so the whole clan can
   coordinate gifts beyond the one drawn assignment. Once purchased, an item is locked:
   the owner can no longer edit or delete it (they just lose the delete control — the
@@ -33,7 +33,7 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
 - Dashboard (`/`), top to bottom: plain greeting (not in a card), Announcements card
   (a phone shows only the message text), ONE "My upcoming event(s)" card holding
   every upcoming event split by lines, then a shortcuts card at the very bottom (Edit My
-  Profile, View My Wishlist, View My Clan).
+  Profile, View My Wishlist when they join an event).
   Each event shows what / where / date / time / My Giftee, then Message My Giftee + Message
   My Secret Santa side by side (the one place buttons are white with a red border and red
   text, `.btn-outline`), then a full-width View Event Details. The event name and
@@ -70,6 +70,15 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   comes first at the top, the list below it. Lists that show a household (Manage My Clan >
   Clan Members, Who's coming on the event page) put it in a right-hand column under a
   "Household" header.
+- Events are visible only to the people joining them (clan admins see all): a member's event
+  list, event page, attendees, dishes, messages, wishlists and profiles-in-event are limited to
+  events they're in (`require_event_access` in middleware/auth.py - use it for every new
+  event-scoped endpoint). There is no "My Clan" page or link: the people in an event are on that
+  event's page / Clan & Wishlists. The sidebar's My Wishlist and My Messages are event-aware
+  (`/wishlist`, `/messages`): one event -> straight to it, several -> choose, none -> the
+  "You're not joining any upcoming events right now. If that doesn't look right, please
+  contact your clan admin." message (also shown on the dashboard). Only the admin's Manage My
+  Clan lists every member.
 - Wording: always say "event". Never "gift exchange" (user-facing text, errors, docs).
 - There is no separate admin page for a single event. The event page (`/events/:id`) is the
   one place: for clan admins it ends with an Admin card (Draw Names / Start Over (Re-Draw
@@ -97,6 +106,6 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
 - Profile: photo, about me, likes, favorite color, "what not to give me" live on
   `users` (PATCH /auth/me + /auth/me/photo) and are shown to the clan as an ID-style
   card on `/events/:id/clan/:userId` (photo beside details, wishlist cards below).
-  My Clan itself is just a name-sorted grid of photo + name tiles.
+  The event's Clan & Wishlists page (`/events/:id/clan`) is a name-sorted grid of photo + name tiles of the people joining THAT event.
 - Run pytest before declaring any task done.
 - Deploy target: Namecheap cPanel Python app (passenger_wsgi.py entry).

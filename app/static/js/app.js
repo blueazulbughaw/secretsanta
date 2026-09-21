@@ -84,12 +84,8 @@ function render(title, html, { wide = false, card = false } = {}) {
 
 const NAV = [
   { key: "dashboard", label: "My Dashboard", href: "/" },
-  { key: "wishlist", label: "My Wishlist", eventPath: "wishlist" },
-  { key: "clan", label: "My Clan", eventPath: "clan" },
-  { key: "messages", label: "My Messages", eventPath: "messages/giver", children: [
-    { key: "messages-giver", eventPath: "messages/giver", label: "Message to my Secret Santa" },
-    { key: "messages-giftee", eventPath: "messages/giftee", label: "Message to my Giftee" },
-  ] },
+  { key: "wishlist", label: "My Wishlist", href: "/wishlist" },
+  { key: "messages", label: "My Messages", href: "/messages" },
   { key: "past", label: "Past Events", href: "/past" },
   { key: "admin", label: "Manage My Clan", href: "/admin", adminOnly: true, children: [
     { key: "members", href: "/admin/members", label: "Members" },
@@ -412,9 +408,9 @@ const routes = [];
 function route(pattern, fn) { routes.push({ pattern, fn }); }
 async function navigate() {
   const path = location.hash.replace(/^#/, "") || "/";
-  renderSidebar(path.replace(/^(\/events\/\d+\/wishlist)\/.+$/, "$1")
-    .replace(/^(\/events\/\d+\/clan)\/.+$/, "$1")
-    .replace(/^\/events\/\d+$/, "/")
+  renderSidebar(path.replace(/^\/events\/\d+\/wishlist(\/.*)?$/, "/wishlist")
+    .replace(/^\/events\/\d+\/messages(\/.*)?$/, "/messages")
+    .replace(/^\/events\/\d+(\/clan(\/.*)?)?$/, "/")
     .replace(/^\/members\/\d+$/, "/admin")
     .replace(/^(\/admin\/events)\/.+$/, "$1"));
   closeSidebar();
@@ -617,7 +613,7 @@ function pageSecuritySetup(forced) {
   const profileCard = `
     <section class="card form-card">
       <h2>My profile</h2>
-      <p class="muted">Your clan sees this on My Clan, so they know what to get you.</p>
+      <p class="muted">The people in your events see this, so they know what to get you.</p>
       <div class="profile-photo-row">
         <div id="avatarPreview"></div>
         <div>
@@ -787,6 +783,10 @@ function gifteeLink(ev, d) {
     : `<a class="person-link" href="#/events/${ev.id}/clan/${d.giftee_user_id}"><strong>${esc(d.giftee_display_name)}</strong> →</a>`;
 }
 
+// Shown when someone isn't in any upcoming event (members only ever see the events they're in).
+const NOT_JOINING = "You're not joining any upcoming events right now. If that doesn't look right, please contact your clan admin.";
+const NOT_JOINING_ADMIN = "You're not joining any upcoming events right now.";
+
 // One upcoming event on the dashboard. `d` is my assignment there (null when I'm not in it).
 function dashEventBlock(e, d) {
   const gifteeHtml = !d ? `<span class="muted">You're not in this event.</span>`
@@ -814,11 +814,10 @@ route(/^\/$/, async () => {
     api.get(`/families/${FAMILY.id}/events`),
     api.get(`/families/${FAMILY.id}/announcements`),
   ]);
-  const upcoming = all.filter(e => !eventHasHappened(e) && e.status !== "cancelled")
+  // Only the events I'm joining (a clan admin can see the rest under Manage My Clan > Events).
+  const upcoming = all.filter(e => e.i_am_participating && !eventHasHappened(e) && e.status !== "cancelled")
     .sort((x, y) => x.event_date.localeCompare(y.event_date));
-  const mine = await Promise.all(upcoming.map(e =>
-    e.i_am_participating ? api.get(`/events/${e.id}/assignments/mine`) : null));
-  const clanEvent = CURRENT_EVENT || upcoming[0];
+  const mine = await Promise.all(upcoming.map(e => api.get(`/events/${e.id}/assignments/mine`)));
   const annHtml = anns.length ? annTable(anns) : `<p class="muted" style="margin:0">No announcements yet.</p>`;
   const sections = [
     `<div class="greeting"><h2>Hello, ${esc(first)}! 👋</h2></div>`,
@@ -831,21 +830,19 @@ route(/^\/$/, async () => {
       ${upcoming.map((e, i) => dashEventBlock(e, mine[i])).join("")}
     </section>` : `
     <section class="card">
-      <h2>My upcoming event</h2>
-      <p class="muted">No event is happening right now.${FAMILY.role === "admin" ? "" : " Check back soon!"}</p>
-      ${FAMILY.role === "admin" ? `<button class="btn btn-secondary" style="width:auto" onclick="go('/admin/events')">Create an Event</button>` : ""}
+      <h2>My upcoming events</h2>
+      <p class="muted">${FAMILY.role === "admin" ? NOT_JOINING_ADMIN : NOT_JOINING}</p>
+      ${FAMILY.role === "admin" ? `<button class="btn btn-secondary" style="width:auto" onclick="go('/admin/events')">Manage Events</button>` : ""}
     </section>`);
 
-  // Shortcuts, in their own card at the very bottom. Wishlist and clan are per gift
-  // exchange, so they only show when there is one.
+  // Shortcuts, in their own card at the very bottom. A wishlist belongs to an event, so
+  // it only shows when I'm joining one (with several, the page asks which).
   sections.push(`
     <section class="card">
       <h2>My Links</h2>
       <div class="event-actions" style="margin-bottom:0">
         <button class="btn btn-primary" onclick="go('/security')">Edit My Profile</button>
-        ${clanEvent ? `
-        <button class="btn btn-primary" onclick="go('/events/${clanEvent.id}/wishlist')">View My Wishlist</button>
-        <button class="btn btn-primary" onclick="go('/events/${clanEvent.id}/clan')">View My Clan</button>` : ""}
+        ${upcoming.length ? `<button class="btn btn-primary" onclick="go('/wishlist')">View My Wishlist</button>` : ""}
       </div>
     </section>`);
   if (FAMILY.role === "admin") {
@@ -863,6 +860,29 @@ route(/^\/$/, async () => {
     navigate();
   });
 });
+
+// "My Wishlist" and "My Messages" belong to an event. With one upcoming event I'm joining
+// they go straight to it; with several the page asks which; with none it says so.
+async function eventChooser(title, intro, pathFor) {
+  const all = await api.get(`/families/${FAMILY.id}/events`);
+  const mine = all.filter(e => e.i_am_participating && !eventHasHappened(e) && e.status !== "cancelled")
+    .sort((x, y) => x.event_date.localeCompare(y.event_date));
+  if (mine.length === 1) { location.replace(`#${pathFor(mine[0])}`); return; }
+  if (!mine.length) {
+    return render(title, `<div class="card"><p style="margin:0">${FAMILY.role === "admin" ? NOT_JOINING_ADMIN : NOT_JOINING}</p></div>`);
+  }
+  render(title, `
+    <p class="muted" style="margin-top:0">${intro}</p>
+    <div class="wish-grid">${mine.map(e => `
+      <a class="wish-card card-link" href="#${pathFor(e)}">
+        <div class="wish-card-head">
+          <span class="event-emoji" aria-hidden="true">${eventStatus(e).emoji}</span>
+          <div class="wish-card-title"><strong>${esc(e.name)}</strong><span class="wish-priority">${esc(fmtEventDate(e.event_date))}</span></div>
+        </div>
+      </a>`).join("")}</div>`);
+}
+route(/^\/wishlist$/, () => eventChooser("My Wishlist", "You're joining more than one event. Which wishlist do you want to open?", e => `/events/${e.id}/wishlist`));
+route(/^\/messages$/, () => eventChooser("My Messages", "You're joining more than one event. Which event's messages do you want to open?", e => `/events/${e.id}/messages`));
 
 // Dish sign-up card on the event page. It opens once names are drawn; each person
 // has ONE entry that can hold several dishes, which they can edit or remove.
@@ -1004,6 +1024,7 @@ route(/^\/events\/(\d+)$/, async (id) => {
       ${extras ? "" : `<p class="muted">Your clan admin hasn't added rules or other details yet.</p>`}
       <div class="form-actions">
         <button class="btn btn-primary" onclick="go('/events/${id}/clan')">View Clan &amp; Wishlists</button>
+        ${ev.i_am_participating ? `<button class="btn btn-primary" onclick="go('/events/${id}/wishlist')">My Wishlist</button>` : ""}
         ${ev.i_am_participating ? `<button class="btn btn-primary" onclick="go('/events/${id}/messages')">View My Messages</button>` : ""}
         ${isAdmin && ev.status !== "completed" ? `<button class="btn btn-secondary" onclick="go('/admin/events/${id}/edit')">Edit Details</button>` : ""}
       </div>
@@ -1234,10 +1255,10 @@ function personCard(user, eventId) {
 }
 
 route(/^\/events\/(\d+)\/clan$/, async (id) => {
-  const list = await api.get(`/events/${id}/wishlists/clan`);
+  const [list, ev] = await Promise.all([api.get(`/events/${id}/wishlists/clan`), api.get(`/events/${id}`)]);
   list.sort((a, b) => a.user.display_name.localeCompare(b.user.display_name));
-  render("My Clan", list.length
-    ? `<p class="muted">Tap someone to see their profile and wishlist.</p><div class="person-grid" id="personGrid"></div>`
+  render("Clan & Wishlists", list.length
+    ? `<p class="muted" style="margin-top:0">Event: <strong>${esc(ev.name)}</strong>. Tap someone to see their profile and wishlist.</p><div class="person-grid" id="personGrid"></div>`
     : `<div class="card center"><p>No one's joined this event yet.</p></div>`);
   const grid = document.getElementById("personGrid");
   if (grid) list.forEach(entry => grid.append(personCard(entry.user, id)));
@@ -1259,8 +1280,8 @@ route(/^\/events\/(\d+)\/clan\/(\d+)$/, async (id, uid) => {
   const archived = ev.status === "completed";
   const entry = list.find(e => e.user.id === Number(uid));
   if (!entry) {
-    return render("My Clan", alertBox("We couldn't find that person in this event.") + `
-      <button class="btn btn-secondary" style="width:auto" onclick="go('/events/${id}/clan')">Back to My Clan</button>`);
+    return render("Clan & Wishlists", alertBox("We couldn't find that person in this event.") + `
+      <button class="btn btn-secondary" style="width:auto" onclick="go('/events/${id}/clan')">Back to Clan & Wishlists</button>`);
   }
   const n = entry.items.length;
   const name = entry.user.display_name;

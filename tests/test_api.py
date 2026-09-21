@@ -19,6 +19,13 @@ def make_image(name, size=(64, 48), fmt="PNG", color=(200, 30, 30)):
     return (buf, name)
 
 
+def join_everyone(users, ev):
+    """Everyone in the clan joins the event: members only see the events they're in."""
+    fam, admin = users["_family"], users[ADMIN_USER]
+    members = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    admin.put(f"/api/events/{ev['id']}/participants", json={"user_ids": [m["user"]["id"] for m in members]})
+
+
 def future_date(days=30):
     from datetime import date, timedelta
     return (date.today() + timedelta(days=days)).isoformat()
@@ -329,6 +336,7 @@ def test_wishlist_edit_via_form_replaces_photo_and_locks_when_bought(app, users,
     admin, bob = users[ADMIN_USER], users[BOB_USER]
     ev = admin.post(f"/api/families/{fam['id']}/events",
                     json={"name": "Xmas", "event_date": "2026-12-25"}).get_json()["event"]
+    join_everyone(users, ev)
     url = f"/api/events/{ev['id']}/wishlists"
 
     def png(name):
@@ -475,6 +483,7 @@ def test_event_details_editable_after_draw_and_shown_to_members(users):
         "rules": "No re-gifting", "what_to_bring": "A dish to share", "other_info": "Parking on the left"})
     assert r.status_code == 201
     ev = r.get_json()["event"]
+    join_everyone(users, ev)
     assert (ev["event_time"], ev["location"], ev["theme"]) == ("18:30", "Lola's house", "Ugly sweaters")
     assert (ev["rules"], ev["what_to_bring"], ev["other_info"]) ==         ("No re-gifting", "A dish to share", "Parking on the left")
 
@@ -502,24 +511,25 @@ def test_event_details_editable_after_draw_and_shown_to_members(users):
     assert admin.patch(f"/api/events/{ev['id']}", json={"wishlist_limit": 2}).status_code == 400
 
 
-def test_attendees_visible_to_clan_without_private_contact_info(app, users):
+def test_attendees_visible_to_the_people_joining_without_private_contact_info(app, users):
     fam = users["_family"]
     admin, bob = users[ADMIN_USER], users[BOB_USER]
     ev = admin.post(f"/api/families/{fam['id']}/events",
-                    json={"name": "Xmas", "event_date": "2026-12-25"}).get_json()["event"]
+                    json={"name": "Xmas", "event_date": future_date()}).get_json()["event"]
     members = admin.get(f"/api/families/{fam['id']}/members").get_json()
     uid = {m["user"]["username"]: m["user"]["id"] for m in members}
-    admin.put(f"/api/events/{ev['id']}/participants", json={"user_ids": [uid[CARA_USER], uid[ADMIN_USER]]})
+    admin.put(f"/api/events/{ev['id']}/participants",
+              json={"user_ids": [uid[CARA_USER], uid[ADMIN_USER], uid[BOB_USER]]})
     bob.patch("/api/auth/security", json={"phone": "(555) 010-1234"})
     admin.patch("/api/auth/me", json={"likes": "Tea", "favorite_color": "Green"})
 
-    # any clan member (even one who isn't attending) sees who's coming, sorted by name
-    # household names come with them (blank until someone is in one)
+    # household names come with them (blank until someone is in one), sorted by name
     h = admin.post(f"/api/families/{fam['id']}/households", json={"name": "Cruz House"}).get_json()["household"]
     ana_membership = next(m for m in members if m["user"]["username"] == ADMIN_USER)["membership_id"]
     admin.patch(f"/api/families/{fam['id']}/members/{ana_membership}", json={"household_id": h["id"]})
     people = bob.get(f"/api/events/{ev['id']}/attendees").get_json()
-    assert [(p["display_name"], p["household_name"]) for p in people] == [("Ana", "Cruz House"), ("Cara", "")]
+    assert [(p["display_name"], p["household_name"]) for p in people] == \
+        [("Ana", "Cruz House"), ("Bob", ""), ("Cara", "")]
     assert (people[0]["likes"], people[0]["favorite_color"]) == ("Tea", "Green")
     assert all(not ({"phone", "email", "username", "avoid_gifts"} & set(p)) for p in people)
 
@@ -660,6 +670,7 @@ def test_photos_are_resized_and_profile_photos_cropped_square(app, users, tmp_pa
     fam, bob = users["_family"], users[BOB_USER]
     ev = users[ADMIN_USER].post(f"/api/families/{fam['id']}/events",
                                 json={"name": "Xmas", "event_date": future_date()}).get_json()["event"]
+    join_everyone(users, ev)
 
     def stored(photo_url):
         return Image.open(tmp_path / photo_url.removeprefix("/static/"))
@@ -707,6 +718,7 @@ def test_link_urls_are_checked_and_made_absolute(users):
 
     ev = users[ADMIN_USER].post(f"/api/families/{fam['id']}/events",
                                 json={"name": "Xmas", "event_date": future_date()}).get_json()["event"]
+    join_everyone(users, ev)
     url = f"/api/events/{ev['id']}/wishlists"
     r = bob.post(url, json={"item_name": "Lamp", "link_url": "ikea.com/lamp"})
     assert r.status_code == 201 and r.get_json()["item"]["link_url"] == "https://ikea.com/lamp"
@@ -738,6 +750,7 @@ def test_wishlist_order_is_the_priority(users):
     fam, admin, bob = users["_family"], users[ADMIN_USER], users[BOB_USER]
     ev = admin.post(f"/api/families/{fam['id']}/events",
                     json={"name": "Xmas", "event_date": future_date()}).get_json()["event"]
+    join_everyone(users, ev)
     url = f"/api/events/{ev['id']}/wishlists"
     ids = [bob.post(url, json={"item_name": n, "priority": 1}).get_json()["item"]["id"]
            for n in ("Socks", "Book", "Lamp")]
@@ -772,6 +785,7 @@ def test_description_keeps_line_breaks(users):
     fam, admin, bob = users["_family"], users[ADMIN_USER], users[BOB_USER]
     ev = admin.post(f"/api/families/{fam['id']}/events",
                     json={"name": "Xmas", "event_date": future_date()}).get_json()["event"]
+    join_everyone(users, ev)
     text = "Size 9\nNo laces please\nBlack"
     item = bob.post(f"/api/events/{ev['id']}/wishlists",
                     json={"item_name": "Boots", "description": text}).get_json()["item"]
@@ -864,7 +878,7 @@ def test_game_master_is_chosen_from_attendees(users):
     assert bob.patch(f"/api/events/{ev['id']}", json={"game_master_id": ids[BOB_USER]}).status_code == 403
     r = admin.patch(f"/api/events/{ev['id']}", json={"game_master_id": ids[BOB_USER]})
     assert r.status_code == 200 and r.get_json()["event"]["game_master_id"] == ids[BOB_USER]
-    assert cara.get(f"/api/events/{ev['id']}").get_json()["game_master_id"] == ids[BOB_USER]
+    assert bob.get(f"/api/events/{ev['id']}").get_json()["game_master_id"] == ids[BOB_USER]
 
     # taking them off the guest list clears it; it can also be cleared directly
     admin.put(f"/api/events/{ev['id']}/participants", json={"user_ids": [ids[ADMIN_USER]]})
@@ -1121,3 +1135,44 @@ def test_admin_can_choose_a_username_when_adding_a_member(app, users):
     assert r.status_code == 201 and r.get_json()["username"] == "evetan"
     r = admin.post(url, json={"full_name": "tita", "username": ""})
     assert r.status_code == 201 and r.get_json()["username"] != "tita"
+
+
+
+def test_members_only_see_the_events_they_are_joining(users):
+    fam, admin, bob, cara = users["_family"], users[ADMIN_USER], users[BOB_USER], users[CARA_USER]
+    members = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    uid = {m["user"]["username"]: m["user"]["id"] for m in members}
+    mine = admin.post(f"/api/families/{fam['id']}/events",
+                      json={"name": "Bob is in", "event_date": future_date()}).get_json()["event"]
+    other = admin.post(f"/api/families/{fam['id']}/events",
+                       json={"name": "Bob is out", "event_date": future_date(40)}).get_json()["event"]
+    admin.put(f"/api/events/{mine['id']}/participants", json={"user_ids": [uid[ADMIN_USER], uid[BOB_USER], uid[CARA_USER]]})
+    admin.put(f"/api/events/{other['id']}/participants", json={"user_ids": [uid[ADMIN_USER], uid[CARA_USER]]})
+    bob.post(f"/api/events/{mine['id']}/wishlists", json={"item_name": "Boots"})
+
+    # the list: members see only their events, the clan admin sees all of them
+    assert [e["name"] for e in bob.get(f"/api/families/{fam['id']}/events").get_json()] == ["Bob is in"]
+    assert {e["name"] for e in cara.get(f"/api/families/{fam['id']}/events").get_json()} == {"Bob is in", "Bob is out"}
+    assert {e["name"] for e in admin.get(f"/api/families/{fam['id']}/events").get_json()} == {"Bob is in", "Bob is out"}
+
+    # inside an event Bob isn't joining he gets nothing: not the event, its people, wishlists, dishes or messages
+    eid = other["id"]
+    for path in (f"/api/events/{eid}", f"/api/events/{eid}/attendees", f"/api/events/{eid}/wishlists/clan",
+                 f"/api/events/{eid}/wishlists/mine", f"/api/events/{eid}/dishes", f"/api/events/{eid}/messages",
+                 f"/api/events/{eid}/assignments/mine", f"/api/events/{eid}/participants"):
+        assert bob.get(path).status_code == 403, path
+    assert bob.post(f"/api/events/{eid}/wishlists", json={"item_name": "Sneaky"}).status_code == 403
+    assert bob.post(f"/api/events/{eid}/messages", json={"to": "giftee", "body": "hi"}).status_code == 403
+    assert bob.put(f"/api/events/{eid}/dishes/mine", json={"dishes": ["x"]}).status_code == 403
+    # ...but the clan admin can open any event, and Bob's own event works as before
+    assert admin.get(f"/api/events/{eid}").status_code == 200
+    assert bob.get(f"/api/events/{mine['id']}/attendees").status_code == 200
+    # the clan list in his event doesn't include people from events he's not in - only this event's people
+    clan = bob.get(f"/api/events/{mine['id']}/wishlists/clan").get_json()
+    assert sorted(e["user"]["username"] for e in clan) == sorted([ADMIN_USER, BOB_USER, CARA_USER])
+
+    # being added to the event gives access; being removed takes it away again
+    admin.put(f"/api/events/{eid}/participants", json={"user_ids": [uid[ADMIN_USER], uid[CARA_USER], uid[BOB_USER]]})
+    assert bob.get(f"/api/events/{eid}").status_code == 200
+    admin.put(f"/api/events/{eid}/participants", json={"user_ids": [uid[ADMIN_USER], uid[CARA_USER]]})
+    assert bob.get(f"/api/events/{eid}").status_code == 403

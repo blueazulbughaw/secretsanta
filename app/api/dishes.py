@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify, g
 
 from ..extensions import db
 from ..models import Event, EventDish, EventParticipant, User
-from ..middleware.auth import require_auth, require_family_member, archived_error
+from ..middleware.auth import require_auth, require_family_member, archived_error, require_event_access
 
 bp = Blueprint("dishes", __name__)
 
@@ -40,7 +40,7 @@ def _my_signup_error(ev):
 @require_auth
 def list_dishes(event_id):
     ev = Event.query.get_or_404(event_id)
-    _, err = require_family_member(ev.family_id)
+    _, err = require_event_access(ev)
     if err:
         return err
     return jsonify(_entries(ev.id))
@@ -52,7 +52,7 @@ def set_my_dishes(event_id):
     """Replaces the caller's single entry with `dishes` (a list of names). An
     empty list removes the entry."""
     ev = Event.query.get_or_404(event_id)
-    _, err = require_family_member(ev.family_id)
+    _, err = require_event_access(ev)
     if err:
         return err
     err = _my_signup_error(ev)
@@ -80,7 +80,7 @@ def set_my_dishes(event_id):
 @require_auth
 def remove_my_dishes(event_id):
     ev = Event.query.get_or_404(event_id)
-    _, err = require_family_member(ev.family_id)
+    _, err = require_event_access(ev)
     if err:
         return err
     err = _my_signup_error(ev)
