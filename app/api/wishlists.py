@@ -35,7 +35,7 @@ def my_wishlist(event_id):
     if err:
         return err
     items = (WishlistItem.query.filter_by(event_id=ev.id, user_id=g.user.id)
-             .order_by(WishlistItem.priority).all())
+             .order_by(WishlistItem.priority, WishlistItem.id).all())
     # Owner NEVER sees purchase status.
     return jsonify({"items": [i.to_dict(include_purchase=False) for i in items],
                     "limit": ev.wishlist_limit})
@@ -70,12 +70,16 @@ def add_item(event_id):
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
 
+    # New gifts go to the bottom of the list; the owner reorders by dragging, and
+    # the order is the priority everyone sees.
+    last = (db.session.query(db.func.max(WishlistItem.priority))
+            .filter_by(event_id=ev.id, user_id=g.user.id).scalar() or 0)
     item = WishlistItem(
         event_id=ev.id, user_id=g.user.id, item_name=name[:200],
         description=(data.get("description") or "").strip() or None,
         link_url=link_url,
         price_estimate=data.get("price_estimate"),
-        priority=int(data.get("priority") or 3),
+        priority=last + 1,
         photo_path=photo_path,
     )
     db.session.add(item)
@@ -87,6 +91,25 @@ def add_item(event_id):
                "Take a look at their updated wishlist.",
                link_path=f"/events/{ev.id}/giftee")
     return jsonify({"ok": True, "item": item.to_dict()}), 201
+
+
+@bp.put("/events/<int:event_id>/wishlists/order")
+@require_auth
+def reorder_wishlist(event_id):
+    """Sets the priority of the caller's gifts from the order of `item_ids`
+    (first = most wanted). Must list every one of their gifts for this event."""
+    ev = Event.query.get_or_404(event_id)
+    _, err = require_family_member(ev.family_id)
+    if err:
+        return err
+    items = {i.id: i for i in WishlistItem.query.filter_by(event_id=ev.id, user_id=g.user.id).all()}
+    ids = (request.get_json(silent=True) or {}).get("item_ids")
+    if not isinstance(ids, list) or len(ids) != len(set(ids)) or set(ids) != set(items):
+        return jsonify({"error": "That list doesn't match your gifts. Please refresh and try again."}), 400
+    for position, item_id in enumerate(ids, start=1):
+        items[item_id].priority = position
+    db.session.commit()
+    return jsonify({"ok": True})
 
 
 @bp.patch("/wishlists/<int:item_id>")
@@ -121,8 +144,6 @@ def edit_item(item_id):
         item.description = (data.get("description") or "").strip() or None
     if "price_estimate" in data:
         item.price_estimate = data["price_estimate"]
-    if "priority" in data:
-        item.priority = int(data["priority"])
     db.session.commit()
     remove_photo(old_photo)  # replaced - drop the old file so uploads don't pile up
     return jsonify({"ok": True, "item": item.to_dict()})
@@ -152,7 +173,7 @@ def giftee_wishlist(event_id):
     if not giftee_id:
         return jsonify({"error": "Names haven't been drawn yet."}), 400
     items = (WishlistItem.query.filter_by(event_id=ev.id, user_id=giftee_id)
-             .order_by(WishlistItem.priority).all())
+             .order_by(WishlistItem.priority, WishlistItem.id).all())
     # Giver DOES see purchase status.
     return jsonify({"items": [_item_dict(i, True) for i in items]})
 
@@ -191,7 +212,7 @@ def clan_wishlists(event_id):
     out = []
     for p in parts:
         items = (WishlistItem.query.filter_by(event_id=ev.id, user_id=p.user_id)
-                 .order_by(WishlistItem.priority).all())
+                 .order_by(WishlistItem.priority, WishlistItem.id).all())
         out.append({"user": p.user.to_dict(),
                     "items": [_item_dict(i, p.user_id != g.user.id) for i in items]})
     return jsonify(out)
@@ -211,7 +232,7 @@ def all_wishlists(event_id):
     out = []
     for p in parts:
         items = (WishlistItem.query.filter_by(event_id=ev.id, user_id=p.user_id)
-                 .order_by(WishlistItem.priority).all())
+                 .order_by(WishlistItem.priority, WishlistItem.id).all())
         out.append({"user": p.user.to_dict(),
                     "items": [_item_dict(i, p.user_id != g.user.id) for i in items]})
     return jsonify(out)

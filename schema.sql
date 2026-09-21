@@ -118,6 +118,7 @@ CREATE TABLE events (
   rules              TEXT NULL,                -- clan admin's notes for everyone
   what_to_bring      TEXT NULL,
   other_info         TEXT NULL,                -- other things to know
+  game_master_id     BIGINT UNSIGNED NULL,     -- one of the attendees, set by the clan admin
   budget_amount      DECIMAL(10,2) NULL,       -- NULL = no budget rule
   budget_currency    CHAR(3) NOT NULL DEFAULT 'USD',
   wishlist_limit     TINYINT UNSIGNED NOT NULL DEFAULT 5,
@@ -129,9 +130,25 @@ CREATE TABLE events (
   created_by         BIGINT UNSIGNED NOT NULL,
   created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_events_family  FOREIGN KEY (family_id)  REFERENCES families(id) ON DELETE CASCADE,
+  CONSTRAINT fk_events_game_master FOREIGN KEY (game_master_id) REFERENCES users(id) ON DELETE SET NULL,
   CONSTRAINT fk_events_creator FOREIGN KEY (created_by) REFERENCES users(id)    ON DELETE RESTRICT,
   INDEX idx_events_family_status (family_id, status),
   INDEX idx_events_date (event_date)
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- EVENT_DISHES — dishes people will bring to one event (once names are drawn).
+-- A person's rows for an event are their single sign-up entry.
+-- ------------------------------------------------------------
+CREATE TABLE event_dishes (
+  id         BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  event_id   BIGINT UNSIGNED NOT NULL,
+  user_id    BIGINT UNSIGNED NOT NULL,
+  name       VARCHAR(120) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_dishes_event FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+  CONSTRAINT fk_dishes_user  FOREIGN KEY (user_id)  REFERENCES users(id)  ON DELETE CASCADE,
+  INDEX idx_dishes_event_user (event_id, user_id)
 ) ENGINE=InnoDB;
 
 -- ------------------------------------------------------------

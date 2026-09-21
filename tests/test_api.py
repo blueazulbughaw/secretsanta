@@ -330,18 +330,18 @@ def test_wishlist_edit_via_form_replaces_photo_and_locks_when_bought(app, users,
     def png(name):
         return make_image(name)
 
-    item = bob.post(url, data={"item_name": "Slippers", "priority": "2", "photo": png("a.png")},
+    item = bob.post(url, data={"item_name": "Slippers", "photo": png("a.png")},
                     content_type="multipart/form-data").get_json()["item"]
     old_file = tmp_path / item["photo_url"].removeprefix("/static/")
     assert old_file.exists()
 
     r = bob.patch(f"/api/wishlists/{item['id']}",
                   data={"item_name": "Warm slippers", "description": "size 7",
-                        "link_url": "https://example.com", "priority": "1", "photo": png("b.png")},
+                        "link_url": "https://example.com", "photo": png("b.png")},
                   content_type="multipart/form-data")
     assert r.status_code == 200
     edited = r.get_json()["item"]
-    assert (edited["item_name"], edited["description"], edited["priority"]) == ("Warm slippers", "size 7", 1)
+    assert (edited["item_name"], edited["description"]) == ("Warm slippers", "size 7")
     assert edited["photo_url"] != item["photo_url"]
     assert not old_file.exists()                      # replaced photo is cleaned up
     assert (tmp_path / edited["photo_url"].removeprefix("/static/")).exists()
@@ -708,3 +708,163 @@ def test_link_urls_are_checked_and_made_absolute(users):
     assert bob.patch(f"/api/wishlists/{item_id}", json={"link_url": "nope"}).status_code == 400
     assert bob.patch(f"/api/wishlists/{item_id}", json={"link_url": "target.com/x"}).get_json()["item"]["link_url"] == "https://target.com/x"
     assert bob.patch(f"/api/wishlists/{item_id}", json={"link_url": ""}).get_json()["item"]["link_url"] is None
+
+
+def _drawn_event(users, days=30):
+    """An event with everyone joining and names drawn; returns the event dict."""
+    fam, admin = users["_family"], users[ADMIN_USER]
+    members = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    for i, m in enumerate(members):
+        h = admin.post(f"/api/families/{fam['id']}/households", json={"name": f"Hh{i}"}).get_json()["household"]
+        admin.patch(f"/api/families/{fam['id']}/members/{m['membership_id']}", json={"household_id": h["id"]})
+    ev = admin.post(f"/api/families/{fam['id']}/events",
+                    json={"name": "Potluck", "event_date": future_date(days)}).get_json()["event"]
+    admin.put(f"/api/events/{ev['id']}/participants", json={"user_ids": [m["user"]["id"] for m in members]})
+    assert admin.post(f"/api/events/{ev['id']}/assignments/generate").status_code == 200
+    return ev
+
+
+def test_wishlist_order_is_the_priority(users):
+    fam, admin, bob = users["_family"], users[ADMIN_USER], users[BOB_USER]
+    ev = admin.post(f"/api/families/{fam['id']}/events",
+                    json={"name": "Xmas", "event_date": future_date()}).get_json()["event"]
+    url = f"/api/events/{ev['id']}/wishlists"
+    ids = [bob.post(url, json={"item_name": n, "priority": 1}).get_json()["item"]["id"]
+           for n in ("Socks", "Book", "Lamp")]
+    names = lambda: [i["item_name"] for i in bob.get(f"{url}/mine").get_json()["items"]]
+    assert names() == ["Socks", "Book", "Lamp"]            # new gifts go to the bottom, priority input ignored
+
+    assert bob.put(f"{url}/order", json={"item_ids": [ids[2], ids[0], ids[1]]}).status_code == 200
+    assert names() == ["Lamp", "Socks", "Book"]
+    # everyone else sees the same order
+    members = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    admin.put(f"/api/events/{ev['id']}/participants", json={"user_ids": [m["user"]["id"] for m in members]})
+    clan = admin.get(f"/api/events/{ev['id']}/wishlists/clan").get_json()
+    bob_items = next(e for e in clan if e["user"]["username"] == BOB_USER)["items"]
+    assert [i["item_name"] for i in bob_items] == ["Lamp", "Socks", "Book"]
+
+    # a gift added later lands last, and editing never changes the order
+    ids.append(bob.post(url, json={"item_name": "Mug"}).get_json()["item"]["id"])
+    bob.patch(f"/api/wishlists/{ids[0]}", json={"item_name": "Wool socks", "priority": 1})
+    assert names() == ["Lamp", "Wool socks", "Book", "Mug"]
+
+    # the list must be exactly the caller's gifts
+    assert bob.put(f"{url}/order", json={"item_ids": ids[:3]}).status_code == 400
+    assert bob.put(f"{url}/order", json={"item_ids": ids + [999999]}).status_code == 400
+    assert bob.put(f"{url}/order", json={"item_ids": ids + [ids[0]]}).status_code == 400
+    assert bob.put(f"{url}/order", json={"item_ids": "nope"}).status_code == 400
+    other = users[CARA_USER].post(url, json={"item_name": "Cara's"}).get_json()["item"]["id"]
+    assert bob.put(f"{url}/order", json={"item_ids": ids[:3] + [other]}).status_code == 400
+    assert names() == ["Lamp", "Wool socks", "Book", "Mug"]
+
+
+def test_description_keeps_line_breaks(users):
+    fam, admin, bob = users["_family"], users[ADMIN_USER], users[BOB_USER]
+    ev = admin.post(f"/api/families/{fam['id']}/events",
+                    json={"name": "Xmas", "event_date": future_date()}).get_json()["event"]
+    text = "Size 9\nNo laces please\nBlack"
+    item = bob.post(f"/api/events/{ev['id']}/wishlists",
+                    json={"item_name": "Boots", "description": text}).get_json()["item"]
+    assert item["description"] == text
+
+
+def test_dish_signup_opens_after_the_draw_one_entry_many_dishes(app, users):
+    fam, admin, bob, cara = users["_family"], users[ADMIN_USER], users[BOB_USER], users[CARA_USER]
+    open_ev = admin.post(f"/api/families/{fam['id']}/events",
+                         json={"name": "Later", "event_date": future_date(60)}).get_json()["event"]
+    members = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    admin.put(f"/api/events/{open_ev['id']}/participants", json={"user_ids": [m["user"]["id"] for m in members]})
+    r = bob.put(f"/api/events/{open_ev['id']}/dishes/mine", json={"dishes": ["Pancit"]})
+    assert r.status_code == 400 and "opens once names are drawn" in r.get_json()["error"]
+
+    ev = _drawn_event(users)
+    url = f"/api/events/{ev['id']}/dishes"
+    assert bob.get(url).get_json() == []
+    # one entry, several dishes: blanks and repeats are dropped, order is kept
+    r = bob.put(f"{url}/mine", json={"dishes": [" Pancit ", "", "Lumpia", "pancit", "Leche flan"]})
+    assert r.status_code == 200
+    entries = r.get_json()
+    assert len(entries) == 1
+    assert [d["name"] for d in entries[0]["dishes"]] == ["Pancit", "Lumpia", "Leche flan"]
+    assert "phone" not in entries[0]["user"] and "email" not in entries[0]["user"]
+
+    # editing replaces the entry (still one entry); everyone sees it
+    bob.put(f"{url}/mine", json={"dishes": ["Lumpia", "Salad"]})
+    cara.put(f"{url}/mine", json={"dishes": ["Rice"]})
+    seen = admin.get(url).get_json()
+    assert [(e["user"]["display_name"], [d["name"] for d in e["dishes"]]) for e in seen] == \
+        [("Bob", ["Lumpia", "Salad"]), ("Cara", ["Rice"])]
+
+    # limits
+    assert bob.put(f"{url}/mine", json={"dishes": [f"Dish {i}" for i in range(11)]}).status_code == 400
+    assert bob.put(f"{url}/mine", json={"dishes": "Rice"}).status_code == 400
+
+    # removing: an empty list or DELETE
+    bob.put(f"{url}/mine", json={"dishes": []})
+    assert [e["user"]["display_name"] for e in admin.get(url).get_json()] == ["Cara"]
+    assert cara.delete(f"{url}/mine").status_code == 200
+    assert admin.get(url).get_json() == []
+
+    # outsiders can't see or add
+    outsider = app.test_client()
+    outsider.post("/api/auth/register", json={"username": "zed", "password": PASSWORD, "full_name": "Zed"})
+    assert outsider.get(url).status_code == 403
+    assert outsider.put(f"{url}/mine", json={"dishes": ["x"]}).status_code == 403
+
+    # finished events are read-only
+    bob.put(f"{url}/mine", json={"dishes": ["Lumpia"]})
+    admin.post(f"/api/events/{ev['id']}/complete")
+    assert bob.put(f"{url}/mine", json={"dishes": ["More"]}).status_code == 400
+    assert [d["name"] for d in bob.get(url).get_json()[0]["dishes"]] == ["Lumpia"]
+
+
+def test_only_joiners_add_dishes_and_deleting_an_event_removes_them(users):
+    admin, bob = users[ADMIN_USER], users[BOB_USER]
+    fam = users["_family"]
+    ev = _drawn_event(users)
+    # someone who isn't joining a drawn event can't add dishes to it
+    members = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    from app.models import EventParticipant
+    EventParticipant.query.filter_by(event_id=ev["id"], user_id=next(
+        m["user"]["id"] for m in members if m["user"]["username"] == CARA_USER)).update({"is_participating": False})
+    from app.extensions import db as _db
+    _db.session.commit()
+    r = users[CARA_USER].put(f"/api/events/{ev['id']}/dishes/mine", json={"dishes": ["x"]})
+    assert r.status_code == 403
+
+    bob.put(f"/api/events/{ev['id']}/dishes/mine", json={"dishes": ["Lumpia"]})
+    from app.models import EventDish
+    assert EventDish.query.filter_by(event_id=ev["id"]).count() == 1
+    assert admin.delete(f"/api/events/{ev['id']}").status_code == 200
+    assert EventDish.query.filter_by(event_id=ev["id"]).count() == 0
+
+
+def test_game_master_is_chosen_from_attendees(users):
+    fam, admin, bob, cara = users["_family"], users[ADMIN_USER], users[BOB_USER], users[CARA_USER]
+    members = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    ids = {m["user"]["username"]: m["user"]["id"] for m in members}
+    ev = admin.post(f"/api/families/{fam['id']}/events",
+                    json={"name": "Party", "event_date": future_date()}).get_json()["event"]
+    assert ev["game_master_id"] is None
+    admin.put(f"/api/events/{ev['id']}/participants", json={"user_ids": [ids[ADMIN_USER], ids[BOB_USER]]})
+
+    # only someone who's joining; only the clan admin sets it
+    assert admin.patch(f"/api/events/{ev['id']}", json={"game_master_id": ids[CARA_USER]}).status_code == 400
+    assert admin.patch(f"/api/events/{ev['id']}", json={"game_master_id": "abc"}).status_code == 400
+    assert bob.patch(f"/api/events/{ev['id']}", json={"game_master_id": ids[BOB_USER]}).status_code == 403
+    r = admin.patch(f"/api/events/{ev['id']}", json={"game_master_id": ids[BOB_USER]})
+    assert r.status_code == 200 and r.get_json()["event"]["game_master_id"] == ids[BOB_USER]
+    assert cara.get(f"/api/events/{ev['id']}").get_json()["game_master_id"] == ids[BOB_USER]
+
+    # taking them off the guest list clears it; it can also be cleared directly
+    admin.put(f"/api/events/{ev['id']}/participants", json={"user_ids": [ids[ADMIN_USER]]})
+    assert admin.get(f"/api/events/{ev['id']}").get_json()["game_master_id"] is None
+    admin.put(f"/api/events/{ev['id']}/participants", json={"user_ids": list(ids.values())})
+    admin.patch(f"/api/events/{ev['id']}", json={"game_master_id": ids[CARA_USER]})
+    cleared = admin.patch(f"/api/events/{ev['id']}", json={"game_master_id": None}).get_json()["event"]
+    assert cleared["game_master_id"] is None
+
+    # can be changed after names are drawn (the draw rules stay locked)
+    drawn = _drawn_event(users)
+    r = admin.patch(f"/api/events/{drawn['id']}", json={"game_master_id": ids[CARA_USER]})
+    assert r.status_code == 200 and r.get_json()["event"]["game_master_id"] == ids[CARA_USER]

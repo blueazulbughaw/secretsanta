@@ -217,14 +217,15 @@ function avatarHtml(user, cls) {
 }
 
 // Shared top of every wishlist card: small photo (if any), name, priority,
-// description, and the link last.
-function wishCardBody(item) {
+// description, and the link last. A gift's priority is its place in the list
+// (`rank`, 1 = wanted most), which its owner sets by dragging.
+function wishCardBody(item, rank) {
   return `
     <div class="wish-card-head">
       ${item.photo_url ? wishThumbCell(item) : ""}
       <div class="wish-card-title">
         <strong>${esc(item.item_name)}</strong>
-        <span class="wish-priority">Priority ${item.priority}</span>
+        <span class="wish-priority">Priority ${rank}</span>
       </div>
     </div>
     ${item.description ? `<p class="wish-card-desc">${esc(item.description)}</p>` : ""}
@@ -234,14 +235,14 @@ function wishCardBody(item) {
 // A gift as seen by someone other than its owner: the card, plus whether it's
 // been bought. Owners never get is_purchased for their own items, so their own
 // card just has no purchase footer. Bought cards go light grey (.bought).
-function clanWishCard(item) {
+function clanWishCard(item, index) {
   let footer = "";
   if (item.is_purchased === undefined) footer = "";
   else if (!item.is_purchased) footer = `<button class="btn btn-green" data-buy="${item.id}">I Bought This</button>`;
   else if (item.bought_by_me) footer = `<span class="tag-bought">✓ Bought by you</span><button class="btn btn-quiet" data-buy="${item.id}">Unbought</button>`;
   else footer = `<span class="tag-bought">✓ Already bought</span>`;
   return `<article class="wish-card ${item.is_purchased ? "bought" : ""}">
-    ${wishCardBody(item)}
+    ${wishCardBody(item, index + 1)}
     ${footer ? `<div class="wish-card-actions">${footer}</div>` : ""}
   </article>`;
 }
@@ -259,13 +260,13 @@ function wireBuyButtons() {
 // My Wishlist card (own items): small photo, name/priority, description, link
 // last, then Edit/Delete at the bottom - or a plain sentence once the item is
 // locked (someone bought it). The locked flag is all the owner ever learns.
-function myWishCard(item, eventId) {
+function myWishCard(item, eventId, rank) {
   const footer = item.locked
     ? `<span class="muted wish-locked-msg">Cannot edit this item as it has already been bought.</span>`
     : `<button class="btn btn-secondary" data-edit>Edit</button>
        <button class="btn btn-quiet" data-del>Delete</button>`;
-  const card = h(`<article class="wish-card">
-    ${wishCardBody(item)}
+  const card = h(`<article class="wish-card" data-id="${item.id}">
+    ${wishCardBody(item, rank)}
     <div class="wish-card-actions">${footer}</div>
   </article>`).firstElementChild;
   if (!item.locked) {
@@ -277,6 +278,91 @@ function myWishCard(item, eventId) {
     };
   }
   return card;
+}
+
+// Long-press a card (mouse or finger), then drag it to a new place; `onDrop` gets
+// the cards' data-id values in their new order. A quick tap or a scroll never
+// starts a drag, and the Edit / Delete buttons and links keep working.
+function enableLongPressReorder(grid, onDrop) {
+  const HOLD_MS = 350, MOVE_TOLERANCE = 8, EDGE = 70;
+  let timer = null, dragging = null, ghost = null, start = null, offset = null, pointerId = null;
+  let initialOrder = "", swallowClick = false;
+  const cards = () => [...grid.querySelectorAll(":scope > .wish-card")];
+  const order = () => cards().map(c => c.dataset.id);
+
+  function beginDrag(card) {
+    const r = card.getBoundingClientRect();
+    dragging = card;
+    offset = { x: start.x - r.left, y: start.y - r.top };
+    initialOrder = order().join(",");
+    ghost = card.cloneNode(true);
+    ghost.classList.add("drag-ghost");
+    ghost.style.width = r.width + "px";
+    ghost.style.height = r.height + "px";
+    document.body.append(ghost);
+    card.classList.add("drag-placeholder");
+    document.body.classList.add("dragging-cards");
+    moveGhost(start.x, start.y);
+    if (navigator.vibrate) navigator.vibrate(15);
+  }
+  function moveGhost(x, y) {
+    ghost.style.left = (x - offset.x) + "px";
+    ghost.style.top = (y - offset.y) + "px";
+  }
+  function onMove(e) {
+    if (e.pointerId !== pointerId) return;
+    if (!dragging) {   // moved before the hold finished: that's a scroll or a swipe, not a drag
+      if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > MOVE_TOLERANCE) stop();
+      return;
+    }
+    e.preventDefault();
+    moveGhost(e.clientX, e.clientY);
+    const over = document.elementFromPoint(e.clientX, e.clientY)?.closest(".wish-card");
+    if (over && over !== dragging && over.parentElement === grid) {
+      const all = cards();
+      if (all.indexOf(dragging) < all.indexOf(over)) over.after(dragging); else over.before(dragging);
+    }
+    if (e.clientY < EDGE) window.scrollBy(0, -14);
+    else if (e.clientY > window.innerHeight - EDGE) window.scrollBy(0, 14);
+  }
+  function stop() {
+    clearTimeout(timer); timer = null;
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    window.removeEventListener("pointercancel", onUp);
+    if (dragging) {
+      dragging.classList.remove("drag-placeholder");
+      ghost.remove();
+      document.body.classList.remove("dragging-cards");
+      dragging = ghost = null;
+      swallowClick = true;   // the release can look like a click on a button underneath
+      setTimeout(() => { swallowClick = false; }, 0);
+    }
+  }
+  function onUp(e) {
+    if (e.pointerId !== pointerId) return;
+    const moved = dragging && order().join(",") !== initialOrder;
+    stop();
+    if (moved) onDrop(order());
+  }
+
+  grid.classList.add("reorderable");
+  grid.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    const card = e.target.closest(".wish-card");
+    if (!card || card.parentElement !== grid || e.target.closest(".wish-card-actions, a")) return;
+    pointerId = e.pointerId;
+    start = { x: e.clientX, y: e.clientY };
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    timer = setTimeout(() => { timer = null; beginDrag(card); }, HOLD_MS);
+  });
+  // Once a drag is on, stop the page from scrolling under the finger; no menu / image drag.
+  grid.addEventListener("touchmove", (e) => { if (dragging) e.preventDefault(); }, { passive: false });
+  grid.addEventListener("contextmenu", (e) => { if (timer || dragging) e.preventDefault(); });
+  grid.addEventListener("dragstart", (e) => e.preventDefault());
+  grid.addEventListener("click", (e) => { if (swallowClick) { e.stopPropagation(); e.preventDefault(); } }, true);
 }
 
 function annRowReadOnly(a) {
@@ -738,14 +824,95 @@ route(/^\/$/, async () => {
   });
 });
 
+// Dish sign-up card on the event page. It opens once names are drawn; each person
+// has ONE entry that can hold several dishes, which they can edit or remove.
+const MAX_DISHES = 10;
+function mountDishes(el, ev, initial) {
+  let entries = initial;
+  const canEdit = ev.i_am_participating && ev.status === "matched";
+  const mineEntry = () => entries.find(e => e.user.id === ME.user.id);
+  const msg = (html) => { el.querySelector("#dishMsg").innerHTML = html; };
+
+  function view() {
+    let body;
+    if (ev.status === "open") {
+      body = `<p class="muted" style="margin:0">Dish sign-up opens once names are drawn.</p>`;
+    } else {
+      const list = entries.length ? `<ul class="dish-list">${entries.map(e => `
+        <li class="dish-entry">
+          <a class="person-link" href="#/events/${ev.id}/clan/${e.user.id}">${avatarHtml(e.user, "avatar-sm")}<span>${esc(e.user.display_name)}${e.user.id === ME.user.id ? ` <span class="muted">(you)</span>` : ""}</span></a>
+          <div class="dish-chips">${e.dishes.map(d => `<span class="dish-chip">${esc(d.name)}</span>`).join("")}</div>
+          ${canEdit && e.user.id === ME.user.id ? `<div class="dish-entry-actions">
+            <button class="btn btn-secondary" data-edit-dishes>Edit</button>
+            <button class="btn btn-quiet" data-remove-dishes>Remove</button></div>` : ""}
+        </li>`).join("")}</ul>`
+        : `<p class="muted" style="margin:0 0 .6rem">No one has added a dish yet.</p>`;
+      body = list + (canEdit && !mineEntry()
+        ? `<button class="btn btn-primary" style="width:auto;margin-bottom:0" data-edit-dishes>Add My Dishes</button>` : "");
+    }
+    el.innerHTML = `<h2>Dishes to bring</h2><div id="dishMsg"></div>${body}`;
+    el.querySelectorAll("[data-edit-dishes]").forEach(b => b.onclick = editor);
+    const remove = el.querySelector("[data-remove-dishes]");
+    if (remove) remove.onclick = async () => {
+      if (!confirm("Remove all of your dishes from the list?")) return;
+      try { entries = await api.del(`/events/${ev.id}/dishes/mine`); view(); }
+      catch (e) { msg(alertBox(e.message)); }
+    };
+  }
+
+  function editor() {
+    const mine = mineEntry();
+    el.innerHTML = `
+      <h2>${mine ? "Edit my dishes" : "What are you bringing?"}</h2>
+      <div id="dishMsg"></div>
+      <div id="dishRows"></div>
+      <button type="button" class="btn btn-quiet" style="width:auto" id="addDishRow">+ Add another dish</button>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="saveDishes">Save</button>
+        <button class="btn btn-quiet" id="cancelDishes">Cancel</button>
+      </div>`;
+    const rows = el.querySelector("#dishRows");
+    const addBtn = el.querySelector("#addDishRow");
+    const sync = () => {   // keep one row at least, and cap how many
+      addBtn.hidden = rows.children.length >= MAX_DISHES;
+      rows.querySelectorAll(".icon-btn").forEach(b => { b.hidden = rows.children.length === 1; });
+    };
+    const addRow = (value = "") => {
+      const row = h(`<div class="dish-row"><input maxlength="120" aria-label="Dish name" value="${esc(value)}"><button type="button" class="icon-btn" aria-label="Remove this dish">✕</button></div>`).firstElementChild;
+      row.querySelector(".icon-btn").onclick = () => { row.remove(); sync(); };
+      row.querySelector("input").onkeydown = (e) => {   // Enter starts the next dish
+        if (e.key !== "Enter") return;
+        e.preventDefault();
+        if (e.target.value.trim() && rows.children.length < MAX_DISHES) addRow().querySelector("input").focus();
+      };
+      rows.append(row);
+      sync();
+      return row;
+    };
+    (mine ? mine.dishes.map(d => d.name) : [""]).forEach(name => addRow(name));
+    rows.querySelector("input").focus();
+    addBtn.onclick = () => addRow().querySelector("input").focus();
+    el.querySelector("#cancelDishes").onclick = view;
+    el.querySelector("#saveDishes").onclick = async () => {
+      const dishes = [...rows.querySelectorAll("input")].map(i => i.value.trim()).filter(Boolean);
+      if (!dishes.length) return msg(alertBox("Please type a dish, or press Cancel."));
+      try { entries = await api.put(`/events/${ev.id}/dishes/mine`, { dishes }); view(); }
+      catch (e) { msg(alertBox(e.message)); }
+    };
+  }
+  view();
+}
+
 // The event page any clan member can open: what/where/when, the rules the clan
 // admin set, and who's coming (each row opens that person's profile).
 route(/^\/events\/(\d+)$/, async (id) => {
-  const [ev, people] = await Promise.all([
-    api.get(`/events/${id}`), api.get(`/events/${id}/attendees`),
+  const [ev, people, dishes] = await Promise.all([
+    api.get(`/events/${id}`), api.get(`/events/${id}/attendees`), api.get(`/events/${id}/dishes`),
   ]);
   const st = eventStatus(ev);
+  const gm = people.find(u => u.id === ev.game_master_id);
   const extras = [
+    detailRow("Game master", gm ? `<a class="person-link" href="#/events/${id}/clan/${gm.id}">${esc(gm.display_name)}</a>` : ""),
     detailRow("Theme", esc(ev.theme)),
     detailRow("Gift amount", ev.budget_amount ? `${esc(ev.budget_currency)} ${ev.budget_amount}` : ""),
     detailRow("Rules", esc(ev.rules)),
@@ -770,6 +937,7 @@ route(/^\/events\/(\d+)$/, async (id) => {
         <button class="btn btn-quiet" onclick="go('/admin/events/${id}')">Manage Gift Exchange</button>
       </div>` : ""}
     </section>
+    <section class="card" id="dishCard"></section>
     <section class="card">
       <h2>Who's coming (${people.length})</h2>
       ${people.length
@@ -777,6 +945,7 @@ route(/^\/events\/(\d+)$/, async (id) => {
         : `<p class="muted" style="margin:0">No one has been added to this gift exchange yet.</p>`}
     </section>
   `, { wide: true });
+  mountDishes(document.getElementById("dishCard"), ev, dishes);
 });
 
 route(/^\/events\/(\d+)\/my-person$/, async (id) => {
@@ -803,12 +972,22 @@ route(/^\/events\/(\d+)\/wishlist$/, async (id) => {
       <p class="muted" style="margin:0">${d.items.length} of ${d.limit} gifts${full ? " — your list is full" : ""}</p>
       ${full ? "" : `<button class="btn btn-primary" style="width:auto;margin:0" id="newWishBtn">+ Add a Gift Idea</button>`}
     </div>
+    ${d.items.length > 1 ? `<p class="muted" style="margin-top:0">Press and hold a gift, then drag it to change its priority. The gift at the top is the one you want most.</p>` : ""}
     ${d.items.length
       ? `<div class="wish-grid" id="myWishGrid"></div>`
       : `<div class="card"><p class="muted" style="margin:0">Your list is empty. Add your first gift idea!</p></div>`}
   `);
   const grid = document.getElementById("myWishGrid");
-  if (grid) d.items.forEach(i => grid.append(myWishCard(i, id)));
+  if (grid) {
+    d.items.forEach((i, n) => grid.append(myWishCard(i, id, n + 1)));
+    if (d.items.length > 1) enableLongPressReorder(grid, async (order) => {
+      grid.querySelectorAll(".wish-priority").forEach((el, n) => { el.textContent = `Priority ${n + 1}`; });
+      try {
+        await api.put(`/events/${id}/wishlists/order`, { item_ids: order.map(Number) });
+        document.getElementById("msg").innerHTML = alertBox("Order saved!", true);
+      } catch (e) { showError(e); navigate(); }
+    });
+  }
   const newBtn = document.getElementById("newWishBtn");
   if (newBtn) newBtn.onclick = () => go(`/events/${id}/wishlist/new`);
 });
@@ -816,19 +995,14 @@ route(/^\/events\/(\d+)\/wishlist$/, async (id) => {
 // Add / edit share one form; `item` is null when adding.
 function renderWishForm(eventId, d, item) {
   const editing = !!item;
-  const selected = editing ? item.priority : Math.min(3, d.limit);
-  const priorityOptions = Array.from({ length: d.limit }, (_, n) => n + 1)
-    .map(n => `<option value="${n}" ${n === selected ? "selected" : ""}>${n}</option>`).join("");
   render(editing ? "Edit Gift Idea" : "Add a Gift Idea", `
     <div id="msg"></div>
     <label for="iname">What would you love?</label>
     <input id="iname" value="${esc(editing ? item.item_name : "")}">
     <label for="idesc">Anything else they should know? <span class="muted">(optional)</span></label>
-    <input id="idesc" value="${esc(editing ? item.description || "" : "")}">
+    <textarea id="idesc" rows="4" maxlength="1000">${esc(editing ? item.description || "" : "")}</textarea>
     <label for="ilink">Link to it online <span class="muted">(optional)</span></label>
     <input id="ilink" type="text" inputmode="url" autocapitalize="none" autocomplete="off" spellcheck="false" value="${esc(editing ? item.link_url || "" : "")}">
-    <label for="ipriority">Priority</label>
-    <select id="ipriority">${priorityOptions}</select>
     <label for="iphoto">${editing && item.photo_url ? "Replace photo" : "Photo"} <span class="muted">(optional, up to ${MAX_PHOTO_MB}MB)</span></label>
     ${editing && item.photo_url ? `<div style="margin-bottom:.4rem">${wishThumbCell(item)}</div>` : ""}
     <input id="iphoto" type="file" accept="image/*">
@@ -855,7 +1029,6 @@ function renderWishForm(eventId, d, item) {
       fd.append("item_name", document.getElementById("iname").value);
       fd.append("description", document.getElementById("idesc").value);
       fd.append("link_url", link);
-      fd.append("priority", document.getElementById("ipriority").value);
       if (photo) fd.append("photo", photo);
       if (editing) await api.patchForm(`/wishlists/${item.id}`, fd);
       else await api.postForm(`/events/${eventId}/wishlists`, fd);
@@ -1447,6 +1620,8 @@ async function renderEventForm(ev) {
     <input id="eplace" maxlength="255" value="${esc(editing ? ev.location : "")}">
     <label for="etheme">Theme <span class="muted">(optional)</span></label>
     <input id="etheme" maxlength="120" value="${esc(editing ? ev.theme : "")}">
+    <label for="egm">Game master <span class="muted">(optional, one of the people joining)</span></label>
+    <select id="egm"></select>
     <label for="ebudget">Gift amount <span class="muted">(optional)</span></label>
     <input id="ebudget" type="number" inputmode="decimal" value="${esc(editing && ev.budget_amount ? ev.budget_amount : "")}">
 
@@ -1482,10 +1657,23 @@ async function renderEventForm(ev) {
   `, { wide: true, card: true });
 
   const boxes = () => [...$app.querySelectorAll("[data-uid]")];
+  // The game master menu lists only the people who are joining, and follows the checkboxes.
+  let gmValue = editing && ev.game_master_id ? String(ev.game_master_id) : "";
+  const gmSelect = document.getElementById("egm");
+  gmSelect.onchange = () => { gmValue = gmSelect.value; };
+  const fillGameMaster = (ids) => {
+    gmSelect.innerHTML = `<option value="">No game master</option>` + people
+      .filter(m => ids.has(m.user.id))
+      .map(m => `<option value="${m.user.id}">${esc(m.user.display_name)}</option>`).join("");
+    gmSelect.value = ids.has(Number(gmValue)) ? gmValue : "";
+    gmValue = gmSelect.value;
+  };
+  if (locked) fillGameMaster(joining);
   if (!locked) {
     const updateCount = () => {
       const n = boxes().filter(c => c.checked).length;
       document.getElementById("joinCount").textContent = `${n} of ${boxes().length} joining`;
+      fillGameMaster(new Set(boxes().filter(c => c.checked).map(c => Number(c.dataset.uid))));
     };
     $app.querySelector(".people-picker").addEventListener("change", updateCount);
     document.getElementById("pickAll").onclick = () => { boxes().forEach(c => c.checked = true); updateCount(); };
@@ -1516,17 +1704,21 @@ async function renderEventForm(ev) {
     const ids = boxes().filter(c => c.checked).map(c => Number(c.dataset.uid));
     try {
       if (editing) {
-        await api.patch(`/events/${ev.id}`, body);
+        // Who's joining first, so the game master can be someone just added.
         if (!locked) await api.put(`/events/${ev.id}/participants`, { user_ids: ids });
+        body.game_master_id = gmValue ? Number(gmValue) : null;
+        await api.patch(`/events/${ev.id}`, body);
         await refreshCurrentEvent();
         return go(`/admin/events/${ev.id}`);
       }
       const r = await api.post(`/families/${FAMILY.id}/events`, body);
       const newId = r.event.id;
-      try { await api.put(`/events/${newId}/participants`, { user_ids: ids }); }
-      catch (e) {
+      try {
+        await api.put(`/events/${newId}/participants`, { user_ids: ids });
+        if (gmValue) await api.patch(`/events/${newId}`, { game_master_id: Number(gmValue) });
+      } catch (e) {
         await refreshCurrentEvent();
-        window.alert(`The gift exchange was created, but saving who's joining failed: ${e.message}`);
+        window.alert(`The gift exchange was created, but saving who's joining (or the game master) failed: ${e.message}`);
         return go(`/admin/events/${newId}/edit`);
       }
       await refreshCurrentEvent();

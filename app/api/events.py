@@ -4,7 +4,7 @@ from flask import Blueprint, request, jsonify, g
 
 from ..extensions import db
 from ..models import (Event, EventParticipant, FamilyMember, Assignment, WishlistItem,
-                      Message, Announcement)
+                      Message, Announcement, EventDish)
 from ..services.photo_service import remove_photo
 from ..middleware.auth import require_auth, require_family_member, require_family_admin
 
@@ -133,6 +133,21 @@ def update_event(event_id):
     bad_time = _apply_details(ev, data)
     if bad_time:
         return jsonify({"error": bad_time}), 400
+    if "game_master_id" in data:
+        # The game master is picked from the people joining, and can change after the draw.
+        raw = data["game_master_id"]
+        if raw in (None, ""):
+            ev.game_master_id = None
+        else:
+            try:
+                gm = int(raw)
+            except (TypeError, ValueError):
+                return jsonify({"error": "Please choose the game master from the list."}), 400
+            if not EventParticipant.query.filter_by(event_id=ev.id, user_id=gm,
+                                                    is_participating=True).first():
+                return jsonify({"error": "The game master has to be someone who's joining "
+                                         "this gift exchange."}), 400
+            ev.game_master_id = gm
     db.session.commit()
     return jsonify({"ok": True, "event": ev.to_dict()})
 
@@ -151,7 +166,7 @@ def delete_event(event_id):
         return jsonify({"error": "This gift exchange has already happened, so it's kept as a record "
                                  "and can't be deleted."}), 400
     photos = [i.photo_path for i in WishlistItem.query.filter_by(event_id=ev.id).all()]
-    for model in (Message, Assignment, WishlistItem, EventParticipant, Announcement):
+    for model in (Message, Assignment, WishlistItem, EventParticipant, Announcement, EventDish):
         model.query.filter_by(event_id=ev.id).delete()
     db.session.delete(ev)
     db.session.commit()
@@ -231,6 +246,8 @@ def set_participants(event_id):
     for uid, p in existing.items():
         if uid not in user_ids:
             p.is_participating = False
+    if ev.game_master_id and ev.game_master_id not in user_ids:
+        ev.game_master_id = None  # the game master must be someone who's joining
     db.session.commit()
     return jsonify({"ok": True, "count": len(user_ids)})
 
@@ -247,5 +264,7 @@ def opt_out(event_id):
     if p:
         p.is_participating = False
         p.opted_out_at = datetime.utcnow()
+        if ev.game_master_id == g.user.id:
+            ev.game_master_id = None
         db.session.commit()
     return jsonify({"ok": True})

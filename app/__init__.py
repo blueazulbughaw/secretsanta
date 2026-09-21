@@ -20,9 +20,10 @@ def create_app(config_object=None):
     from .api.messages import bp as messages_bp
     from .api.announcements import bp as announcements_bp
     from .api.notifications import bp as notifications_bp
+    from .api.dishes import bp as dishes_bp
 
     for bp in (auth_bp, families_bp, households_bp, events_bp, assignments_bp,
-               wishlists_bp, messages_bp, announcements_bp, notifications_bp):
+               wishlists_bp, messages_bp, announcements_bp, notifications_bp, dishes_bp):
         app.register_blueprint(bp, url_prefix="/api")
 
     @app.route("/privacy_terms")

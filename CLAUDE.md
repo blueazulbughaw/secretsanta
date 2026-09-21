@@ -42,6 +42,14 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   profile photos cropped to a 512px square. Tests must upload real images.
 - Only gift exchanges that haven't happened yet (today or later, not marked done) can be
   deleted; past/completed ones are kept as a record.
+- Wishlist priority is the order of the cards: no priority field anywhere; the owner
+  long-presses a card on My Wishlist and drags it (`enableLongPressReorder`, saved with
+  PUT /events/:id/wishlists/order). Everyone else sees that order, labelled Priority 1, 2...
+  New gifts go to the bottom. "Anything else they should know?" is multiline.
+- Event page extras: a Game master row (clan admin picks ONE attendee on the event form;
+  editable after the draw) and a "Dishes to bring" card. Dish sign-up opens only once names
+  are drawn (status matched) and closes when the event is done; each attendee has ONE entry
+  holding up to 10 dishes, which they can edit or remove (PUT/DELETE /events/:id/dishes/mine).
 - Profile: photo, about me, likes, favorite color, "what not to give me" live on
   `users` (PATCH /auth/me + /auth/me/photo) and are shown to the clan as an ID-style
   card on `/events/:id/clan/:userId` (photo beside details, wishlist cards below).

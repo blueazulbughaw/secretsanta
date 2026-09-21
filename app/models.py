@@ -118,6 +118,7 @@ class Event(db.Model):
     rules = db.Column(db.Text)
     what_to_bring = db.Column(db.Text)
     other_info = db.Column(db.Text)
+    game_master_id = db.Column(db.BigInteger, db.ForeignKey("users.id", ondelete="SET NULL"))
     budget_amount = db.Column(db.Numeric(10, 2))
     budget_currency = db.Column(db.String(3), nullable=False, default="USD")
     wishlist_limit = db.Column(db.SmallInteger, nullable=False, default=5)
@@ -138,6 +139,7 @@ class Event(db.Model):
             "rules": self.rules or "",
             "what_to_bring": self.what_to_bring or "",
             "other_info": self.other_info or "",
+            "game_master_id": self.game_master_id,
             "budget_amount": float(self.budget_amount) if self.budget_amount else None,
             "budget_currency": self.budget_currency,
             "wishlist_limit": self.wishlist_limit,
@@ -180,6 +182,19 @@ class Assignment(db.Model):
         db.UniqueConstraint("event_id", "receiver_id", name="uq_receiver_per_event"),
         db.CheckConstraint("giver_id <> receiver_id", name="chk_no_self"),
     )
+
+
+class EventDish(db.Model):
+    """One dish someone is bringing to one event. A person's dishes for an event
+    (all rows with their user_id) are their single sign-up entry."""
+    __tablename__ = "event_dishes"
+    id = db.Column(BigIntPK, primary_key=True)
+    event_id = db.Column(db.BigInteger, db.ForeignKey("events.id", ondelete="CASCADE"),
+                         nullable=False, index=True)
+    user_id = db.Column(db.BigInteger, db.ForeignKey("users.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 
 class WishlistItem(db.Model):

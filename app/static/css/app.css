@@ -306,7 +306,7 @@ table.data td.wrap-cell { overflow: visible; white-space: normal; }
 .wish-card .wish-thumb { width: 56px; height: 56px; }
 .wish-card-title { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
 .wish-priority { font-size: .78rem; color: var(--muted); }
-.wish-card-desc { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+.wish-card-desc { margin: 0; color: var(--ink); overflow-wrap: anywhere; white-space: pre-line; }
 .wish-link { font-size: .9rem; font-weight: 600; color: var(--red); overflow-wrap: anywhere; }
 .wish-card-actions {
   display: flex; gap: .5rem; flex-wrap: wrap; align-items: center;
@@ -483,4 +483,34 @@ a.notif-card p { margin: .2rem 0; }
   position: absolute; top: 1rem; right: 1rem; min-height: 44px; min-width: 44px;
   background: rgba(0,0,0,.5); color: #fff; border: none; border-radius: 50%;
   font-size: 1.2rem; cursor: pointer;
+}
+
+/* My Wishlist: long-press a card, then drag it to change its priority */
+.wish-grid.reorderable .wish-card {
+  cursor: grab; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+.wish-grid.reorderable .wish-card img { -webkit-user-drag: none; }
+.wish-card.drag-placeholder { opacity: .35; }
+.wish-card.drag-ghost {
+  position: fixed; z-index: 60; margin: 0; pointer-events: none;
+  box-shadow: 0 12px 32px rgba(0,0,0,.28); transform: scale(1.03);
+}
+body.dragging-cards, body.dragging-cards * { cursor: grabbing !important; }
+
+/* Event page: dish sign-up */
+.dish-list { list-style: none; margin: 0 0 .8rem; padding: 0; }
+.dish-entry { padding: .7rem 0; border-bottom: 1px solid var(--line); }
+.dish-entry:last-child { border-bottom: none; }
+.dish-chips, .dish-entry-actions { margin-left: calc(36px + .6rem); }
+.dish-chips { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .45rem; }
+.dish-chip {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 999px;
+  padding: .2rem .75rem; font-size: .88rem; overflow-wrap: anywhere;
+}
+.dish-entry-actions { display: flex; gap: .5rem; margin-top: .55rem; }
+.dish-entry-actions .btn { width: auto; min-height: 36px; margin: 0; }
+.dish-row { display: flex; align-items: center; gap: .4rem; max-width: 480px; margin-bottom: .5rem; }
+.dish-row input { flex: 1 1 auto; }
+@media (max-width: 640px) {
+  .dish-chips, .dish-entry-actions { margin-left: 0; }
 }
