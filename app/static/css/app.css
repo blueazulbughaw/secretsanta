@@ -64,6 +64,10 @@ main#app { flex: 1 1 auto; min-width: 0; padding: 1.25rem 1.5rem; max-width: 640
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
   margin: 1.5rem auto; padding: 1.5rem;
 }
+/* ...and everything in that card - labels, fields, buttons - spans the whole card */
+#shell:not(.authed) main#app label, #shell:not(.authed) main#app input,
+#shell:not(.authed) main#app textarea, #shell:not(.authed) main#app select,
+#shell:not(.authed) main#app .btn, #shell:not(.authed) main#app .password-field { max-width: none; }
 
 /* My Dashboard sections are cards; the giftee block is a heading over a
    grid of gift cards */
