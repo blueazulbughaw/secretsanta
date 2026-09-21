@@ -10,6 +10,7 @@
   --line: #E0E0E0;
   --radius: 8px;
   --touch: 44px;
+  --topbar-h: 56px;
 }
 
 * { box-sizing: border-box; }
@@ -29,6 +30,7 @@ header#topbar {
   display: flex; align-items: center; gap: .5rem;
   padding: .6rem 1rem; border-bottom: 1px solid var(--line);
   position: sticky; top: 0; background: var(--bg); z-index: 5;
+  height: var(--topbar-h);
 }
 #pageTitle { flex: 1; font-size: 1.05rem; margin: 0; text-align: center; font-weight: 600; }
 .icon-btn {
@@ -48,23 +50,29 @@ header#topbar {
    individual form controls are capped to a comfortable width instead. Pages
    with no sidebar yet (sign in, registration, onboarding) stay centered,
    like a normal login screen. */
-#shell { display: flex; align-items: flex-start; }
+#shell { display: flex; align-items: flex-start; min-height: calc(100vh - var(--topbar-h)); min-height: calc(100dvh - var(--topbar-h)); }
 main#app { flex: 1 1 auto; min-width: 0; padding: 1.25rem 1.5rem; max-width: 640px; margin: 0 auto; }
-#shell.authed main#app { max-width: 1100px; margin: 0; }
-#shell.authed main#app.wide { max-width: 1320px; }
+#shell.authed main#app { max-width: none; margin: 0; }
 
 /* My Dashboard — flat sections, no card boxes */
 .dash-section { padding: .6rem 0; border-bottom: 1px solid var(--line); }
 .dash-section:last-child { border-bottom: none; }
 .dash-section h2 { margin: 0 0 .35rem; }
 
-#menuBtn { display: none; }
+#menuBtn { display: inline-flex; align-items: center; justify-content: center; font-size: 1.25rem; }
 #sidebarOverlay { display: none; }
 
+/* Desktop: the sidebar spans the full height beside the content and sticks
+   under the top bar while the page scrolls. The menu button collapses it so
+   the content takes the whole width (remembered between visits). */
 nav#sidebar {
   flex: 0 0 220px; background: #1d2327;
   display: flex; flex-direction: column;
+  position: sticky; top: var(--topbar-h);
+  height: calc(100vh - var(--topbar-h)); height: calc(100dvh - var(--topbar-h));
+  overflow-y: auto;
 }
+#shell.sidebar-collapsed nav#sidebar { display: none; }
 .sidebar-brand {
   color: #fff; font-weight: 700; font-size: 1rem;
   padding: .9rem 1.1rem .7rem; border-bottom: 1px solid #32373c; margin-bottom: .3rem;
@@ -89,23 +97,36 @@ nav#sidebar {
   border-top: 1px solid #32373c; padding-top: .9rem;
 }
 
+/* Mobile: the sidebar becomes an off-canvas drawer opened by the menu button
+   (the collapsed flag is a desktop-only preference, so it's ignored here). */
 @media (max-width: 780px) {
-  #menuBtn { display: inline-flex; align-items: center; justify-content: center; }
   #shell { display: block; }
-  nav#sidebar {
-    position: fixed; top: 0; left: 0; bottom: 0; width: 260px; max-width: 82vw;
+  nav#sidebar, #shell.sidebar-collapsed nav#sidebar {
+    display: flex; position: fixed; top: 0; left: 0; bottom: 0; height: auto;
+    width: 260px; max-width: 82vw;
     z-index: 20; transform: translateX(-100%); transition: transform .22s ease;
-    box-shadow: 2px 0 16px rgba(0,0,0,.35); overflow-y: auto;
+    overflow-y: auto;
   }
-  nav#sidebar.open { transform: translateX(0); }
+  nav#sidebar.open { transform: translateX(0); box-shadow: 2px 0 16px rgba(0,0,0,.35); }
   #sidebarOverlay.open {
     display: block; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 15;
   }
+  body.drawer-open { overflow: hidden; }
   main#app { width: 100%; padding: 1rem; }
+
+  /* Comfortable tap targets; 16px form text stops iOS zooming in on focus */
+  .icon-btn { min-height: var(--touch); min-width: var(--touch); }
+  .nav-link { padding: .85rem 1.1rem; }
+  input, textarea, select { font-size: 16px; }
+  .btn, .card-btn { max-width: none; }
+  label { max-width: none; }
+  input, textarea, select, .password-field { max-width: none; }
 }
 
-/* Data table (admin views) */
-.table-wrap { width: 100%; overflow-x: auto; }
+/* Data table (admin views). The wrapper is a size container so the table
+   stacks based on the room it actually has (sidebar open or collapsed), not
+   just the screen width. */
+.table-wrap { width: 100%; overflow-x: auto; container-type: inline-size; }
 table.data { width: 100%; border-collapse: collapse; font-size: .85rem; table-layout: fixed; }
 table.data tr { border-bottom: 1px solid var(--line); }
 table.data th, table.data td {
@@ -131,7 +152,7 @@ table.data .table-actions button {
 }
 
 /* Below this width, columns get too cramped to read — stack each row as a card instead */
-@media (max-width: 700px) {
+@container (max-width: 760px) {
   table.data thead { display: none; }
   table.data, table.data tbody, table.data tr, table.data td { display: block; width: 100%; }
   table.data { border: none; }
@@ -149,9 +170,9 @@ table.data .table-actions button {
     text-transform: uppercase; letter-spacing: .03em; margin-bottom: .2rem;
   }
   table.data td input:not([type=checkbox]) {
-    white-space: normal; text-overflow: clip; min-height: var(--touch); font-size: .9rem;
+    white-space: normal; text-overflow: clip; min-height: var(--touch); font-size: 16px;
   }
-  table.data td select { min-height: var(--touch); font-size: .9rem; }
+  table.data td select { min-height: var(--touch); font-size: 16px; }
   table.data .table-actions { padding-top: .25rem; }
   table.data .table-actions button { flex: 1 1 auto; min-height: var(--touch); }
 }

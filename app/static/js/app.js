@@ -119,8 +119,40 @@ function renderSidebar(activePath) {
   };
   $sidebar.querySelectorAll("a.nav-link").forEach(a => a.addEventListener("click", closeSidebar));
 }
-function openSidebar() { $sidebar.classList.add("open"); $sidebarOverlay.classList.add("open"); }
-function closeSidebar() { $sidebar.classList.remove("open"); $sidebarOverlay.classList.remove("open"); }
+// Two modes, one menu button: on phones the sidebar is an off-canvas drawer
+// (open/close); on desktop it collapses so the content fills the whole page,
+// and that choice is remembered.
+const MOBILE_MQ = window.matchMedia("(max-width: 780px)");
+function syncMenuBtn() {
+  const expanded = MOBILE_MQ.matches
+    ? $sidebar.classList.contains("open")
+    : !$shell.classList.contains("sidebar-collapsed");
+  $menuBtn.setAttribute("aria-expanded", expanded ? "true" : "false");
+}
+function openSidebar() {
+  $sidebar.classList.add("open"); $sidebarOverlay.classList.add("open");
+  document.body.classList.add("drawer-open"); syncMenuBtn();
+}
+function closeSidebar() {
+  $sidebar.classList.remove("open"); $sidebarOverlay.classList.remove("open");
+  document.body.classList.remove("drawer-open"); syncMenuBtn();
+}
+function setSidebarCollapsed(collapsed) {
+  $shell.classList.toggle("sidebar-collapsed", collapsed);
+  try { localStorage.setItem("sidebarCollapsed", collapsed ? "1" : "0"); } catch (_) {}
+  syncMenuBtn();
+}
+function toggleSidebar() {
+  if (MOBILE_MQ.matches) $sidebar.classList.contains("open") ? closeSidebar() : openSidebar();
+  else setSidebarCollapsed(!$shell.classList.contains("sidebar-collapsed"));
+}
+function restoreSidebarState() {
+  let collapsed = false;
+  try { collapsed = localStorage.getItem("sidebarCollapsed") === "1"; } catch (_) {}
+  $shell.classList.toggle("sidebar-collapsed", collapsed);
+  syncMenuBtn();
+}
+MOBILE_MQ.addEventListener("change", closeSidebar);
 
 function openLightbox(url) { $lightboxImg.src = url; $lightbox.hidden = false; }
 function closeLightbox() { $lightbox.hidden = true; $lightboxImg.src = ""; }
@@ -285,7 +317,8 @@ async function navigate() {
 window.addEventListener("hashchange", navigate);
 $back.onclick = () => history.back();
 $bell.onclick = () => go("/notifications");
-$menuBtn.onclick = () => { $sidebar.classList.contains("open") ? closeSidebar() : openSidebar(); };
+$menuBtn.onclick = toggleSidebar;
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSidebar(); });
 $sidebarOverlay.onclick = closeSidebar;
 
 // ---------- boot ----------
@@ -302,6 +335,7 @@ async function boot() {
     $sidebar.hidden = false;
     $menuBtn.hidden = false;
     $shell.classList.add("authed");
+    restoreSidebarState();
     refreshBadge();
     navigate();
   } catch (_) {
