@@ -64,6 +64,9 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   user-typed URL in an href.
 - Photos: real images only (Pillow), 8MB upload cap, gift photos shrunk to 1200px,
   profile photos cropped to a 512px square. Tests must upload real images.
+- Add a member has every field the edit row has (Display Name, Username, Phone, Email,
+  Household, Clan admin). Joining is only ever set on the event - the Members table has no
+  Joining column.
 - Add member / Add household are one-line cards on a desktop (`.inline-form`; stacked on a
   phone) above their tables.
 - Admin pages with a list (Members, Households, Announcements): the add/post form card
@@ -74,10 +77,12 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   list, event page, attendees, dishes, messages, wishlists and profiles-in-event are limited to
   events they're in (`require_event_access` in middleware/auth.py - use it for every new
   event-scoped endpoint). There is no "My Clan" page or link: the people in an event are on that
-  event's page / Clan & Wishlists. The sidebar's My Wishlist and My Messages are event-aware
-  (`/wishlist`, `/messages`): one event -> straight to it, several -> choose, none -> the
-  "You're not joining any upcoming events right now. If that doesn't look right, please
-  contact your clan admin." message (also shown on the dashboard). Only the admin's Manage My
+  event's page / Clan & Wishlists. The sidebar has no per-event items
+  (My Wishlist / My Messages are gone, they were ambiguous with several events): every event on
+  the dashboard has its own My Wishlist, Message My Giftee, Message My Secret Santa and View
+  Event Details, and the event page has My Wishlist / View My Messages / View Clan & Wishlists.
+  A member with no upcoming events sees "You're not joining any upcoming events right now. If
+  that doesn't look right, please contact your clan admin." on the dashboard. Only the admin's Manage My
   Clan lists every member.
 - Wording: always say "event". Never "gift exchange" (user-facing text, errors, docs).
 - There is no separate admin page for a single event. The event page (`/events/:id`) is the

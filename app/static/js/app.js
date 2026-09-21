@@ -15,7 +15,6 @@ const $lightboxClose = document.getElementById("lightboxClose");
 
 let ME = null;          // { user, families }
 let FAMILY = null;      // active family {id, name, role}
-let CURRENT_EVENT = null; // the family's active (non completed/cancelled) event, or null
 let PENDING_JOIN_CODE = null;
 let IS_REGISTER_ENTRY = false;
 
@@ -84,8 +83,6 @@ function render(title, html, { wide = false, card = false } = {}) {
 
 const NAV = [
   { key: "dashboard", label: "My Dashboard", href: "/" },
-  { key: "wishlist", label: "My Wishlist", href: "/wishlist" },
-  { key: "messages", label: "My Messages", href: "/messages" },
   { key: "past", label: "Past Events", href: "/past" },
   { key: "admin", label: "Manage My Clan", href: "/admin", adminOnly: true, children: [
     { key: "members", href: "/admin/members", label: "Members" },
@@ -96,13 +93,8 @@ const NAV = [
   { key: "security", label: "Profile & Security", href: "/security" },
 ];
 
-async function refreshCurrentEvent() {
-  const events = await api.get(`/families/${FAMILY.id}/events`);
-  CURRENT_EVENT = events.find(e => e.status !== "completed" && e.status !== "cancelled") || null;
-}
-
 function navHref(item) {
-  return item.eventPath ? (CURRENT_EVENT ? `/events/${CURRENT_EVENT.id}/${item.eventPath}` : null) : item.href;
+  return item.href;
 }
 function navChildHtml(item, activePath) {
   const href = navHref(item);
@@ -408,9 +400,7 @@ const routes = [];
 function route(pattern, fn) { routes.push({ pattern, fn }); }
 async function navigate() {
   const path = location.hash.replace(/^#/, "") || "/";
-  renderSidebar(path.replace(/^\/events\/\d+\/wishlist(\/.*)?$/, "/wishlist")
-    .replace(/^\/events\/\d+\/messages(\/.*)?$/, "/messages")
-    .replace(/^\/events\/\d+(\/clan(\/.*)?)?$/, "/")
+  renderSidebar(path.replace(/^\/events\/\d+(\/.*)?$/, "/")
     .replace(/^\/members\/\d+$/, "/admin")
     .replace(/^(\/admin\/events)\/.+$/, "$1"));
   closeSidebar();
@@ -436,7 +426,6 @@ async function boot() {
     if (ME.needs_security_setup) return pageSecuritySetup(true);
     if (ME.families.length === 0) return pageNoFamily();
     FAMILY = ME.families[0];
-    await refreshCurrentEvent();
     $sidebar.hidden = false;
     $menuBtn.hidden = false;
     $shell.classList.add("authed");
@@ -800,10 +789,12 @@ function dashEventBlock(e, d) {
         <dt>Date</dt><dd>${esc(fmtEventDate(e.event_date))}</dd>
         ${e.theme ? `<dt>Theme</dt><dd>${esc(e.theme)}</dd>` : ""}
       </dl>
-      ${d && d.assigned ? `<div class="event-actions">
+      <div class="event-actions">
+        <button class="btn btn-outline" onclick="go('/events/${e.id}/wishlist')">My Wishlist</button>
+        ${d && d.assigned ? `
         <button class="btn btn-outline" onclick="go('/events/${e.id}/messages/giftee')">Message My Giftee</button>
-        <button class="btn btn-outline" onclick="go('/events/${e.id}/messages/giver')">Message My Secret Santa</button>
-      </div>` : ""}
+        <button class="btn btn-outline" onclick="go('/events/${e.id}/messages/giver')">Message My Secret Santa</button>` : ""}
+      </div>
       <button class="btn btn-secondary btn-block" onclick="go('/events/${e.id}')">View Event Details</button>
     </div>`;
 }
@@ -835,14 +826,13 @@ route(/^\/$/, async () => {
       ${FAMILY.role === "admin" ? `<button class="btn btn-secondary" style="width:auto" onclick="go('/admin/events')">Manage Events</button>` : ""}
     </section>`);
 
-  // Shortcuts, in their own card at the very bottom. A wishlist belongs to an event, so
-  // it only shows when I'm joining one (with several, the page asks which).
+  // Shortcuts, in their own card at the very bottom. (Wishlists and messages belong to an
+  // event, so they're on each event above, not here.)
   sections.push(`
     <section class="card">
       <h2>My Links</h2>
       <div class="event-actions" style="margin-bottom:0">
         <button class="btn btn-primary" onclick="go('/security')">Edit My Profile</button>
-        ${upcoming.length ? `<button class="btn btn-primary" onclick="go('/wishlist')">View My Wishlist</button>` : ""}
       </div>
     </section>`);
   if (FAMILY.role === "admin") {
@@ -860,29 +850,6 @@ route(/^\/$/, async () => {
     navigate();
   });
 });
-
-// "My Wishlist" and "My Messages" belong to an event. With one upcoming event I'm joining
-// they go straight to it; with several the page asks which; with none it says so.
-async function eventChooser(title, intro, pathFor) {
-  const all = await api.get(`/families/${FAMILY.id}/events`);
-  const mine = all.filter(e => e.i_am_participating && !eventHasHappened(e) && e.status !== "cancelled")
-    .sort((x, y) => x.event_date.localeCompare(y.event_date));
-  if (mine.length === 1) { location.replace(`#${pathFor(mine[0])}`); return; }
-  if (!mine.length) {
-    return render(title, `<div class="card"><p style="margin:0">${FAMILY.role === "admin" ? NOT_JOINING_ADMIN : NOT_JOINING}</p></div>`);
-  }
-  render(title, `
-    <p class="muted" style="margin-top:0">${intro}</p>
-    <div class="wish-grid">${mine.map(e => `
-      <a class="wish-card card-link" href="#${pathFor(e)}">
-        <div class="wish-card-head">
-          <span class="event-emoji" aria-hidden="true">${eventStatus(e).emoji}</span>
-          <div class="wish-card-title"><strong>${esc(e.name)}</strong><span class="wish-priority">${esc(fmtEventDate(e.event_date))}</span></div>
-        </div>
-      </a>`).join("")}</div>`);
-}
-route(/^\/wishlist$/, () => eventChooser("My Wishlist", "You're joining more than one event. Which wishlist do you want to open?", e => `/events/${e.id}/wishlist`));
-route(/^\/messages$/, () => eventChooser("My Messages", "You're joining more than one event. Which event's messages do you want to open?", e => `/events/${e.id}/messages`));
 
 // Dish sign-up card on the event page. It opens once names are drawn; each person
 // has ONE entry that can hold several dishes, which they can edit or remove.
@@ -1078,7 +1045,6 @@ route(/^\/events\/(\d+)$/, async (id) => {
     if (!confirm("Archive this event? Everyone can still look at its messages, wishlists and dishes, but no one will be able to send messages, change wishlists, add dishes or edit it anymore. This can't be undone.")) return;
     try {
       await api.post(`/events/${id}/complete`);
-      await refreshCurrentEvent();
       navigate();
     } catch (e) { showError(e); }
   };
@@ -1473,13 +1439,7 @@ route(/^\/admin$/, async () => {
 });
 
 route(/^\/admin\/members$/, async () => {
-  const current = CURRENT_EVENT;
   const households = await api.get(`/families/${FAMILY.id}/households`);
-  const participants = current
-    ? await api.get(`/events/${current.id}/participants`)
-    : [];
-  const participating = new Set(
-    participants.filter(p => p.is_participating).map(p => p.user.id));
 
   const houseOpts = hid => `<option value="">—</option>` +
     households.map(hh => `<option value="${hh.id}" ${hh.id === hid ? "selected" : ""}>${esc(hh.name)}</option>`).join("");
@@ -1491,20 +1451,17 @@ route(/^\/admin\/members$/, async () => {
       <td data-label="Email"><input data-email value="${esc(m.user.email || "")}" title="${esc(m.user.email || "")}"></td>
       <td data-label="Household"><select data-house>${houseOpts(m.household_id)}</select></td>
       <td data-label="Admin"><input type="checkbox" data-role ${m.role === "admin" ? "checked" : ""} aria-label="Clan admin"></td>
-      <td data-label="Joining">${current
-        ? `<input type="checkbox" data-joining ${participating.has(m.user.id) ? "checked" : ""} aria-label="Joining this year">`
-        : "—"}</td>
       <td class="table-actions">
         <button class="btn btn-secondary" data-save>Save</button>
         <button class="btn btn-quiet" data-reset>Reset Password</button>
         <button class="btn btn-quiet" data-remove>Remove</button>
       </td>
     </tr>`).firstElementChild;
-    wireRow(tr, m.membership_id, m.user.id);
+    wireRow(tr, m.membership_id);
     return tr;
   }
 
-  function wireRow(tr, membershipId, userId) {
+  function wireRow(tr, membershipId) {
     const msg = () => document.getElementById("msg");
     tr.querySelector("[data-save]").onclick = async () => {
       const nameEl = tr.querySelector("[data-name]");
@@ -1532,14 +1489,6 @@ route(/^\/admin\/members$/, async () => {
         msg().innerHTML = alertBox("Saved!", true);
       } catch (err) { e.target.checked = !e.target.checked; showError(err); }
     };
-    const joining = tr.querySelector("[data-joining]");
-    if (joining) joining.onchange = async e => {
-      if (e.target.checked) participating.add(userId); else participating.delete(userId);
-      try {
-        await api.put(`/events/${current.id}/participants`, { user_ids: [...participating] });
-        msg().innerHTML = alertBox("Saved!", true);
-      } catch (err) { e.target.checked = !e.target.checked; showError(err); }
-    };
     tr.querySelector("[data-reset]").onclick = async () => {
       if (!confirm("Reset this person's password? Their old password will stop working.")) return;
       try {
@@ -1561,7 +1510,6 @@ route(/^\/admin\/members$/, async () => {
   const members = await api.get(`/families/${FAMILY.id}/members`);
   render("Members", `
     <div id="msg"></div>
-    ${current ? "" : `<div class="card center"><p class="muted">Create an event first to track who's joining this year.</p></div>`}
     <section class="card inline-form">
       <h2>Add a member</h2>
       <div class="inline-form-row">
@@ -1569,6 +1517,8 @@ route(/^\/admin\/members$/, async () => {
         <div><label for="newUsername">Username</label><input id="newUsername" autocapitalize="none" autocomplete="off" spellcheck="false"></div>
         <div><label for="newPhone">Phone (optional)</label><input id="newPhone" type="tel" inputmode="tel"></div>
         <div><label for="newEmail">Email (optional)</label><input id="newEmail" type="email"></div>
+        <div><label for="newHouse">Household</label><select id="newHouse">${houseOpts(null)}</select></div>
+        <label class="inline-check"><input type="checkbox" id="newAdmin"> Clan admin</label>
         <button class="btn btn-primary" id="addMemberBtn">Add Member</button>
       </div>
       <div id="addMsg"></div>
@@ -1578,12 +1528,12 @@ route(/^\/admin\/members$/, async () => {
         <div class="table-wrap">
       <table class="data" id="membersTable">
         <colgroup>
-          <col style="width:15%"><col style="width:13%"><col style="width:21%">
-          <col style="width:13%"><col style="width:7%"><col style="width:9%"><col style="width:22%">
+          <col style="width:17%"><col style="width:15%"><col style="width:23%">
+          <col style="width:15%"><col style="width:8%"><col style="width:22%">
         </colgroup>
         <thead><tr>
           <th>Display Name</th><th>Phone</th><th>Email</th><th>Household</th>
-          <th>Admin</th><th>Joining${current ? ` (${esc(current.name)})` : ""}</th><th></th>
+          <th>Admin</th><th></th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -1600,6 +1550,8 @@ route(/^\/admin\/members$/, async () => {
         username: document.getElementById("newUsername").value,
         phone: document.getElementById("newPhone").value,
         email: document.getElementById("newEmail").value,
+        household_id: document.getElementById("newHouse").value ? Number(document.getElementById("newHouse").value) : null,
+        role: document.getElementById("newAdmin").checked ? "admin" : "member",
       });
       document.getElementById("addMsg").innerHTML = alertBox(
         `Added! Username: ${r.username} — Password: ${r.temp_password} (write this down, it won't be shown again)`, true);
@@ -1607,8 +1559,10 @@ route(/^\/admin\/members$/, async () => {
       document.getElementById("newUsername").value = "";
       document.getElementById("newPhone").value = "";
       document.getElementById("newEmail").value = "";
+      document.getElementById("newHouse").value = "";
+      document.getElementById("newAdmin").checked = false;
       tbody.append(memberRow({
-        membership_id: r.membership_id, role: "member", household_id: null, user: r.user,
+        membership_id: r.membership_id, role: r.role, household_id: r.household_id, user: r.user,
       }));
     } catch (e) { showError(e); }
   };
@@ -1710,7 +1664,6 @@ async function deleteEvent(ev, done) {
   if (!confirm(`Delete "${ev.name}"? This permanently erases the event and everything in it (name draw, wishlists, messages, dishes and its announcements) for everyone. It can't be undone.`)) return;
   try {
     await api.del(`/events/${ev.id}`);
-    await refreshCurrentEvent();
     done();
   } catch (e) { showError(e); }
 }
@@ -1882,7 +1835,6 @@ async function renderEventForm(ev) {
         if (!locked) await api.put(`/events/${ev.id}/participants`, { user_ids: ids });
         body.game_master_id = gmValue ? Number(gmValue) : null;
         await api.patch(`/events/${ev.id}`, body);
-        await refreshCurrentEvent();
         return go(`/events/${ev.id}`);
       }
       const r = await api.post(`/families/${FAMILY.id}/events`, body);
@@ -1891,11 +1843,9 @@ async function renderEventForm(ev) {
         await api.put(`/events/${newId}/participants`, { user_ids: ids });
         if (gmValue) await api.patch(`/events/${newId}`, { game_master_id: Number(gmValue) });
       } catch (e) {
-        await refreshCurrentEvent();
         window.alert(`The event was created, but saving who's joining (or the game master) failed: ${e.message}`);
         return go(`/admin/events/${newId}/edit`);
       }
-      await refreshCurrentEvent();
       go(`/events/${newId}`);
     } catch (e) { showError(e); }
   };

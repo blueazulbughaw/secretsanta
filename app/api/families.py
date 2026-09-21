@@ -138,16 +138,24 @@ def add_member(family_id):
             n += 1
             username = f"{base}{n}"
 
+    household_id = data.get("household_id") or None
+    if household_id is not None and not Household.query.filter_by(id=household_id, family_id=family_id).first():
+        return jsonify({"error": "That household doesn't exist in this clan."}), 400
+    role = data.get("role") or "member"
+    if role not in ("admin", "member"):
+        return jsonify({"error": "Role must be admin or member."}), 400
+
     temp_password = secrets.token_urlsafe(6)
     user = User(username=username, full_name=full_name, email=email or None, phone=phone,
                 password_hash=hash_password(temp_password), must_change_password=True)
     db.session.add(user)
     db.session.flush()
-    mem = FamilyMember(family_id=family_id, user_id=user.id, role="member")
+    mem = FamilyMember(family_id=family_id, user_id=user.id, role=role, household_id=household_id)
     db.session.add(mem)
     db.session.flush()
     db.session.commit()
     return jsonify({"ok": True, "user": user.to_dict(), "membership_id": mem.id,
+                    "role": mem.role, "household_id": mem.household_id,
                     "username": username, "temp_password": temp_password}), 201
 
 

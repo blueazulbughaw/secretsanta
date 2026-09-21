@@ -1176,3 +1176,29 @@ def test_members_only_see_the_events_they_are_joining(users):
     assert bob.get(f"/api/events/{eid}").status_code == 200
     admin.put(f"/api/events/{eid}/participants", json={"user_ids": [uid[ADMIN_USER], uid[CARA_USER]]})
     assert bob.get(f"/api/events/{eid}").status_code == 403
+
+
+def test_add_member_takes_household_and_admin_role_like_editing_does(app, users):
+    fam, admin, bob = users["_family"], users[ADMIN_USER], users[BOB_USER]
+    url = f"/api/families/{fam['id']}/members"
+    house = admin.post(f"/api/families/{fam['id']}/households", json={"name": "Lola House"}).get_json()["household"]
+
+    r = admin.post(url, json={"full_name": "Lola Nena", "household_id": house["id"], "role": "admin",
+                              "phone": "(555) 010-9999", "email": "lola@example.com"})
+    assert r.status_code == 201
+    body = r.get_json()
+    assert (body["role"], body["household_id"]) == ("admin", house["id"])
+    members = admin.get(url).get_json()
+    lola = next(m for m in members if m["user"]["full_name"] == "Lola Nena")
+    assert (lola["role"], lola["household_name"], lola["user"]["email"]) == ("admin", "Lola House", "lola@example.com")
+
+    # defaults: plain member, no household
+    r = admin.post(url, json={"full_name": "Plain Person"})
+    assert (r.get_json()["role"], r.get_json()["household_id"]) == ("member", None)
+
+    # bad household (not this clan's) or a made-up role is refused, and nothing is created
+    before = len(admin.get(url).get_json())
+    assert admin.post(url, json={"full_name": "Bad House", "household_id": 99999}).status_code == 400
+    assert admin.post(url, json={"full_name": "Bad Role", "role": "owner"}).status_code == 400
+    assert len(admin.get(url).get_json()) == before
+    assert bob.post(url, json={"full_name": "Nope", "role": "admin"}).status_code == 403
