@@ -545,9 +545,17 @@ body.dragging-cards, body.dragging-cards * { cursor: grabbing !important; }
 
 /* Manage My Clan: cards that just list names */
 .name-list { list-style: none; margin: 0 0 .9rem; padding: 0; }
-.name-list li { padding: .45rem 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.name-list li { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; padding: .45rem 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 .name-list li:last-child { border-bottom: none; }
 
 /* Who's coming: name on the left, their household as a second column on the right */
 .person-row { gap: .6rem; }
 .person-household { margin-left: auto; padding-left: .75rem; text-align: right; font-size: .88rem; font-weight: 400; color: var(--muted); }
+
+/* A second column's header, right-aligned over the household names */
+.list-head {
+  text-align: right; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+  color: var(--muted); padding: 0 0 .3rem; border-bottom: 1px solid var(--line);
+}
+.people-head { max-width: 640px; padding-right: .4rem; }
+.list-note { flex: 0 0 auto; color: var(--muted); font-size: .88rem; text-align: right; }

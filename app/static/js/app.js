@@ -1009,7 +1009,7 @@ route(/^\/events\/(\d+)$/, async (id) => {
     <section class="card">
       <h2>Who's coming (${people.length})</h2>
       ${people.length
-        ? `<ul class="people-rows">${rows}</ul>`
+        ? `<div class="list-head people-head">Household</div><ul class="people-rows">${rows}</ul>`
         : `<p class="muted" style="margin:0">No one has been added to this event yet.</p>`}
     </section>
     ${isAdmin ? `
@@ -1373,11 +1373,14 @@ route(/^\/notifications$/, async () => {
 // ---------- admin ----------
 // A card that just lists names, with the button that manages them underneath.
 // Each name is text, or {name, href} to make it a link.
-function nameListCard(title, names, empty, path, buttonLabel) {
+// An item may carry a `note` (shown in a second column, under `columnHeader`).
+function nameListCard(title, names, empty, path, buttonLabel, columnHeader = "") {
   const item = (n) => typeof n === "string" ? esc(n)
     : `<a class="person-link" href="#${n.href}">${esc(n.name)}</a>`;
+  const note = (n) => typeof n === "string" || !n.note ? "" : `<span class="list-note">${esc(n.note)}</span>`;
   const list = names.length
-    ? `<ul class="name-list">${names.map(n => `<li>${item(n)}</li>`).join("")}</ul>`
+    ? `${columnHeader ? `<div class="list-head">${esc(columnHeader)}</div>` : ""}
+       <ul class="name-list">${names.map(n => `<li>${item(n)}${note(n)}</li>`).join("")}</ul>`
     : `<p class="muted" style="margin-top:0">${empty}</p>`;
   return `
     <section class="card form-card">
@@ -1406,8 +1409,8 @@ route(/^\/admin$/, async () => {
     </section>
 
     ${nameListCard("Events", events.map(e => ({ name: e.name, href: `/events/${e.id}` })), "No events yet.", "/admin/events", "Manage Events")}
-    ${nameListCard("Clan Members", members.map(m => ({ name: m.user.display_name, href: `/members/${m.user.id}` }))
-      .sort((x, y) => byName(x.name, y.name)), "No members yet.", "/admin/members", "Manage Clan Members")}
+    ${nameListCard("Clan Members", members.map(m => ({ name: m.user.display_name, href: `/members/${m.user.id}`, note: m.household_name || "—" }))
+      .sort((x, y) => byName(x.name, y.name)), "No members yet.", "/admin/members", "Manage Clan Members", "Household")}
     ${nameListCard("Households", households.map(h => h.name).sort(byName), "No households yet.", "/admin/groups", "Manage Household Names")}
 
     <section class="card form-card">
@@ -1529,21 +1532,7 @@ route(/^\/admin\/members$/, async () => {
   render("Members", `
     <div id="msg"></div>
     ${current ? "" : `<div class="card center"><p class="muted">Create an event first to track who's joining this year.</p></div>`}
-    <div class="table-wrap">
-      <table class="data" id="membersTable">
-        <colgroup>
-          <col style="width:15%"><col style="width:13%"><col style="width:21%">
-          <col style="width:13%"><col style="width:7%"><col style="width:9%"><col style="width:22%">
-        </colgroup>
-        <thead><tr>
-          <th>Name</th><th>Phone</th><th>Email</th><th>Household</th>
-          <th>Admin</th><th>Joining${current ? ` (${esc(current.name)})` : ""}</th><th></th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-
-    <section class="card form-card" style="margin-top:1.25rem">
+    <section class="card form-card">
     <h2>Add a member</h2>
     <p class="muted">Adds their account directly — you'll get a username and password to give them.</p>
     <label for="newName">Name</label>
@@ -1560,6 +1549,21 @@ route(/^\/admin\/members$/, async () => {
     <div id="addMsg"></div>
     <button class="btn btn-primary" id="addMemberBtn">Add Member</button>
     </section>
+
+        <div class="table-wrap">
+      <table class="data" id="membersTable">
+        <colgroup>
+          <col style="width:15%"><col style="width:13%"><col style="width:21%">
+          <col style="width:13%"><col style="width:7%"><col style="width:9%"><col style="width:22%">
+        </colgroup>
+        <thead><tr>
+          <th>Name</th><th>Phone</th><th>Email</th><th>Household</th>
+          <th>Admin</th><th>Joining${current ? ` (${esc(current.name)})` : ""}</th><th></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
   `, { wide: true });
   const tbody = $app.querySelector("#membersTable tbody");
   members.forEach(m => tbody.append(memberRow(m)));
@@ -1620,7 +1624,14 @@ route(/^\/admin\/groups$/, async () => {
   render("Households", `
     <p class="muted">People in the same household won't draw each other's names.</p>
     <div id="msg"></div>
-    <div class="table-wrap">
+    <section class="card form-card">
+    <h2>Add a household</h2>
+    <label>Household name</label>
+    <input id="hname">
+    <button class="btn btn-primary" id="addHouse">Add Household</button>
+    </section>
+
+        <div class="table-wrap">
       <table class="data" id="groupsTable">
         <colgroup><col style="width:70%"><col style="width:30%"></colgroup>
         <thead><tr><th>Household Name</th><th></th></tr></thead>
@@ -1628,12 +1639,6 @@ route(/^\/admin\/groups$/, async () => {
       </table>
     </div>
     <p class="muted center" id="noGroups">No households yet.</p>
-    <section class="card form-card" style="margin-top:1.25rem">
-    <h2>Add a household</h2>
-    <label>Household name</label>
-    <input id="hname">
-    <button class="btn btn-primary" id="addHouse">Add Household</button>
-    </section>
   `, { wide: true });
   const gtbody = $app.querySelector("#groupsTable tbody");
   const noGroups = document.getElementById("noGroups");
@@ -1946,7 +1951,15 @@ route(/^\/admin\/announce$/, async () => {
 
   render("Announcements", `
     <div id="msg"></div>
-    <h2 class="section-title">Existing announcements</h2>
+    <section class="card form-card">
+    <h2>Post a new announcement</h2>
+    <label>Title</label><input id="atitle">
+    <label>Message</label><textarea id="abody" rows="4"></textarea>
+    <div class="check-row"><input type="checkbox" id="apub" checked><label for="apub" style="margin:0">Show on Clan Dashboard</label></div>
+    <button class="btn btn-primary" id="postBtn">Post to My Clan</button>
+    </section>
+
+        <h2 class="section-title">Existing announcements</h2>
     ${anns.length ? `
       <div class="table-wrap">
         <table class="data" id="annTable">
@@ -1957,13 +1970,6 @@ route(/^\/admin\/announce$/, async () => {
           <tbody></tbody>
         </table>
       </div>` : `<div class="card"><p class="muted" style="margin:0">No announcements yet.</p></div>`}
-    <section class="card form-card" style="margin-top:1.25rem">
-    <h2>Post a new announcement</h2>
-    <label>Title</label><input id="atitle">
-    <label>Message</label><textarea id="abody" rows="4"></textarea>
-    <div class="check-row"><input type="checkbox" id="apub" checked><label for="apub" style="margin:0">Show on Clan Dashboard</label></div>
-    <button class="btn btn-primary" id="postBtn">Post to My Clan</button>
-    </section>
   `, { wide: true });
 
   const tbody = document.querySelector("#annTable tbody");

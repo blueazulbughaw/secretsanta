@@ -60,6 +60,10 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   user-typed URL in an href.
 - Photos: real images only (Pillow), 8MB upload cap, gift photos shrunk to 1200px,
   profile photos cropped to a 512px square. Tests must upload real images.
+- Admin pages with a list (Members, Households, Announcements): the add/post form card
+  comes first at the top, the list below it. Lists that show a household (Manage My Clan >
+  Clan Members, Who's coming on the event page) put it in a right-hand column under a
+  "Household" header.
 - Wording: always say "event". Never "gift exchange" (user-facing text, errors, docs).
 - There is no separate admin page for a single event. The event page (`/events/:id`) is the
   one place: for clan admins it ends with an Admin card (Draw Names / Start Over (Re-Draw
