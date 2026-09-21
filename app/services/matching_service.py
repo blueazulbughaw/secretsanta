@@ -142,8 +142,8 @@ def solve_distinct(participants, allow_same_household=False, history=(), rng=Non
     gets a giftee they already had in an earlier event.
 
     participants: list of (user_id, household_id); history: pair sets of earlier
-    exchanges, newest first. If the group is too small to avoid every earlier
-    pairing, it avoids just the most recent exchange's, and as a last resort none.
+    events, newest first. If the group is too small to avoid every earlier
+    pairing, it avoids just the most recent event's, and as a last resort none.
     Returns (matches, repeated): {giver_id: receiver_id} and how many of those
     pairs did happen before. Raises MatchingError when no draw is possible."""
     rng = rng or random

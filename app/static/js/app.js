@@ -83,11 +83,11 @@ function render(title, html, { wide = false, card = false } = {}) {
 
 const NAV = [
   { key: "dashboard", label: "My Dashboard", href: "/" },
-  { key: "past", label: "Past Events", href: "/past" },
+  { key: "events", label: "Events", href: "/events" },
   { key: "admin", label: "Manage My Clan", href: "/admin", adminOnly: true, children: [
     { key: "members", href: "/admin/members", label: "Members" },
     { key: "groups", href: "/admin/groups", label: "Households" },
-    { key: "events", href: "/admin/events", label: "Events" },
+    { key: "manage-events", href: "/admin/events", label: "Manage Events" },
     { key: "announce", href: "/admin/announce", label: "Post Announcement" },
   ] },
   { key: "security", label: "Profile & Security", href: "/security" },
@@ -400,7 +400,7 @@ const routes = [];
 function route(pattern, fn) { routes.push({ pattern, fn }); }
 async function navigate() {
   const path = location.hash.replace(/^#/, "") || "/";
-  renderSidebar(path.replace(/^\/events\/\d+(\/.*)?$/, "/")
+  renderSidebar(path.replace(/^\/events\/\d+(\/.*)?$/, "/events")
     .replace(/^\/members\/\d+$/, "/admin")
     .replace(/^(\/admin\/events)\/.+$/, "$1"));
   closeSidebar();
@@ -823,7 +823,7 @@ function dashEventBlock(e, d) {
     : gifteeLink(e, d);
   return `
     <div class="event-block">
-      <h3 class="event-title"><a class="person-link" href="#/events/${e.id}">${esc(e.name)}</a></h3>
+      <h3 class="event-title"><a class="person-link" href="#/events/${e.id}">${esc(e.name)}</a>${e.status === "completed" ? ` <span class="status-tag tag-done">Archived</span>` : ""}</h3>
       <dl class="detail-list">
         <dt>My Giftee</dt><dd>${gifteeHtml}</dd>
         <dt>Date</dt><dd>${esc(fmtEventDate(e.event_date))}</dd>
@@ -968,29 +968,27 @@ function mountDishes(el, ev, initial) {
   view();
 }
 
-// Past Events: everything that has happened, archived or not, newest first.
-// An archived one opens as a read-only record.
-function pastEventCard(e) {
-  const st = eventStatus(e);
-  return `<a class="wish-card card-link" href="#/events/${e.id}">
-    <div class="wish-card-head">
-      <span class="event-emoji" aria-hidden="true">${st.emoji}</span>
-      <div class="wish-card-title">
-        <strong>${esc(e.name)}</strong>
-        <span class="wish-priority">${esc(fmtEventDate(e.event_date))}</span>
-      </div>
-    </div>
-    <div><span class="status-tag ${st.cls}">${st.label}</span></div>
-  </a>`;
-}
-route(/^\/past$/, async () => {
+// Events (sidebar): every event I'm joining - upcoming first, then past - each in its own
+// card, laid out like an event on the dashboard. An archived one opens as a read-only record.
+route(/^\/events$/, async () => {
   const all = await api.get(`/families/${FAMILY.id}/events`);
-  const past = all.filter(eventHasHappened).sort((x, y) => y.event_date.localeCompare(x.event_date));
-  render("Past Events", past.length
-    ? `<p class="muted" style="margin-top:0">Open one to look back at its details, messages and wishlists. Archived events are view-only.</p>
-       <div class="wish-grid">${past.map(pastEventCard).join("")}</div>`
-    : `<div class="card"><p class="muted" style="margin:0">No past events yet.</p></div>`);
+  const mine = all.filter(e => e.i_am_participating && e.status !== "cancelled");
+  const upcoming = mine.filter(e => !eventHasHappened(e)).sort((x, y) => x.event_date.localeCompare(y.event_date));
+  const past = mine.filter(eventHasHappened).sort((x, y) => y.event_date.localeCompare(x.event_date));
+  const shown = [...upcoming, ...past];
+  const assignments = await Promise.all(shown.map(e => api.get(`/events/${e.id}/assignments/mine`)));
+  const card = (e) => `<section class="card">${dashEventBlock(e, assignments[shown.indexOf(e)])}</section>`;
+  render("Events", `
+    <h2 class="section-title" style="margin-top:0">Upcoming</h2>
+    ${upcoming.length ? upcoming.map(card).join("")
+      : `<div class="card"><p class="muted" style="margin:0">${FAMILY.role === "admin" ? NOT_JOINING_ADMIN : NOT_JOINING}</p></div>`}
+    <h2 class="section-title">Past</h2>
+    ${past.length ? past.map(card).join("")
+      : `<div class="card"><p class="muted" style="margin:0">No past events yet.</p></div>`}
+  `);
 });
+// The old Past Events address still works.
+route(/^\/past$/, () => { location.replace("#/events"); });
 
 // The event page any clan member can open: what/where/when, the rules the clan
 // admin set, and who's coming (each row opens that person's profile).
@@ -1676,7 +1674,7 @@ route(/^\/admin\/groups$/, async () => {
 });
 
 // Each event has its own participants, wishlists and giftee/gifter
-// pairs, so who's joining is chosen per exchange (from the clan's members).
+// pairs, so who's joining is chosen per event (from the clan's members).
 function fmtEventDate(iso) {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(y, m - 1, d).toLocaleDateString(undefined,
@@ -1734,7 +1732,7 @@ function eventCard(e) {
 
 route(/^\/admin\/events$/, async () => {
   const events = await api.get(`/families/${FAMILY.id}/events`);
-  render("Events", `
+  render("Manage Events", `
     <div class="wish-toolbar">
       <p class="muted" style="margin:0">${events.length ? `${events.length} event${events.length === 1 ? "" : "s"}` : ""}</p>
       <button class="btn btn-primary" style="width:auto;margin:0" id="newEventBtn">+ Create an Event</button>
@@ -1757,7 +1755,7 @@ async function renderEventForm(ev) {
     editing ? api.get(`/events/${ev.id}/participants`) : Promise.resolve(null),
   ]);
   const houseName = Object.fromEntries(households.map(x => [x.id, x.name]));
-  // New exchange: everyone starts checked (uncheck who's sitting this one out).
+  // New event: everyone starts checked (uncheck who's sitting this one out).
   const joining = editing
     ? new Set(parts.filter(p => p.is_participating).map(p => p.user.id))
     : new Set(members.map(m => m.user.id));
@@ -1780,7 +1778,7 @@ async function renderEventForm(ev) {
     <div id="msg"></div>
     <label for="ename">Name</label>
     <input id="ename" value="${esc(editing ? ev.name : "")}">
-    <label for="edate">Date of the exchange</label>
+    <label for="edate">Date of the event</label>
     <input id="edate" type="date" value="${esc(editing ? ev.event_date : "")}">
     <label for="etime">Time <span class="muted">(optional)</span></label>
     <input id="etime" type="time" value="${esc(editing ? ev.event_time || "" : "")}">

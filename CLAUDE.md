@@ -103,7 +103,9 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   reorder, buy/unbuy, dishes, event edits, participants or re-draw. This is enforced
   server-side with `archived_error(ev)` (middleware/auth.py); every new write endpoint that
   belongs to an event must call it. The UI hides the controls too. Everyone finds archived
-  (and any past) events under "Past Events" (`/past`).
+  (and any past) events on the sidebar's "Events" page (`/events`: upcoming on top, past below, one card
+  per event laid out like the dashboard; `/past` redirects there). The admin's full list is
+  Manage My Clan > Manage Events.
 - Wishlist priority is the order of the cards: no priority field anywhere; the owner
   long-presses a card on My Wishlist and drags it (`enableLongPressReorder`, saved with
   PUT /events/:id/wishlists/order). Everyone else sees that order, labelled Priority 1, 2...

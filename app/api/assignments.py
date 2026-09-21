@@ -34,7 +34,7 @@ def mine(event_id):
     a = Assignment.query.filter_by(event_id=ev.id, giver_id=g.user.id).first()
     if not a:
         return jsonify({"assigned": False,
-                        "message": "Names haven't been drawn yet, or you're not in this exchange."})
+                        "message": "Names haven't been drawn yet, or you're not in this event."})
     receiver = User.query.get(a.receiver_id)
     display = receiver.display_name or receiver.full_name
     if ev.use_codenames:
