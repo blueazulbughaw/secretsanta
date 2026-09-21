@@ -1,13 +1,15 @@
 /* Secret Santa — desktop web app design system */
 :root {
-  --bg: #FFFFFF;
+  --bg: #FBEDEB;        /* very light washed red: the page behind every card */
+  --card: #FFFFFF;
+  --card-done: #F0F0F0; /* a gift that's already been bought */
   --ink: #1A1A1A;
   --muted: #5A5A5A;
   --red: #C0392B;
   --red-dark: #A93226;
   --green: #2E7D4F;
   --yellow: #F5C518;
-  --line: #E0E0E0;
+  --line: #E6D5D2;
   --radius: 8px;
   --touch: 44px;
   --topbar-h: 56px;
@@ -29,7 +31,7 @@ body > main:not(#app) { max-width: 760px; margin: 0 auto; padding: 1.5rem 2rem; 
 header#topbar {
   display: flex; align-items: center; gap: .5rem;
   padding: .6rem 1rem; border-bottom: 1px solid var(--line);
-  position: sticky; top: 0; background: var(--bg); z-index: 5;
+  position: sticky; top: 0; background: var(--card); z-index: 5;
   height: var(--topbar-h);
 }
 #pageTitle { flex: 1; font-size: 1.05rem; margin: 0; text-align: center; font-weight: 600; }
@@ -53,11 +55,23 @@ header#topbar {
 #shell { display: flex; align-items: flex-start; min-height: calc(100vh - var(--topbar-h)); min-height: calc(100dvh - var(--topbar-h)); }
 main#app { flex: 1 1 auto; min-width: 0; padding: 1.25rem 1.5rem; max-width: 640px; margin: 0 auto; }
 #shell.authed main#app { max-width: none; margin: 0; }
+/* Signed-out pages: the form sits in a white card on the washed-red page */
+#shell:not(.authed) main#app {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  margin: 1.5rem auto; padding: 1.5rem;
+}
 
-/* My Dashboard — flat sections, no card boxes */
-.dash-section { padding: .6rem 0; border-bottom: 1px solid var(--line); }
-.dash-section:last-child { border-bottom: none; }
+/* My Dashboard sections are cards; the giftee block is a heading over a
+   grid of gift cards */
+.dash-section {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: .85rem 1rem; margin: 0 0 1rem;
+}
 .dash-section h2 { margin: 0 0 .35rem; }
+.section-head { margin: 1.25rem 0 .6rem; }
+.section-head h2, .section-title { margin: 0 0 .25rem; }
+.section-title { margin-top: 1.5rem; }
+.person-section { margin-bottom: 1.5rem; }
 
 #menuBtn { display: inline-flex; align-items: center; justify-content: center; font-size: 1.25rem; }
 #sidebarOverlay { display: none; }
@@ -126,7 +140,12 @@ nav#sidebar {
 /* Data table (admin views). The wrapper is a size container so the table
    stacks based on the room it actually has (sidebar open or collapsed), not
    just the screen width. */
-.table-wrap { width: 100%; overflow-x: auto; container-type: inline-size; }
+.table-wrap {
+  width: 100%; overflow-x: auto; container-type: inline-size;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: .25rem .75rem;
+}
+.card .table-wrap, .dash-section .table-wrap { background: none; border: none; padding: 0; }
 table.data { width: 100%; border-collapse: collapse; font-size: .85rem; table-layout: fixed; }
 table.data tr { border-bottom: 1px solid var(--line); }
 table.data th, table.data td {
@@ -143,7 +162,7 @@ table.data td input:not([type=checkbox]) {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 table.data tr.group-header td {
-  background: #FAFAFA; font-weight: 700; font-size: .85rem; color: var(--ink);
+  background: #FAF5F4; font-weight: 700; font-size: .85rem; color: var(--ink);
   padding-top: .6rem; padding-bottom: .4rem;
 }
 table.data .table-actions { display: flex; gap: .35rem; flex-wrap: wrap; }
@@ -158,7 +177,7 @@ table.data .table-actions button {
   table.data { border: none; }
   table.data tr {
     border: 1px solid var(--line); border-radius: var(--radius);
-    padding: .75rem; margin-bottom: 1rem;
+    padding: .75rem; margin-bottom: 1rem; background: var(--card);
   }
   table.data tr.group-header {
     border: none; border-radius: 0; padding: .5rem 0 .2rem; margin-bottom: 0;
@@ -201,7 +220,7 @@ p  { font-size: .92rem; }
 /* Inputs — same width cap as buttons, for the same reason */
 label { display: block; font-weight: 600; font-size: .88rem; margin: .8rem 0 .3rem; max-width: 480px; }
 input, textarea, select {
-  width: 100%; max-width: 480px; min-height: var(--touch); font-size: .9rem;
+  font-family: inherit; width: 100%; max-width: 480px; min-height: var(--touch); font-size: .9rem;
   padding: .45rem .7rem; border: 1px solid var(--line);
   border-radius: var(--radius); background: #fff; color: var(--ink);
 }
@@ -222,8 +241,9 @@ input:focus, textarea:focus, select:focus {
 /* Cards */
 .card {
   border: 1px solid var(--line); border-radius: var(--radius);
-  padding: .85rem 1rem; margin: .6rem 0; background: #fff;
+  padding: .85rem 1rem; margin: 0 0 1rem; background: var(--card);
 }
+.card > h2:first-child { margin-top: 0; }
 .card-btn {
   display: flex; align-items: center; gap: .75rem;
   width: 100%; min-height: 52px; text-align: left;
@@ -260,7 +280,6 @@ button.wish-thumb-btn {
 button.wish-thumb-btn:focus-visible { outline: 3px solid var(--yellow); }
 button.wish-thumb-btn .wish-thumb { display: block; }
 .wish-meta { font-size: .8rem; color: var(--muted); overflow: visible; white-space: normal; }
-tr.bought td strong { text-decoration: line-through; color: var(--muted); }
 .tag-bought { background: var(--green); color:#fff; border-radius: 999px;
   padding: .15rem .55rem; font-size: .72rem; font-weight: 700; }
 .wish-locked-msg { overflow: visible; white-space: normal; font-size: .82rem; }
@@ -279,8 +298,10 @@ table.data td.wrap-cell { overflow: visible; white-space: normal; }
 .wish-card {
   display: flex; flex-direction: column; gap: .5rem;
   border: 1px solid var(--line); border-radius: var(--radius);
-  padding: .9rem 1rem; background: #fff;
+  padding: .9rem 1rem; background: var(--card);
 }
+/* Already bought: very light grey (unbought stays white) */
+.wish-card.bought { background: var(--card-done); border-color: #DDDDDD; }
 .wish-card-head { display: flex; align-items: center; gap: .75rem; }
 .wish-card .wish-thumb { width: 56px; height: 56px; }
 .wish-card-title { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
@@ -323,6 +344,44 @@ table.data td.wrap-cell { overflow: visible; white-space: normal; }
 .person-head { display: flex; align-items: center; gap: .9rem; margin-bottom: 1rem; }
 .wish-card.bought .wish-card-title strong { text-decoration: line-through; color: var(--muted); }
 
+/* Profile shown as an ID: red band on top, photo beside the details (stacked on phones) */
+.id-card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  overflow: hidden; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(120,40,30,.08);
+}
+.id-band {
+  background: var(--red); color: #fff; font-weight: 700; font-size: .85rem;
+  letter-spacing: .04em; text-transform: uppercase; padding: .5rem 1.25rem;
+}
+.id-body { display: flex; gap: 1.5rem; padding: 1.25rem; align-items: flex-start; }
+.id-photo {
+  flex: 0 0 200px; width: 200px; aspect-ratio: 1 / 1; border-radius: var(--radius);
+  overflow: hidden; background: #F4F4F4; border: 3px solid var(--yellow);
+}
+.id-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.id-initials {
+  width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 4rem; font-weight: 700;
+}
+.id-details { flex: 1 1 auto; min-width: 0; }
+.id-name { margin: 0 0 .6rem; font-size: 1.6rem; overflow-wrap: anywhere; }
+.id-fields { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: .5rem 1.25rem; }
+.id-fields dt { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); padding-top: .2rem; }
+.id-fields dd { margin: 0; overflow-wrap: anywhere; white-space: pre-line; }
+.id-fields dd.id-avoid { color: var(--red-dark); font-weight: 600; }
+.color-swatch {
+  display: inline-block; width: 1em; height: 1em; border-radius: 50%; vertical-align: -.12em;
+  margin-right: .45em; border: 1px solid rgba(0,0,0,.25);
+}
+@media (max-width: 640px) {
+  .id-body { flex-direction: column; align-items: center; gap: 1rem; }
+  .id-details { width: 100%; }
+  .id-photo { flex-basis: auto; width: min(220px, 70%); }
+  .id-name { text-align: center; }
+  .id-fields { grid-template-columns: 1fr; gap: .1rem; }
+  .id-fields dd { margin-bottom: .6rem; }
+}
+
 /* Gift exchange cards + participant picker */
 .event-emoji { font-size: 1.8rem; line-height: 1; flex: 0 0 auto; }
 .event-meta { list-style: none; margin: 0; padding: 0; font-size: .9rem; display: grid; gap: .2rem; }
@@ -358,6 +417,7 @@ table.data td.wrap-cell { overflow: visible; white-space: normal; }
   margin: .3rem 0; font-size: .9rem; }
 .bubble.mine { background: var(--red); color: #fff; margin-left: auto; }
 .bubble.theirs { background: #F2F2F2; }
+.card .bubble.theirs { background: #F6EFEE; }
 
 /* Alerts */
 .alert { border-radius: var(--radius); padding: .7rem .9rem; margin: .6rem 0;

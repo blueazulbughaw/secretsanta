@@ -415,3 +415,31 @@ def test_profile_photo_upload_replace_remove(app, users, tmp_path):
     r = bob.delete("/api/auth/me/photo")
     assert r.get_json()["user"]["photo_url"] is None
     assert not (tmp_path / second.removeprefix("/static/")).exists()
+
+
+def test_profile_details_saved_and_visible_to_clan(users):
+    bob, admin = users[BOB_USER], users[ADMIN_USER]
+    fam = users["_family"]["id"]
+    blank = bob.get("/api/auth/me").get_json()["user"]
+    assert (blank["about_me"], blank["likes"], blank["favorite_color"], blank["avoid_gifts"]) == ("", "", "", "")
+
+    r = bob.patch("/api/auth/me", json={"about_me": "  Loves hiking ", "likes": "Coffee, books",
+                                        "favorite_color": "Sage green", "avoid_gifts": "Candles"})
+    assert r.status_code == 200
+    u = r.get_json()["user"]
+    assert (u["about_me"], u["likes"], u["favorite_color"], u["avoid_gifts"]) == \
+        ("Loves hiking", "Coffee, books", "Sage green", "Candles")
+
+    # partial update leaves the other fields alone; empty string clears one
+    bob.patch("/api/auth/me", json={"likes": ""})
+    u = bob.get("/api/auth/me").get_json()["user"]
+    assert u["likes"] == "" and u["about_me"] == "Loves hiking"
+
+    # too-long values are trimmed to their limits
+    u = bob.patch("/api/auth/me", json={"favorite_color": "x" * 100}).get_json()["user"]
+    assert len(u["favorite_color"]) == 40
+
+    # the rest of the family sees them
+    members = admin.get(f"/api/families/{fam}/members").get_json()
+    bob_row = next(m["user"] for m in members if m["user"]["username"] == BOB_USER)
+    assert bob_row["about_me"] == "Loves hiking" and bob_row["avoid_gifts"] == "Candles"

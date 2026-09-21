@@ -46,11 +46,14 @@ function esc(s) {
   return d.innerHTML;
 }
 function h(html) { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content; }
-function render(title, html, { back = true, wide = false } = {}) {
+// card: put the whole page in one white card (forms, threads); pages made of
+// several sections build their own cards instead.
+function render(title, html, { back = true, wide = false, card = false } = {}) {
   $title.textContent = title;
   $back.hidden = !back;
   $app.classList.toggle("wide", wide);
   $app.innerHTML = "";
+  if (card && typeof html === "string") html = `<div class="card page-card">${html}</div>`;
   $app.append(typeof html === "string" ? h(html) : html);
   window.scrollTo(0, 0);
 }
@@ -180,34 +183,6 @@ function wishThumbCell(item) {
     : `<div class="wish-thumb wish-thumb-empty">🎁</div>`;
 }
 
-// Read-only table row: My Giftee, Their Wishlist, My Clan, admin All Wishlists.
-function wishRowReadOnly(item, { showBuy = false, personName = null } = {}) {
-  const meta = [
-    item.description ? esc(item.description) : "",
-    item.link_url ? `<a href="${esc(item.link_url)}" target="_blank" rel="noopener">See it online</a>` : "",
-  ].filter(Boolean).join(" · ");
-  let action = "";
-  if (showBuy) {
-    if (!item.is_purchased) {
-      action = `<button class="btn btn-green" style="width:auto" data-buy="${item.id}">I Bought This</button>`;
-    } else if (item.bought_by_me) {
-      action = `<button class="btn btn-quiet" style="width:auto" data-buy="${item.id}">Unbought</button>`;
-    } else {
-      action = `<span class="muted">This has already been bought by someone.</span>`;
-    }
-  } else if (item.is_purchased) {
-    action = `<span class="tag-bought">✓ Bought</span>`;
-  }
-  return `
-    <tr class="${item.is_purchased ? "bought" : ""}">
-      ${personName !== null ? `<td data-label="Person">${esc(personName)}</td>` : ""}
-      <td data-label="Photo">${wishThumbCell(item)}</td>
-      <td data-label="Item"><strong>${esc(item.item_name)}</strong>${meta ? `<div class="muted wish-meta">${meta}</div>` : ""}</td>
-      <td data-label="Priority">P${item.priority}</td>
-      <td data-label="" class="table-actions">${action}</td>
-    </tr>`;
-}
-
 // Profile photo, or the person's initials on their colour when they have none.
 function safeColor(c) { return /^#[0-9a-fA-F]{6}$/.test(c || "") ? c : "#C0392B"; }
 function initialsOf(name) {
@@ -236,19 +211,29 @@ function wishCardBody(item) {
     ${item.link_url ? `<a class="wish-link" href="${esc(item.link_url)}" target="_blank" rel="noopener">See it online ↗</a>` : ""}`;
 }
 
-// A clan member's gift as seen by someone else: same card, plus whether it's
-// been bought. Owners never get is_purchased for their own items, so their
-// own card just has no purchase footer.
+// A gift as seen by someone other than its owner: the card, plus whether it's
+// been bought. Owners never get is_purchased for their own items, so their own
+// card just has no purchase footer. Bought cards go light grey (.bought).
 function clanWishCard(item) {
   let footer = "";
   if (item.is_purchased === undefined) footer = "";
   else if (!item.is_purchased) footer = `<button class="btn btn-green" data-buy="${item.id}">I Bought This</button>`;
   else if (item.bought_by_me) footer = `<span class="tag-bought">✓ Bought by you</span><button class="btn btn-quiet" data-buy="${item.id}">Unbought</button>`;
   else footer = `<span class="tag-bought">✓ Already bought</span>`;
-  return h(`<article class="wish-card ${item.is_purchased ? "bought" : ""}">
+  return `<article class="wish-card ${item.is_purchased ? "bought" : ""}">
     ${wishCardBody(item)}
     ${footer ? `<div class="wish-card-actions">${footer}</div>` : ""}
-  </article>`).firstElementChild;
+  </article>`;
+}
+function clanWishGrid(items) {
+  return `<div class="wish-grid">${items.map(clanWishCard).join("")}</div>`;
+}
+// Wires the "I Bought This" / "Unbought" buttons anywhere on the page.
+function wireBuyButtons() {
+  $app.querySelectorAll("[data-buy]").forEach(b => b.onclick = async () => {
+    try { await api.post(`/wishlists/${b.dataset.buy}/purchase`); navigate(); }
+    catch (e) { showError(e); }
+  });
 }
 
 // My Wishlist card (own items): small photo, name/priority, description, link
@@ -296,25 +281,6 @@ function annTable(anns) {
         </colgroup>
         <thead><tr><th>Title</th><th>Message</th><th>From</th><th>Date</th><th></th></tr></thead>
         <tbody>${anns.map(annRowReadOnly).join("")}</tbody>
-      </table>
-    </div>`;
-}
-
-// Wraps read-only wishlist rows (from wishRowReadOnly) in a table.data shell.
-function wishTable(rowsHtml, { showPerson = false } = {}) {
-  return `
-    <div class="table-wrap">
-      <table class="data">
-        <colgroup>
-          ${showPerson ? `<col style="width:18%">` : ""}
-          <col style="width:10%"><col style="width:${showPerson ? "42%" : "55%"}">
-          <col style="width:10%"><col style="width:${showPerson ? "20%" : "25%"}">
-        </colgroup>
-        <thead><tr>
-          ${showPerson ? `<th>Person</th>` : ""}
-          <th></th><th>Item</th><th>Priority</th><th></th>
-        </tr></thead>
-        <tbody>${rowsHtml}</tbody>
       </table>
     </div>`;
 }
@@ -526,36 +492,48 @@ function pageForcedPasswordChange() {
 }
 
 function pageSecuritySetup(forced) {
-  render("Profile & Security", `
-    <h2>Profile photo</h2>
-    <p class="muted">Optional. Your family sees it on My Clan.</p>
-    <div class="profile-photo-row">
-      <div id="avatarPreview"></div>
-      <div>
-        <label for="photoInput" style="margin-top:0" id="photoLabel"></label>
-        <input id="photoInput" type="file" accept="image/*">
-        <button class="btn btn-quiet" style="width:auto" id="removePhotoBtn">Remove Photo</button>
+  // A brand-new account has to set a password first, so that card leads (and
+  // holds the primary button); otherwise the profile leads.
+  const profileCard = `
+    <section class="card">
+      <h2>My profile</h2>
+      <p class="muted">Your clan sees this on My Clan, so they know what to get you.</p>
+      <div class="profile-photo-row">
+        <div id="avatarPreview"></div>
+        <div>
+          <label for="photoInput" style="margin-top:0" id="photoLabel"></label>
+          <input id="photoInput" type="file" accept="image/*">
+          <button class="btn btn-quiet" style="width:auto" id="removePhotoBtn">Remove Photo</button>
+        </div>
       </div>
-    </div>
-    <div id="photoMsg"></div>
+      <div id="photoMsg"></div>
 
-    <hr style="margin:2rem 0">
-    <h2>Your name</h2>
-    <p class="muted">This is how your family will see you.</p>
-    <label for="displayName">Your name</label>
-    <input id="displayName" value="${esc(ME.user.full_name)}">
-    <div id="nameMsg"></div>
-    <button class="btn btn-secondary" id="saveNameBtn">Save Name</button>
-
-    <hr style="margin:2rem 0">
+      <label for="displayName">Your name</label>
+      <input id="displayName" value="${esc(ME.user.full_name)}">
+      <label for="aboutMe">About me</label>
+      <textarea id="aboutMe" rows="3" maxlength="1000" placeholder="A little about you">${esc(ME.user.about_me)}</textarea>
+      <label for="likes">My likes</label>
+      <textarea id="likes" rows="3" maxlength="1000" placeholder="Hobbies, foods, shops, brands…">${esc(ME.user.likes)}</textarea>
+      <label for="favColor">My favorite color</label>
+      <input id="favColor" maxlength="40" value="${esc(ME.user.favorite_color)}" placeholder="e.g. Forest green">
+      <label for="avoidGifts">What not to give me</label>
+      <textarea id="avoidGifts" rows="3" maxlength="1000" placeholder="Things you already have or don't want">${esc(ME.user.avoid_gifts)}</textarea>
+      <div id="nameMsg"></div>
+      <button class="btn ${forced ? 'btn-secondary' : 'btn-primary'}" id="saveNameBtn">Save Profile</button>
+    </section>
+  `;
+  const passwordCard = `
+    <section class="card">
     <h2>Set up your password</h2>
     <p class="muted">You'll use this to sign in. At least 8 characters.</p>
     <label for="newPassword">Password</label>
     <input id="newPassword" type="password" autocomplete="new-password">
     <div id="pwMsg"></div>
-    <button class="btn btn-primary" id="savePwBtn">Save Password</button>
-
-    <hr style="margin:2rem 0">
+    <button class="btn ${forced ? 'btn-primary' : 'btn-secondary'}" id="savePwBtn">Save Password</button>
+    </section>
+  `;
+  const phoneCard = `
+    <section class="card">
     <h2>Add a phone number (optional)</h2>
     <p class="muted">Get a text with a 6-digit code instead of typing your password.</p>
     <label for="secPhone">Phone number</label>
@@ -573,6 +551,11 @@ function pageSecuritySetup(forced) {
     </div>
     <div id="phoneMsg"></div>
     <button class="btn btn-secondary" id="savePhoneBtn">Save Phone Number</button>
+    </section>
+  `;
+  render("Profile & Security", `
+    ${forced ? passwordCard + profileCard : profileCard + passwordCard}
+    ${phoneCard}
     ${!forced ? `<button class="btn btn-quiet" id="doneBtn">Done</button>` : ""}
   `, { back: false });
   const refreshPhotoUi = () => {
@@ -606,9 +589,13 @@ function pageSecuritySetup(forced) {
   };
   document.getElementById("saveNameBtn").onclick = async () => {
     try {
-      const r = await api.patch("/auth/me", { full_name: document.getElementById("displayName").value });
+      const val = (id) => document.getElementById(id).value;
+      const r = await api.patch("/auth/me", {
+        full_name: val("displayName"), about_me: val("aboutMe"), likes: val("likes"),
+        favorite_color: val("favColor"), avoid_gifts: val("avoidGifts"),
+      });
       ME.user = r.user;
-      document.getElementById("nameMsg").innerHTML = alertBox("Name saved!", true);
+      document.getElementById("nameMsg").innerHTML = alertBox("Profile saved!", true);
     } catch (e) {
       document.getElementById("nameMsg").innerHTML = alertBox(e.message);
     }
@@ -680,7 +667,7 @@ route(/^\/$/, async () => {
   const sections = [`<h2 style="margin-top:0">Welcome, ${esc(ME.user.full_name)}!</h2>`];
 
   const anns = await api.get(`/families/${FAMILY.id}/announcements`);
-  const annHtml = anns.length ? annTable(anns) : `<p class="muted">No announcements yet.</p>`;
+  const annHtml = anns.length ? annTable(anns) : `<p class="muted" style="margin:0">No announcements yet.</p>`;
   sections.push(`<div class="dash-section"><h2>Announcements</h2>${annHtml}</div>`);
 
   if (!CURRENT_EVENT) {
@@ -706,22 +693,20 @@ route(/^\/$/, async () => {
       const budget = d.budget_amount
         ? `<p class="muted">Gift budget: <strong>${esc(d.budget_currency)} ${d.budget_amount}</strong></p>` : "";
       const itemsHtml = giftItems.length
-        ? wishTable(giftItems.map(i => wishRowReadOnly(i, { showBuy: true })).join(""))
-        : `<p class="muted">They haven't added any gift ideas yet. Send them a friendly nudge!</p>`;
+        ? clanWishGrid(giftItems)
+        : `<div class="card"><p class="muted" style="margin:0">They haven't added any gift ideas yet. Send them a friendly nudge!</p></div>`;
       sections.push(`
-        <div class="dash-section">
+        <div class="section-head">
           <h2>My Giftee: ${esc(d.giftee_display_name)}</h2>
           ${budget}
-          ${itemsHtml}
-          <button class="btn btn-secondary" style="width:auto;margin-top:.5rem" onclick="go('/events/${CURRENT_EVENT.id}/messages/giftee')">Send a Message</button>
-        </div>`);
+        </div>
+        ${itemsHtml}
+        <button class="btn btn-secondary" style="width:auto;margin-top:.75rem" onclick="go('/events/${CURRENT_EVENT.id}/messages/giftee')">Send a Message</button>`);
     }
   }
 
   render("My Dashboard", sections.join(""), { back: false });
-  $app.querySelectorAll("[data-buy]").forEach(b => b.onclick = async () => {
-    await api.post(`/wishlists/${b.dataset.buy}/purchase`); navigate();
-  });
+  wireBuyButtons();
   $app.querySelectorAll("[data-del-ann]").forEach(b => b.onclick = async () => {
     if (!confirm("Delete this announcement?")) return;
     await api.del(`/announcements/${b.dataset.delAnn}`);
@@ -741,7 +726,7 @@ route(/^\/events\/(\d+)\/my-person$/, async (id) => {
     <p class="center muted">Shh — it's a secret! 🤫</p>
     <button class="btn btn-primary" onclick="go('/events/${id}/giftee')">See Their Wishlist</button>
     <button class="btn btn-secondary" onclick="go('/events/${id}/messages/giftee')">Send Them a Secret Message</button>
-  `);
+  `, { card: true });
 });
 
 route(/^\/events\/(\d+)\/wishlist$/, async (id) => {
@@ -755,7 +740,7 @@ route(/^\/events\/(\d+)\/wishlist$/, async (id) => {
     </div>
     ${d.items.length
       ? `<div class="wish-grid" id="myWishGrid"></div>`
-      : `<p class="muted">Your list is empty. Add your first gift idea!</p>`}
+      : `<div class="card"><p class="muted" style="margin:0">Your list is empty. Add your first gift idea!</p></div>`}
   `);
   const grid = document.getElementById("myWishGrid");
   if (grid) d.items.forEach(i => grid.append(myWishCard(i, id)));
@@ -786,7 +771,7 @@ function renderWishForm(eventId, d, item) {
       <button class="btn btn-primary" id="saveWishBtn">${editing ? "Save Changes" : "Add to My List"}</button>
       <button class="btn btn-quiet" id="cancelWishBtn">Cancel</button>
     </div>
-  `);
+  `, { card: true });
   const backToList = () => go(`/events/${eventId}/wishlist`);
   document.getElementById("cancelWishBtn").onclick = backToList;
   document.getElementById("saveWishBtn").onclick = async () => {
@@ -831,21 +816,48 @@ route(/^\/events\/(\d+)\/giftee$/, async (id) => {
   try { d = await api.get(`/events/${id}/wishlists/giftee`); }
   catch (e) { return render("Their Wishlist", alertBox(e.message)); }
   const items = d.items.length
-    ? wishTable(d.items.map(i => wishRowReadOnly(i, { showBuy: true })).join(""))
-    : `<p class="muted">They haven't added any gift ideas yet. Send them a friendly nudge!</p>`;
+    ? clanWishGrid(d.items)
+    : `<div class="card"><p class="muted" style="margin:0">They haven't added any gift ideas yet. Send them a friendly nudge!</p></div>`;
   render("Their Wishlist", items + `
-    <button class="btn btn-secondary" style="width:auto;margin-top:.5rem" onclick="go('/events/${id}/messages/giftee')">Send a Secret Message</button>`);
-  $app.querySelectorAll("[data-buy]").forEach(b => b.onclick = async () => {
-    await api.post(`/wishlists/${b.dataset.buy}/purchase`); navigate();
-  });
+    <button class="btn btn-secondary" style="width:auto;margin-top:.75rem" onclick="go('/events/${id}/messages/giftee')">Send a Secret Message</button>`);
+  wireBuyButtons();
 });
+
+// The person's profile shown like an ID: photo on the side, details beside it
+// (stacked on a phone). Empty fields are skipped.
+function idCardHtml(user) {
+  const name = user.display_name || user.full_name;
+  const swatch = user.favorite_color && window.CSS && CSS.supports("color", user.favorite_color)
+    ? `<span class="color-swatch" style="background:${esc(user.favorite_color)}" aria-hidden="true"></span>` : "";
+  const rows = [
+    ["About me", user.about_me ? esc(user.about_me) : ""],
+    ["Likes", user.likes ? esc(user.likes) : ""],
+    ["Favorite color", user.favorite_color ? `${swatch}${esc(user.favorite_color)}` : ""],
+    ["Please don't give me", user.avoid_gifts ? esc(user.avoid_gifts) : "", "id-avoid"],
+  ].filter(r => r[1]);
+  return `
+    <section class="id-card">
+      <div class="id-band">🎄 ${esc(FAMILY.name)}</div>
+      <div class="id-body">
+        <div class="id-photo">${user.photo_url
+          ? `<img class="id-img" src="${esc(user.photo_url)}" alt="Photo of ${esc(name)}">`
+          : `<span class="id-initials" style="background:${safeColor(user.avatar_color)}" aria-hidden="true">${esc(initialsOf(name))}</span>`}</div>
+        <div class="id-details">
+          <h2 class="id-name">${esc(name)}</h2>
+          ${rows.length
+            ? `<dl class="id-fields">${rows.map(([k, v, cls]) => `<dt>${k}</dt><dd class="${cls || ""}">${v}</dd>`).join("")}</dl>`
+            : `<p class="muted">${esc(name)} hasn't filled out their profile yet.</p>`}
+        </div>
+      </div>
+    </section>`;
+}
 
 function personCard(user, eventId) {
   const name = user.display_name || user.full_name;
   const photo = user.photo_url
     ? `<img class="person-img" src="${esc(user.photo_url)}" alt="">`
     : `<span class="person-initials" style="background:${safeColor(user.avatar_color)}" aria-hidden="true">${esc(initialsOf(name))}</span>`;
-  const card = h(`<button type="button" class="person-card" aria-label="${esc(name)}'s wishlist">
+  const card = h(`<button type="button" class="person-card" aria-label="${esc(name)}'s profile and wishlist">
     <span class="person-photo">${photo}</span>
     <span class="person-name">${esc(name)}</span>
   </button>`).firstElementChild;
@@ -857,7 +869,7 @@ route(/^\/events\/(\d+)\/clan$/, async (id) => {
   const list = await api.get(`/events/${id}/wishlists/clan`);
   list.sort((a, b) => a.user.display_name.localeCompare(b.user.display_name));
   render("My Clan", list.length
-    ? `<p class="muted">Tap someone to see their wishlist.</p><div class="person-grid" id="personGrid"></div>`
+    ? `<p class="muted">Tap someone to see their profile and wishlist.</p><div class="person-grid" id="personGrid"></div>`
     : `<div class="card center"><p>No one's joined this gift exchange yet.</p></div>`, { back: false });
   const grid = document.getElementById("personGrid");
   if (grid) list.forEach(entry => grid.append(personCard(entry.user, id)));
@@ -872,21 +884,11 @@ route(/^\/events\/(\d+)\/clan\/(\d+)$/, async (id, uid) => {
   }
   const n = entry.items.length;
   render("My Clan", `
-    <div class="person-head">
-      ${avatarHtml(entry.user, "avatar-md")}
-      <div>
-        <h2 style="margin:0">${esc(entry.user.display_name)}</h2>
-        <span class="muted">${n ? `${n} gift idea${n === 1 ? "" : "s"}` : "No gift ideas yet."}</span>
-      </div>
-    </div>
-    ${n ? `<div class="wish-grid" id="personWishGrid"></div>` : ""}
+    ${idCardHtml(entry.user)}
+    <h2 class="section-title">Wishlist${n ? ` <span class="muted">· ${n} gift idea${n === 1 ? "" : "s"}</span>` : ""}</h2>
+    ${n ? clanWishGrid(entry.items) : `<div class="card"><p class="muted" style="margin:0">No gift ideas yet.</p></div>`}
   `);
-  const grid = document.getElementById("personWishGrid");
-  if (grid) entry.items.forEach(i => grid.append(clanWishCard(i)));
-  $app.querySelectorAll("[data-buy]").forEach(b => b.onclick = async () => {
-    try { await api.post(`/wishlists/${b.dataset.buy}/purchase`); navigate(); }
-    catch (e) { showError(e); }
-  });
+  wireBuyButtons();
 });
 
 route(/^\/events\/(\d+)\/messages$/, async (id) => {
@@ -897,11 +899,11 @@ route(/^\/events\/(\d+)\/messages$/, async (id) => {
     const msgs = t.messages.map(m =>
       `<div class="bubble ${m.mine ? "mine" : "theirs"}">${esc(m.body)}</div>`).join("")
       || `<p class="muted center">No messages yet. Say hello!</p>`;
-    return `<h2>${label}: ${esc(t.with_display_name)}</h2>
+    return `<section class="card"><h2>${label}: ${esc(t.with_display_name)}</h2>
       <div>${msgs}</div>
       <label for="in-${key}">Write a message</label>
       <input id="in-${key}" maxlength="2000" placeholder="Type here…">
-      <button class="btn btn-primary" data-send="${key}">Send</button><hr style="margin:2rem 0">`;
+      <button class="btn btn-primary" data-send="${key}">Send</button></section>`;
   }
   render("Messages", `
     <div id="msg"></div>
@@ -935,7 +937,7 @@ async function renderMessageThread(id, key, label) {
     <label for="msgin">Write a message</label>
     <input id="msgin" maxlength="2000" placeholder="Type here…">
     <button class="btn btn-primary" id="sendBtn">Send</button>
-  `);
+  `, { card: true });
   document.getElementById("sendBtn").onclick = async () => {
     const input = document.getElementById("msgin");
     if (!input.value.trim()) return;
@@ -978,13 +980,15 @@ route(/^\/admin$/, async () => {
   const fam = await api.get(`/families/${FAMILY.id}`);
   const regUrl = `${location.origin}/#/join/${fam.join_code}`;
   render("Clan Admin Dashboard", `
-    <h2>Clan name</h2>
-    <label for="clanName">Name</label>
-    <input id="clanName" value="${esc(fam.name)}">
-    <div id="nameMsg"></div>
-    <button class="btn btn-secondary" id="saveClanName">Save Clan Name</button>
+    <section class="card">
+      <h2>Clan name</h2>
+      <label for="clanName">Name</label>
+      <input id="clanName" value="${esc(fam.name)}">
+      <div id="nameMsg"></div>
+      <button class="btn btn-secondary" id="saveClanName">Save Clan Name</button>
+    </section>
 
-    <div class="card center" style="margin-top:1.5rem">
+    <div class="card center">
       <p class="muted">Share this code so family can join:</p>
       <div class="reveal-name" style="font-size:1.8rem">${esc(fam.join_code)}</div>
       <button class="btn btn-quiet" id="copyLinkBtn" style="margin-top:.5rem">Copy Registration Link</button>
@@ -1112,6 +1116,7 @@ route(/^\/admin\/members$/, async () => {
       </table>
     </div>
 
+    <section class="card" style="margin-top:1.25rem">
     <h2>Add a member</h2>
     <p class="muted">Adds their account directly — you'll get a username and password to give them.</p>
     <label for="newName">Name</label>
@@ -1127,6 +1132,7 @@ route(/^\/admin\/members$/, async () => {
     </div>` : ""}
     <div id="addMsg"></div>
     <button class="btn btn-primary" id="addMemberBtn">Add Member</button>
+    </section>
   `, { back: false, wide: true });
   const tbody = $app.querySelector("#membersTable tbody");
   members.forEach(m => tbody.append(memberRow(m)));
@@ -1195,10 +1201,12 @@ route(/^\/admin\/groups$/, async () => {
       </table>
     </div>
     <p class="muted center" id="noGroups">No households yet.</p>
+    <section class="card" style="margin-top:1.25rem">
     <h2>Add a household</h2>
     <label>Household name</label>
     <input id="hname">
     <button class="btn btn-primary" id="addHouse">Add Household</button>
+    </section>
   `, { back: false, wide: true });
   const gtbody = $app.querySelector("#groupsTable tbody");
   const noGroups = document.getElementById("noGroups");
@@ -1271,7 +1279,7 @@ route(/^\/admin\/events$/, async () => {
     </div>
     ${events.length
       ? `<div class="wish-grid" id="eventGrid"></div>`
-      : `<p class="muted">No gift exchanges yet. Create one and pick who's joining.</p>`}
+      : `<div class="card"><p class="muted" style="margin:0">No gift exchanges yet. Create one and pick who's joining.</p></div>`}
   `, { back: false, wide: true });
   const grid = document.getElementById("eventGrid");
   if (grid) events.forEach(e => grid.append(eventCard(e)));
@@ -1325,7 +1333,7 @@ async function renderEventForm(ev) {
       <button class="btn btn-primary" id="saveEventBtn">${editing ? "Save Changes" : "Create Gift Exchange"}</button>
       <button class="btn btn-quiet" id="cancelEventBtn">Cancel</button>
     </div>
-  `, { back: true, wide: true });
+  `, { back: true, wide: true, card: true });
 
   const boxes = () => [...$app.querySelectorAll("[data-uid]")];
   const updateCount = () => {
@@ -1411,6 +1419,7 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
     ? `<button class="btn btn-quiet" id="markDone">Mark Event as Done</button>` : "";
   render(ev.name, `
     <div id="msg"></div>
+    <div class="card">
     <p><span class="status-tag ${status.cls}">${status.emoji} ${status.label}</span>
       <span class="muted">&nbsp;${esc(fmtEventDate(ev.event_date))}
       ${ev.budget_amount ? ` • Budget ${esc(ev.budget_currency)} ${ev.budget_amount}` : ""}
@@ -1418,10 +1427,12 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
     ${ev.status === "open" ? `<button class="btn btn-secondary" style="width:auto" id="editEvent">Edit Gift Exchange</button>` : ""}
     <h2 style="margin-top:1.25rem">Who's joining (${joining.length})</h2>
     ${people}
-    <hr style="margin:1.5rem 0">
+    </div>
+    <div class="card">
     ${drawSection}
     ${doneBtn}
     <button class="btn btn-quiet" onclick="go('/admin/events/${id}/wishlists')">View Everyone's Wishlists</button>
+    </div>
   `, { back: true, wide: true });
   const editBtn = document.getElementById("editEvent");
   if (editBtn) editBtn.onclick = () => go(`/admin/events/${id}/edit`);
@@ -1453,16 +1464,18 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
 route(/^\/admin\/events\/(\d+)\/wishlists$/, async (id) => {
   const all = await api.get(`/events/${id}/wishlists`);
   all.sort((a, b) => a.user.display_name.localeCompare(b.user.display_name));
-  const rows = all.flatMap(w => w.items.length
-    ? w.items.map(i => wishRowReadOnly(i, { showBuy: i.is_purchased !== undefined, personName: w.user.display_name }))
-    : [`<tr><td data-label="Person">${esc(w.user.display_name)}</td><td colspan="4" class="muted">No gift ideas yet.</td></tr>`]
-  ).join("");
+  const people = all.map(w => `
+    <section class="person-section">
+      <div class="person-head">
+        ${avatarHtml(w.user, "avatar-md")}
+        <h2 style="margin:0">${esc(w.user.display_name)}</h2>
+      </div>
+      ${w.items.length ? clanWishGrid(w.items) : `<div class="card"><p class="muted" style="margin:0">No gift ideas yet.</p></div>`}
+    </section>`).join("");
   render("All Wishlists", all.length
-    ? wishTable(rows, { showPerson: true })
-    : `<p class="muted">No one's joined this gift exchange yet.</p>`, { back: true, wide: true });
-  $app.querySelectorAll("[data-buy]").forEach(b => b.onclick = async () => {
-    await api.post(`/wishlists/${b.dataset.buy}/purchase`); navigate();
-  });
+    ? people
+    : `<div class="card"><p class="muted" style="margin:0">No one's joined this gift exchange yet.</p></div>`, { back: true, wide: true });
+  wireBuyButtons();
 });
 
 route(/^\/admin\/announce$/, async () => {
@@ -1502,7 +1515,7 @@ route(/^\/admin\/announce$/, async () => {
 
   render("Announcements", `
     <div id="msg"></div>
-    <h2>Existing announcements</h2>
+    <h2 class="section-title">Existing announcements</h2>
     ${anns.length ? `
       <div class="table-wrap">
         <table class="data" id="annTable">
@@ -1513,14 +1526,15 @@ route(/^\/admin\/announce$/, async () => {
           <thead><tr><th>Title</th><th>Message</th><th>Pinned</th><th>On Dashboard</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
-      </div>` : `<p class="muted">No announcements yet.</p>`}
-    <hr style="margin:1.5rem 0">
+      </div>` : `<div class="card"><p class="muted" style="margin:0">No announcements yet.</p></div>`}
+    <section class="card" style="margin-top:1.25rem">
     <h2>Post a new announcement</h2>
     <label>Title</label><input id="atitle" placeholder="e.g. Party is at 6pm!">
     <label>Message</label><textarea id="abody" rows="4"></textarea>
     <div class="check-row"><input type="checkbox" id="apin"><label for="apin" style="margin:0">Pin to the top</label></div>
     <div class="check-row"><input type="checkbox" id="apub" checked><label for="apub" style="margin:0">Show on Clan Dashboard</label></div>
     <button class="btn btn-primary" id="postBtn">Post to the Family</button>
+    </section>
   `, { back: false, wide: true });
 
   const tbody = document.querySelector("#annTable tbody");

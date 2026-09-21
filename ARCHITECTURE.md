@@ -107,7 +107,7 @@ Elderly-friendly detail: the text message says only "Your verification code is
 
 All JSON, prefixed `/api`. 🔒 = auth required, 👑 = family admin.
 
-**Auth** — `POST /auth/login-start` (creates the account if the username is new), `POST /auth/verify-otp`, `POST /auth/login-password`, `GET /auth/me` 🔒, `PATCH /auth/me` 🔒, `PATCH /auth/security` 🔒, `POST /auth/logout` 🔒
+**Auth** — `POST /auth/login-start` (creates the account if the username is new), `POST /auth/verify-otp`, `POST /auth/login-password`, `GET /auth/me` 🔒, `PATCH /auth/me` 🔒 (name plus profile text: `about_me`, `likes`, `favorite_color`, `avoid_gifts`), `POST|DELETE /auth/me/photo` 🔒, `PATCH /auth/security` 🔒, `POST /auth/logout` 🔒
 
 **Families**
 - `POST /families` 🔒 — create family (creator becomes admin)

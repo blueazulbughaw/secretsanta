@@ -18,6 +18,14 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   throughout (base font ~17px, buttons/inputs ~44px tall, 8px radius) — not oversized
   touch targets. Signed-in pages fill the space beside the sidebar; pre-login pages
   stay centered. One primary action per screen, plain language ("sign-in code" not
-  "OTP"). White bg, #C0392B red, #2E7D4F green, #F5C518 yellow accents.
+  "OTP"). Every page is cards on a very light washed-red background (`--bg`): all
+  cards white (`--card`), except a gift that's already been bought, which is very
+  light grey (`--card-done`). Never put content directly on the bg or use bare
+  `<hr>`-separated sections — wrap it in a card. #C0392B red, #2E7D4F green,
+  #F5C518 yellow accents.
+- Profile: photo, about me, likes, favorite color, "what not to give me" live on
+  `users` (PATCH /auth/me + /auth/me/photo) and are shown to the clan as an ID-style
+  card on `/events/:id/clan/:userId` (photo beside details, wishlist cards below).
+  My Clan itself is just a name-sorted grid of photo + name tiles.
 - Run pytest before declaring any task done.
 - Deploy target: Namecheap cPanel Python app (passenger_wsgi.py entry).

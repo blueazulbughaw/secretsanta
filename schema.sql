@@ -26,6 +26,10 @@ CREATE TABLE users (
   display_name  VARCHAR(60)  NULL,           -- "Lola Nena", "Tito Ben"
   avatar_color  CHAR(7)      NOT NULL DEFAULT '#C0392B', -- accessible identicon fallback
   photo_path    VARCHAR(255) NULL,           -- profile photo, relative to app/static/
+  about_me      TEXT         NULL,           -- profile: shown to the clan on My Clan
+  likes         TEXT         NULL,
+  favorite_color VARCHAR(40) NULL,
+  avoid_gifts   TEXT         NULL,           -- "what not to give me"
   is_active     TINYINT(1)   NOT NULL DEFAULT 1,
   last_login_at DATETIME     NULL,
   created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,

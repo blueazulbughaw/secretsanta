@@ -140,6 +140,10 @@ def me():
                     "must_change_password": g.user.must_change_password})
 
 
+# Free-text profile fields the clan sees on My Clan, and their max lengths
+PROFILE_FIELD_LIMITS = {"about_me": 1000, "likes": 1000, "favorite_color": 40, "avoid_gifts": 1000}
+
+
 @bp.patch("/auth/me")
 @require_auth
 def update_me():
@@ -149,6 +153,9 @@ def update_me():
         g.user.full_name = name[:120]
     if "display_name" in data:
         g.user.display_name = (data.get("display_name") or "").strip()[:60] or None
+    for field, limit in PROFILE_FIELD_LIMITS.items():
+        if field in data:
+            setattr(g.user, field, str(data.get(field) or "").strip()[:limit] or None)
     db.session.commit()
     return jsonify({"ok": True, "user": g.user.to_dict()})
 
