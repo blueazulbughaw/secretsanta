@@ -396,7 +396,7 @@ table.data td.wrap-cell { overflow: visible; white-space: normal; }
 .person-link:focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; border-radius: 4px; }
 .avatar-sm { width: 36px; height: 36px; font-size: .85rem; }
 /* Who's coming: a plain list, the whole row opens the person's profile */
-.people-rows { list-style: none; margin: 0; padding: 0; max-width: 480px; }
+.people-rows { list-style: none; margin: 0; padding: 0; max-width: 640px; }
 .people-rows li { border-bottom: 1px solid var(--line); }
 .people-rows li:last-child { border-bottom: none; }
 .person-row { display: flex; padding: .55rem .4rem; border-radius: var(--radius); }
@@ -547,3 +547,7 @@ body.dragging-cards, body.dragging-cards * { cursor: grabbing !important; }
 .name-list { list-style: none; margin: 0 0 .9rem; padding: 0; }
 .name-list li { padding: .45rem 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 .name-list li:last-child { border-bottom: none; }
+
+/* Who's coming: name on the left, their household as a second column on the right */
+.person-row { gap: .6rem; }
+.person-household { margin-left: auto; padding-left: .75rem; text-align: right; font-size: .88rem; font-weight: 400; color: var(--muted); }

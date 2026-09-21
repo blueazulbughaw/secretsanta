@@ -27,7 +27,7 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   `<hr>`-separated sections — wrap it in a card. #C0392B red, #2E7D4F green,
   #F5C518 yellow accents.
 - Dashboard (`/`), top to bottom: plain greeting (not in a card), Announcements card
-  (a phone shows only the message text), ONE "My upcoming gift exchange(s)" card holding
+  (a phone shows only the message text), ONE "My upcoming event(s)" card holding
   every upcoming event split by lines, then a shortcuts card at the very bottom (Edit My
   Profile, View My Wishlist, View My Clan).
   Each event shows what / where / date / time / My Giftee, then Message My Giftee + Message
@@ -42,17 +42,17 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   hold a form use `.form-card` (or render's `card:true` = `.page-card`): on desktop they are
   640px wide, centred, and their fields/buttons fill the card. Don't leave a form floating
   narrow on the left of a wide card.
-- A new gift exchange gets different giver -> giftee pairs: `matching_service.solve_distinct`
+- A new event gets different giver -> giftee pairs: `matching_service.solve_distinct`
   bans every pair from the clan's other events (falling back to just the latest event, then
   nothing, for tiny groups) and reports `repeated`. Don't draw with plain `solve`.
-- Messages belong to one gift exchange: threads come from that event's draw and every
+- Messages belong to one event: threads come from that event's draw and every
   thread page says which event it is. Notifications are links to what they're about.
 - A giftee's profile shows the Secret Santa a Message button with a note that it's anonymous.
 - A giftee's wishlist is viewed on their profile (`/events/:id/clan/:userId`, top bar = their
   name); there is no separate "Their Wishlist" page (`/events/:id/giftee` only redirects, for
   old notifications). With codenames on, links go to the reveal page (`/my-person`) instead.
 - Admins see an "Admin" card at the bottom of the dashboard (Manage My Clan). Manage My Clan
-  (`/admin`) is a stack of centred cards: clan name, then name-only lists of gift exchanges,
+  (`/admin`) is a stack of centred cards: clan name, then name-only lists of events,
   members and households, each with its Manage... button underneath, then Post Announcement,
   and the registration code card LAST.
 - Links (wishlist `link_url`) are validated and stored as absolute http(s) URLs
@@ -60,16 +60,22 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   user-typed URL in an href.
 - Photos: real images only (Pillow), 8MB upload cap, gift photos shrunk to 1200px,
   profile photos cropped to a 512px square. Tests must upload real images.
-- Any gift exchange can be deleted by the clan admin, old or archived, taking everything
+- Wording: always say "event". Never "gift exchange" (user-facing text, errors, docs).
+- There is no separate admin page for a single event. The event page (`/events/:id`) is the
+  one place: for clan admins it ends with an Admin card (Draw Names / Start Over (Re-Draw
+  Names), Archive Event, View Everyone's Wishlists, Delete Event). Event cards on
+  Manage My Clan > Events open it (`/admin/events/:id` just redirects). Who's coming shows a
+  household beside each name.
+- Any event can be deleted by the clan admin, old or archived, taking everything
   with it (draw, wishlists + photos, messages, dishes, its announcements) - that's how test
   data is cleaned up.
-- Archiving (admin "Archive Gift Exchange", status `completed`) turns an event into a
+- Archiving (admin "Archive Event", status `completed`) turns an event into a
   view-only record. Everything stays readable (event page, dishes, messages, wishlists,
   profiles, purchase tags) but nothing can change: no messages, wishlist add/edit/delete/
   reorder, buy/unbuy, dishes, event edits, participants or re-draw. This is enforced
   server-side with `archived_error(ev)` (middleware/auth.py); every new write endpoint that
   belongs to an event must call it. The UI hides the controls too. Everyone finds archived
-  (and any past) events under "Past Gift Exchanges" (`/past`).
+  (and any past) events under "Past Events" (`/past`).
 - Wishlist priority is the order of the cards: no priority field anywhere; the owner
   long-presses a card on My Wishlist and drags it (`enableLongPressReorder`, saved with
   PUT /events/:id/wishlists/order). Everyone else sees that order, labelled Priority 1, 2...

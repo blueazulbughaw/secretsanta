@@ -511,8 +511,12 @@ def test_attendees_visible_to_clan_without_private_contact_info(app, users):
     admin.patch("/api/auth/me", json={"likes": "Tea", "favorite_color": "Green"})
 
     # any clan member (even one who isn't attending) sees who's coming, sorted by name
+    # household names come with them (blank until someone is in one)
+    h = admin.post(f"/api/families/{fam['id']}/households", json={"name": "Cruz House"}).get_json()["household"]
+    ana_membership = next(m for m in members if m["user"]["username"] == ADMIN_USER)["membership_id"]
+    admin.patch(f"/api/families/{fam['id']}/members/{ana_membership}", json={"household_id": h["id"]})
     people = bob.get(f"/api/events/{ev['id']}/attendees").get_json()
-    assert [p["display_name"] for p in people] == ["Ana", "Cara"]
+    assert [(p["display_name"], p["household_name"]) for p in people] == [("Ana", "Cruz House"), ("Cara", "")]
     assert (people[0]["likes"], people[0]["favorite_color"]) == ("Tea", "Green")
     assert all(not ({"phone", "email", "username", "avoid_gifts"} & set(p)) for p in people)
 

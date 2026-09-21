@@ -27,7 +27,7 @@ def _my_signup_error(ev):
     joining = EventParticipant.query.filter_by(
         event_id=ev.id, user_id=g.user.id, is_participating=True).first()
     if not joining:
-        return jsonify({"error": "Only people joining this gift exchange can add dishes."}), 403
+        return jsonify({"error": "Only people joining this event can add dishes."}), 403
     archived = archived_error(ev)
     if archived:
         return archived

@@ -81,7 +81,7 @@ def _random_matching(allowed, rng):
 
 
 def previous_pairs(event: Event):
-    """(giver, receiver) pairs of the clan's OTHER gift exchanges, newest first."""
+    """(giver, receiver) pairs of the clan's OTHER events, newest first."""
     others = (Event.query.filter(Event.family_id == event.family_id, Event.id != event.id)
               .order_by(Event.id.desc()).all())
     return [{(a.giver_id, a.receiver_id) for a in Assignment.query.filter_by(event_id=o.id).all()}
@@ -106,7 +106,7 @@ def solve(participants, allow_same_household=False, rng=None):
       your own block (the wraparound lands inside the first/largest
       block, which the tail positions can never belong to when m <= n/2).
     Runs in O(n) — no backtracking, no pathological cases. It doesn't know about
-    earlier gift exchanges; solve_distinct() is what draws use.
+    earlier events; solve_distinct() is what draws use.
     """
     rng = rng or random
     n = len(participants)
@@ -138,8 +138,8 @@ def solve(participants, allow_same_household=False, rng=None):
 
 def solve_distinct(participants, allow_same_household=False, history=(), rng=None):
     """Draws names so that nobody gives to themselves or (unless allowed) to their
-    own household, and - a different gift exchange means different pairs - nobody
-    gets a giftee they already had in an earlier gift exchange.
+    own household, and - a different event means different pairs - nobody
+    gets a giftee they already had in an earlier event.
 
     participants: list of (user_id, household_id); history: pair sets of earlier
     exchanges, newest first. If the group is too small to avoid every earlier
@@ -171,7 +171,7 @@ def solve_distinct(participants, allow_same_household=False, history=(), rng=Non
 def generate_assignments(event: Event):
     """Validate, solve, persist in one transaction, notify. Idempotent-safe:
     DB unique constraints reject double inserts. Returns (people matched, how many
-    of the pairs repeat an earlier gift exchange - 0 unless the group is too small)."""
+    of the pairs repeat an earlier event - 0 unless the group is too small)."""
     participants = validate_event(event)
     matches, repeated = solve_distinct(participants, event.allow_same_household, previous_pairs(event))
 

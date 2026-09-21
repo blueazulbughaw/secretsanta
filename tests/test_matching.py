@@ -55,7 +55,7 @@ def test_fuzz_1000_runs_50_people():
             check_valid(parts, solve(parts))
 
 
-# ---- a different gift exchange means different giver -> giftee pairs
+# ---- a different event means different giver -> giftee pairs
 from app.services.matching_service import solve_distinct
 
 

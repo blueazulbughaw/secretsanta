@@ -78,8 +78,8 @@ def require_family_admin(family_id):
 
 
 def archived_error(ev):
-    """An archived (completed) gift exchange is view-only: everything can still be
+    """An archived (completed) event is view-only: everything can still be
     read, nothing can be changed. Returns the response to send, or None."""
     if ev.status == "completed":
-        return jsonify({"error": "This gift exchange is archived, so it's view-only."}), 400
+        return jsonify({"error": "This event is archived, so it's view-only."}), 400
     return None

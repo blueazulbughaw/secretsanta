@@ -149,7 +149,7 @@ def update_event(event_id):
             if not EventParticipant.query.filter_by(event_id=ev.id, user_id=gm,
                                                     is_participating=True).first():
                 return jsonify({"error": "The game master has to be someone who's joining "
-                                         "this gift exchange."}), 400
+                                         "this event."}), 400
             ev.game_master_id = gm
     db.session.commit()
     return jsonify({"ok": True, "event": ev.to_dict()})
@@ -198,9 +198,14 @@ def list_attendees(event_id):
     if err:
         return err
     parts = EventParticipant.query.filter_by(event_id=ev.id, is_participating=True).all()
-    people = sorted((p.user.public_dict() for p in parts),
-                    key=lambda u: u["display_name"].lower())
-    return jsonify(people)
+    members = {m.user_id: m for m in FamilyMember.query.filter_by(family_id=ev.family_id).all()}
+    people = []
+    for p in parts:
+        person = p.user.public_dict()
+        m = members.get(p.user_id)
+        person["household_name"] = m.household.name if m and m.household else ""
+        people.append(person)
+    return jsonify(sorted(people, key=lambda u: u["display_name"].lower()))
 
 
 @bp.get("/events/<int:event_id>/participants")
