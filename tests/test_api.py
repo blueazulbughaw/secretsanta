@@ -504,3 +504,108 @@ def test_attendees_visible_to_clan_without_private_contact_info(app, users):
     outsider = app.test_client()
     outsider.post("/api/auth/register", json={"username": "zed", "password": PASSWORD, "full_name": "Zed"})
     assert outsider.get(f"/api/events/{ev['id']}/attendees").status_code == 403
+
+
+def test_only_clan_admin_can_change_names(app, users):
+    admin, bob = users[ADMIN_USER], users[BOB_USER]
+    fam = users["_family"]
+    r = bob.patch("/api/auth/me", json={"full_name": "Robert"})
+    assert r.status_code == 403
+    assert bob.get("/api/auth/me").get_json()["user"]["full_name"] == "Bob"
+    # sending the unchanged name, or only other profile fields, is fine
+    assert bob.patch("/api/auth/me", json={"full_name": "Bob", "likes": "Tea"}).status_code == 200
+    # the admin can rename themselves and any member
+    assert admin.patch("/api/auth/me", json={"full_name": "Ana C"}).get_json()["user"]["full_name"] == "Ana C"
+    members = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    bob_m = next(m for m in members if m["user"]["username"] == BOB_USER)
+    assert admin.patch(f"/api/families/{fam['id']}/members/{bob_m['membership_id']}",
+                       json={"full_name": "Robert"}).status_code == 200
+    assert bob.get("/api/auth/me").get_json()["user"]["full_name"] == "Robert"
+    # an account that has no name yet can still pick one
+    from app.models import User
+    User.query.filter_by(username=CARA_USER).first().full_name = ""
+    db.session.commit()
+    assert users[CARA_USER].patch("/api/auth/me", json={"full_name": "Cara"}).status_code == 200
+
+
+def test_password_reset_needs_current_password(app, users):
+    bob = users[BOB_USER]
+    assert bob.patch("/api/auth/security", json={"password": "another-long-pass"}).status_code == 400
+    assert bob.patch("/api/auth/security", json={"password": "another-long-pass",
+                                                 "current_password": "wrong-password"}).status_code == 400
+    assert bob.patch("/api/auth/security", json={"password": "another-long-pass",
+                                                 "current_password": PASSWORD}).status_code == 200
+    fresh = app.test_client()
+    assert fresh.post("/api/auth/login-password",
+                      json={"username": BOB_USER, "password": "another-long-pass"}).status_code == 200
+    assert app.test_client().post("/api/auth/login-password",
+                                  json={"username": BOB_USER, "password": PASSWORD}).status_code == 401
+
+    # an account with no password yet sets one without a current password
+    from app.models import User
+    User.query.filter_by(username=CARA_USER).first().password_hash = None
+    db.session.commit()
+    assert users[CARA_USER].patch("/api/auth/security", json={"password": "brand-new-pass"}).status_code == 200
+
+
+def test_temporary_password_can_be_replaced_without_retyping_it(users):
+    admin, fam = users[ADMIN_USER], users["_family"]
+    added = admin.post(f"/api/families/{fam['id']}/members", json={"full_name": "Dee Dee"}).get_json()
+    assert added["user"]["username"]
+    c = app_client_for(admin, added)
+    assert c.patch("/api/auth/security", json={"password": "my-own-password"}).status_code == 200
+
+
+def app_client_for(admin, added):
+    """Signs in as a member the admin just added, using the temporary password."""
+    c = admin.application.test_client()
+    r = c.post("/api/auth/login-password", json={
+        "username": added["user"]["username"], "password": added["temp_password"]})
+    assert r.status_code == 200
+    return c
+
+
+def test_admin_can_delete_event_and_everything_in_it(app, users, tmp_path):
+    import io
+    app.static_folder = str(tmp_path)
+    fam = users["_family"]
+    admin, bob = users[ADMIN_USER], users[BOB_USER]
+    members = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    uid = [m["user"]["id"] for m in members]
+    for i, m in enumerate(members):
+        h = admin.post(f"/api/families/{fam['id']}/households", json={"name": f"D{i}"}).get_json()["household"]
+        admin.patch(f"/api/families/{fam['id']}/members/{m['membership_id']}", json={"household_id": h["id"]})
+
+    def make(name):
+        ev = admin.post(f"/api/families/{fam['id']}/events",
+                        json={"name": name, "event_date": "2026-12-25"}).get_json()["event"]
+        admin.put(f"/api/events/{ev['id']}/participants", json={"user_ids": uid})
+        return ev
+
+    doomed, kept = make("Doomed"), make("Kept")
+    for ev in (doomed, kept):
+        assert admin.post(f"/api/events/{ev['id']}/assignments/generate").status_code == 200
+        r = bob.post(f"/api/events/{ev['id']}/wishlists", data={
+            "item_name": "Slippers", "photo": (io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"0" * 8), "s.png")},
+            content_type="multipart/form-data")
+        assert r.status_code == 201
+    doomed_photo = tmp_path / bob.get(f"/api/events/{doomed['id']}/wishlists/mine").get_json()["items"][0]["photo_url"].removeprefix("/static/")
+    assert doomed_photo.exists()
+    admin.post(f"/api/families/{fam['id']}/announcements",
+               json={"title": "Party", "body": "Soon", "event_id": doomed["id"]})
+
+    # members can't delete; the admin can
+    assert bob.delete(f"/api/events/{doomed['id']}").status_code == 403
+    assert admin.delete(f"/api/events/{doomed['id']}").status_code == 200
+    assert admin.get(f"/api/events/{doomed['id']}").status_code == 404
+    assert admin.delete(f"/api/events/{doomed['id']}").status_code == 404
+    assert not doomed_photo.exists()
+
+    from app.models import Assignment, EventParticipant, WishlistItem
+    assert Assignment.query.filter_by(event_id=doomed["id"]).count() == 0
+    assert EventParticipant.query.filter_by(event_id=doomed["id"]).count() == 0
+    assert WishlistItem.query.filter_by(event_id=doomed["id"]).count() == 0
+    # the other event is untouched
+    assert Assignment.query.filter_by(event_id=kept["id"]).count() == 3
+    assert WishlistItem.query.filter_by(event_id=kept["id"]).count() == 1
+    assert [e["name"] for e in admin.get(f"/api/families/{fam['id']}/events").get_json()] == ["Kept"]

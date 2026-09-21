@@ -3,7 +3,9 @@ from datetime import datetime, date, time
 from flask import Blueprint, request, jsonify, g
 
 from ..extensions import db
-from ..models import Event, EventParticipant, FamilyMember
+from ..models import (Event, EventParticipant, FamilyMember, Assignment, WishlistItem,
+                      Message, Announcement)
+from ..services.photo_service import remove_photo
 from ..middleware.auth import require_auth, require_family_member, require_family_admin
 
 bp = Blueprint("events", __name__)
@@ -133,6 +135,25 @@ def update_event(event_id):
         return jsonify({"error": bad_time}), 400
     db.session.commit()
     return jsonify({"ok": True, "event": ev.to_dict()})
+
+
+@bp.delete("/events/<int:event_id>")
+@require_auth
+def delete_event(event_id):
+    """Permanently removes an event and everything scoped to it: who's joining,
+    the name draw, wishlists (and their photos), messages and its announcements."""
+    ev = Event.query.get_or_404(event_id)
+    _, err = require_family_admin(ev.family_id)
+    if err:
+        return err
+    photos = [i.photo_path for i in WishlistItem.query.filter_by(event_id=ev.id).all()]
+    for model in (Message, Assignment, WishlistItem, EventParticipant, Announcement):
+        model.query.filter_by(event_id=ev.id).delete()
+    db.session.delete(ev)
+    db.session.commit()
+    for path in photos:
+        remove_photo(path)
+    return jsonify({"ok": True})
 
 
 @bp.post("/events/<int:event_id>/complete")

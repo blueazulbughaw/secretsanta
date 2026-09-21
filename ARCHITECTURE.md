@@ -88,9 +88,10 @@ Enforced with two decorators: `@require_auth` (valid JWT) and `@require_family_a
 2b. POST /api/auth/login-password { username, password }
     → check password hash → issue JWT cookie
 
-3. PATCH /api/auth/security     { password? , phone? }  (authenticated)
-   → set/change password (>= 8 chars) and/or phone (SMS consent required
-     in the UI at the moment the phone is added)
+3. PATCH /api/auth/security     { password?, current_password?, phone? }  (authenticated)
+   → set/reset password (>= 8 chars; resetting an existing password needs
+   current_password, except a temporary admin-issued one) and/or phone (SMS
+   consent required; the profile page no longer offers phone setup)
 
 4. GET  /api/auth/me             → current user + families + can_create_family
 5. POST /api/auth/logout         → clear cookie
@@ -107,7 +108,7 @@ Elderly-friendly detail: the text message says only "Your verification code is
 
 All JSON, prefixed `/api`. 🔒 = auth required, 👑 = family admin.
 
-**Auth** — `POST /auth/login-start` (creates the account if the username is new), `POST /auth/verify-otp`, `POST /auth/login-password`, `GET /auth/me` 🔒, `PATCH /auth/me` 🔒 (name plus profile text: `about_me`, `likes`, `favorite_color`, `avoid_gifts`), `POST|DELETE /auth/me/photo` 🔒, `PATCH /auth/security` 🔒, `POST /auth/logout` 🔒
+**Auth** — `POST /auth/login-start` (creates the account if the username is new), `POST /auth/verify-otp`, `POST /auth/login-password`, `GET /auth/me` 🔒, `PATCH /auth/me` 🔒 (name — clan admins only, except a first-time name — plus profile text: `about_me`, `likes`, `favorite_color`, `avoid_gifts`), `POST|DELETE /auth/me/photo` 🔒, `PATCH /auth/security` 🔒, `POST /auth/logout` 🔒
 
 **Families**
 - `POST /families` 🔒 — create family (creator becomes admin)
@@ -126,6 +127,7 @@ All JSON, prefixed `/api`. 🔒 = auth required, 👑 = family admin.
 - `GET /families/:id/events` 🔒
 - `GET|PATCH /events/:id` 🔒 / 👑 — besides name/date/budget/rules an event carries the details the clan admin sets for everyone: `event_time`, `location`, `theme`, `rules`, `what_to_bring`, `other_info`. Once names are drawn the matching rules (`wishlist_limit`, `use_codenames`, `allow_same_household`, participants) are locked, but the name, date, budget and all of those details stay editable until the event is completed
 - `GET /events/:id/attendees` 🔒 — who's coming, for any family member: profile-safe fields only (`User.public_dict()`: no username/phone/email), sorted by name
+- `DELETE /events/:id` 👑 — permanently removes the event and everything scoped to it (participants, assignments, wishlists + photos, messages, its announcements)
 - `POST /events/:id/complete` 👑 — marks the event `completed`; it drops out of `CURRENT_EVENT` selection so the next event starts with its own fresh wishlists (`WishlistItem` is already scoped by `event_id`, so nothing carries over)
 - `PUT /events/:id/participants` 👑 — `{ user_ids: [...] }` (the checkbox screen)
 - `POST /events/:id/participants/:userId/opt-out` 🔒 — self only, before matching

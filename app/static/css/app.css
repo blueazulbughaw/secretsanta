@@ -396,8 +396,12 @@ table.data td.wrap-cell { overflow: visible; white-space: normal; }
 .person-link:hover { text-decoration: underline; }
 .person-link:focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; border-radius: 4px; }
 .avatar-sm { width: 36px; height: 36px; font-size: .85rem; }
-table.data tr.click-row { cursor: pointer; }
-table.data tr.click-row:hover { background: #FBF5F4; }
+/* Who's coming: a plain list, the whole row opens the person's profile */
+.people-rows { list-style: none; margin: 0; padding: 0; max-width: 480px; }
+.people-rows li { border-bottom: 1px solid var(--line); }
+.people-rows li:last-child { border-bottom: none; }
+.person-row { display: flex; padding: .55rem .4rem; border-radius: var(--radius); }
+.person-row:hover { background: #FBF5F4; text-decoration: none; }
 .greeting p { margin-top: 0; }
 
 

@@ -4,8 +4,11 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
 - Schema of record is schema.sql; models live in app/models.py. Use Flask-Migrate for changes.
 - Auth: username -> JWT in httpOnly cookie. Typing a new username creates the account
   (no separate signup step). If the account has a phone on file, sign-in sends an SMS
-  OTP (Twilio); otherwise sign-in uses a password. Users set up a password and/or phone
-  from Security settings after their first login.
+  OTP (Twilio); otherwise sign-in uses a password. Users set or reset their password
+  from Profile & Security (resetting asks for the current password, except for a
+  temporary admin-issued one). The phone number is not offered on the profile page.
+- Names: only a clan admin can change a name (their own included; members get it
+  read-only on their profile). The admin renames people on the Members page.
 - Every endpoint must verify the user belongs to the resource's family (see middleware/auth.py helpers).
 - Wishlist privacy rule: owners NEVER see purchase status (who/when). Everyone else in
   the family can, and can toggle it — not just the assigned Secret Santa — via My Clan
@@ -29,6 +32,8 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   rules, what to bring, other things to know, plus a who's-coming table) and the giftee's
   profile; every attendee row opens that person's profile. The giftee is NOT linked when
   the event uses codenames (the profile would reveal the real name).
+- No "← Back" link in the top bar, and no placeholder text in any input (labels only).
+- Gift exchanges can be deleted by the clan admin (erases wishlists, draw, messages).
 - Profile: photo, about me, likes, favorite color, "what not to give me" live on
   `users` (PATCH /auth/me + /auth/me/photo) and are shown to the clan as an ID-style
   card on `/events/:id/clan/:userId` (photo beside details, wishlist cards below).

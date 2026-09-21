@@ -2,7 +2,6 @@
 
 const $app = document.getElementById("app");
 const $title = document.getElementById("pageTitle");
-const $back = document.getElementById("backBtn");
 const $topbar = document.getElementById("topbar");
 const $bell = document.getElementById("bellBtn");
 const $badge = document.getElementById("bellBadge");
@@ -48,9 +47,8 @@ function esc(s) {
 function h(html) { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content; }
 // card: put the whole page in one white card (forms, threads); pages made of
 // several sections build their own cards instead.
-function render(title, html, { back = true, wide = false, card = false } = {}) {
+function render(title, html, { wide = false, card = false } = {}) {
   $title.textContent = title;
-  $back.hidden = !back;
   $app.classList.toggle("wide", wide);
   $app.innerHTML = "";
   if (card && typeof html === "string") html = `<div class="card page-card">${html}</div>`;
@@ -310,7 +308,6 @@ async function navigate() {
   go("/");
 }
 window.addEventListener("hashchange", navigate);
-$back.onclick = () => history.back();
 $bell.onclick = () => go("/notifications");
 $menuBtn.onclick = toggleSidebar;
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSidebar(); });
@@ -365,7 +362,7 @@ function pageLogin() {
       <a href="/privacy_terms#terms" target="_blank" rel="noopener">Terms of Service</a>
       and <a href="/privacy_terms#privacy" target="_blank" rel="noopener">Privacy Policy</a>.
     </p>
-  `, { back: false });
+  `);
   document.getElementById("togglePw").onclick = () => {
     const pw = document.getElementById("password");
     const btn = document.getElementById("togglePw");
@@ -396,7 +393,7 @@ function pageRegisterStart() {
     <div id="msg"></div>
     <button class="btn btn-primary" id="continueBtn">Continue</button>
     <button class="btn btn-quiet" id="loginInsteadBtn">I already have an account</button>
-  `, { back: false });
+  `);
   document.getElementById("continueBtn").onclick = async () => {
     const username = document.getElementById("newUsername").value.trim();
     try {
@@ -420,7 +417,7 @@ function pageRegister(username) {
     <input id="regPassword" type="password" autocomplete="new-password">
     <div id="msg"></div>
     <button class="btn btn-primary" id="createBtn">Create Account</button>
-  `, { back: true });
+  `);
   document.getElementById("createBtn").onclick = async () => {
     try {
       const r = await api.post("/auth/register", {
@@ -446,7 +443,7 @@ function pageClanCreated(family) {
       <div id="copyMsg"></div>
     </div>
     <button class="btn btn-primary" id="continueBtn">Continue to Dashboard</button>
-  `, { back: false });
+  `);
   document.getElementById("copyLinkBtn").onclick = async () => {
     try {
       await navigator.clipboard.writeText(regUrl);
@@ -466,7 +463,7 @@ function pageName() {
     <input id="name" autocomplete="name">
     <div id="msg"></div>
     <button class="btn btn-primary" id="saveBtn">Continue</button>
-  `, { back: false });
+  `);
   document.getElementById("saveBtn").onclick = async () => {
     try {
       await api.patch("/auth/me", { full_name: document.getElementById("name").value });
@@ -482,8 +479,8 @@ function pageForcedPasswordChange() {
     <label for="newPw">New password</label>
     <input id="newPw" type="password" autocomplete="new-password">
     <div id="msg"></div>
-    <button class="btn btn-primary" id="setPwBtn">Save Password</button>
-  `, { back: false });
+    <button class="btn btn-primary" id="setPwBtn">Reset Password</button>
+  `);
   document.getElementById("setPwBtn").onclick = async () => {
     try {
       await api.patch("/auth/security", { password: document.getElementById("newPw").value });
@@ -495,6 +492,7 @@ function pageForcedPasswordChange() {
 function pageSecuritySetup(forced) {
   // A brand-new account has to set a password first, so that card leads (and
   // holds the primary button); otherwise the profile leads.
+  const canEditName = !ME.user.full_name || FAMILY?.role === "admin" || ME.user.is_app_admin;
   const profileCard = `
     <section class="card">
       <h2>My profile</h2>
@@ -509,56 +507,44 @@ function pageSecuritySetup(forced) {
       </div>
       <div id="photoMsg"></div>
 
+      ${canEditName ? `
       <label for="displayName">Your name</label>
-      <input id="displayName" value="${esc(ME.user.full_name)}">
+      <input id="displayName" value="${esc(ME.user.full_name)}">` : `
+      <label>Your name</label>
+      <p style="margin:0 0 .2rem"><strong>${esc(ME.user.full_name)}</strong></p>
+      <p class="muted" style="margin:0">Only your clan admin can change your name.</p>`}
       <label for="aboutMe">About me</label>
-      <textarea id="aboutMe" rows="3" maxlength="1000" placeholder="A little about you">${esc(ME.user.about_me)}</textarea>
+      <textarea id="aboutMe" rows="3" maxlength="1000">${esc(ME.user.about_me)}</textarea>
       <label for="likes">My likes</label>
-      <textarea id="likes" rows="3" maxlength="1000" placeholder="Hobbies, foods, shops, brands…">${esc(ME.user.likes)}</textarea>
-      <label for="favColor">My favorite color</label>
-      <input id="favColor" maxlength="40" value="${esc(ME.user.favorite_color)}" placeholder="e.g. Forest green">
+      <textarea id="likes" rows="3" maxlength="1000">${esc(ME.user.likes)}</textarea>
+      <label for="favColor">My favorite color <span class="muted">(optional)</span></label>
+      <input id="favColor" maxlength="40" value="${esc(ME.user.favorite_color)}">
       <label for="avoidGifts">What not to give me</label>
-      <textarea id="avoidGifts" rows="3" maxlength="1000" placeholder="Things you already have or don't want">${esc(ME.user.avoid_gifts)}</textarea>
+      <textarea id="avoidGifts" rows="3" maxlength="1000">${esc(ME.user.avoid_gifts)}</textarea>
       <div id="nameMsg"></div>
       <button class="btn ${forced ? 'btn-secondary' : 'btn-primary'}" id="saveNameBtn">Save Profile</button>
     </section>
   `;
+  // Someone who already has a password resets it with the current one (masked);
+  // an account with none yet just sets one.
+  const hasPw = !!ME.user.has_password;
   const passwordCard = `
     <section class="card">
-    <h2>Set up your password</h2>
-    <p class="muted">You'll use this to sign in. At least 8 characters.</p>
-    <label for="newPassword">Password</label>
+    <h2>${hasPw ? "Reset your password" : "Set up your password"}</h2>
+    <p class="muted">${hasPw ? "Enter your current password, then a new one." : "You'll use this to sign in."} At least 8 characters.</p>
+    ${hasPw ? `
+    <label for="currentPassword">Current password</label>
+    <input id="currentPassword" type="password" autocomplete="current-password">` : ""}
+    <label for="newPassword">${hasPw ? "New password" : "Password"}</label>
     <input id="newPassword" type="password" autocomplete="new-password">
     <div id="pwMsg"></div>
-    <button class="btn ${forced ? 'btn-primary' : 'btn-secondary'}" id="savePwBtn">Save Password</button>
-    </section>
-  `;
-  const phoneCard = `
-    <section class="card">
-    <h2>Add a phone number (optional)</h2>
-    <p class="muted">Get a text with a 6-digit code instead of typing your password.</p>
-    <label for="secPhone">Phone number</label>
-    <input id="secPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(555) 123-4567">
-    <div class="check-row" style="align-items:flex-start;margin-top:1rem">
-      <input type="checkbox" id="smsConsent" style="margin-top:.3rem">
-      <label for="smsConsent" style="margin:0;font-size:.85rem;font-weight:400">
-        By checking this box, I agree to receive SMS messages from Genri Labs for account authentication,
-        including one-time passwords (OTP) used to verify my identity when signing in. Message frequency
-        varies based on sign-in activity. Message and data rates may apply. Reply STOP to opt out and
-        HELP for assistance. View our
-        <a href="/privacy_terms#privacy" target="_blank" rel="noopener">Privacy Policy</a>
-        and <a href="/privacy_terms#terms" target="_blank" rel="noopener">Terms of Service</a>.
-      </label>
-    </div>
-    <div id="phoneMsg"></div>
-    <button class="btn btn-secondary" id="savePhoneBtn">Save Phone Number</button>
+    <button class="btn ${forced ? 'btn-primary' : 'btn-secondary'}" id="savePwBtn">${hasPw ? "Reset Password" : "Save Password"}</button>
     </section>
   `;
   render("Profile & Security", `
     ${forced ? passwordCard + profileCard : profileCard + passwordCard}
-    ${phoneCard}
     ${!forced ? `<button class="btn btn-quiet" id="doneBtn">Done</button>` : ""}
-  `, { back: false });
+  `);
   const refreshPhotoUi = () => {
     document.getElementById("avatarPreview").innerHTML = avatarHtml(ME.user, "avatar-lg");
     document.getElementById("photoLabel").textContent = ME.user.photo_url ? "Change photo" : "Add a photo";
@@ -591,10 +577,12 @@ function pageSecuritySetup(forced) {
   document.getElementById("saveNameBtn").onclick = async () => {
     try {
       const val = (id) => document.getElementById(id).value;
-      const r = await api.patch("/auth/me", {
-        full_name: val("displayName"), about_me: val("aboutMe"), likes: val("likes"),
+      const body = {
+        about_me: val("aboutMe"), likes: val("likes"),
         favorite_color: val("favColor"), avoid_gifts: val("avoidGifts"),
-      });
+      };
+      if (canEditName) body.full_name = val("displayName");
+      const r = await api.patch("/auth/me", body);
       ME.user = r.user;
       document.getElementById("nameMsg").innerHTML = alertBox("Profile saved!", true);
     } catch (e) {
@@ -603,27 +591,17 @@ function pageSecuritySetup(forced) {
   };
   document.getElementById("savePwBtn").onclick = async () => {
     const password = document.getElementById("newPassword").value;
+    const current = document.getElementById("currentPassword");
     try {
-      await api.patch("/auth/security", { password });
-      document.getElementById("pwMsg").innerHTML = alertBox("Password saved!", true);
-      if (forced) boot();
+      await api.patch("/auth/security", { password, current_password: current ? current.value : undefined });
+      if (forced) return boot();
+      ME.user.has_password = true;
+      document.getElementById("pwMsg").innerHTML = alertBox(hasPw ? "Password reset!" : "Password saved!", true);
+      document.getElementById("newPassword").value = "";
+      if (current) current.value = "";
     } catch (e) {
       const el = document.getElementById("pwMsg");
       el.innerHTML = alertBox(e.message);
-    }
-  };
-  document.getElementById("savePhoneBtn").onclick = async () => {
-    if (!document.getElementById("smsConsent").checked) {
-      document.getElementById("phoneMsg").innerHTML =
-        alertBox("Please check the box to agree to receive text messages before continuing.");
-      return;
-    }
-    const phone = document.getElementById("secPhone").value.trim();
-    try {
-      await api.patch("/auth/security", { phone });
-      document.getElementById("phoneMsg").innerHTML = alertBox("Phone number saved!", true);
-    } catch (e) {
-      document.getElementById("phoneMsg").innerHTML = alertBox(e.message);
     }
   };
   const doneBtn = document.getElementById("doneBtn");
@@ -638,7 +616,7 @@ function pageNoFamily() {
     <h2>Join your family</h2>
     <p class="muted">${hasPending ? "Confirm below to join." : "Have a family code? Enter it below."}</p>
     <label for="jcode">Family code</label>
-    <input id="jcode" class="code-input" maxlength="8" placeholder="ABCD1234" style="text-transform:uppercase"
+    <input id="jcode" class="code-input" maxlength="8" style="text-transform:uppercase"
       value="${esc(PENDING_JOIN_CODE || "")}" ${hasPending ? "readonly" : ""}>
     <div id="msg"></div>
     <button class="btn btn-primary" id="joinBtn">Join Family</button>
@@ -646,9 +624,9 @@ function pageNoFamily() {
     <hr style="margin:2rem 0">
     <p class="muted center">Or start your own clan:</p>
     <label for="fname">Clan name</label>
-    <input id="fname" placeholder="e.g. The Cedeño Clan">
+    <input id="fname">
     <button class="btn btn-secondary" id="createBtn">Start My Clan</button>` : ""}
-  `, { back: false });
+  `);
   document.getElementById("joinBtn").onclick = async () => {
     try {
       await api.post("/families/join", { join_code: document.getElementById("jcode").value });
@@ -713,7 +691,7 @@ route(/^\/$/, async () => {
   const annHtml = anns.length ? annTable(anns) : `<p class="muted" style="margin:0">No announcements yet.</p>`;
   sections.push(`<div class="dash-section"><h2>Announcements</h2>${annHtml}</div>`);
 
-  render("My Dashboard", sections.join(""), { back: false });
+  render("My Dashboard", sections.join(""));
   $app.querySelectorAll("[data-del-ann]").forEach(b => b.onclick = async () => {
     if (!confirm("Delete this announcement?")) return;
     await api.del(`/announcements/${b.dataset.delAnn}`);
@@ -737,11 +715,7 @@ route(/^\/events\/(\d+)$/, async (id) => {
   ].join("");
   const isAdmin = FAMILY.role === "admin";
   const rows = people.map(u => `
-    <tr class="click-row" data-go="/events/${id}/clan/${u.id}">
-      <td data-label="Person"><a class="person-link" href="#/events/${id}/clan/${u.id}">${avatarHtml(u, "avatar-sm")}<span>${esc(u.display_name)}${u.id === ME.user.id ? ` <span class="muted">(you)</span>` : ""}</span></a></td>
-      <td data-label="Likes" class="wrap-cell">${u.likes ? esc(u.likes) : `<span class="muted">—</span>`}</td>
-      <td data-label="Favorite color" class="wrap-cell">${u.favorite_color ? colorSwatchHtml(u.favorite_color) + esc(u.favorite_color) : `<span class="muted">—</span>`}</td>
-    </tr>`).join("");
+    <li><a class="person-link person-row" href="#/events/${id}/clan/${u.id}">${avatarHtml(u, "avatar-sm")}<span>${esc(u.display_name)}${u.id === ME.user.id ? ` <span class="muted">(you)</span>` : ""}</span></a></li>`).join("");
   render(ev.name, `
     <section class="card">
       <h2>${esc(ev.name)} <span class="status-tag ${st.cls}">${st.label}</span></h2>
@@ -759,19 +733,11 @@ route(/^\/events\/(\d+)$/, async (id) => {
     </section>
     <section class="card">
       <h2>Who's coming (${people.length})</h2>
-      ${people.length ? `
-      <div class="table-wrap">
-        <table class="data">
-          <colgroup><col style="width:34%"><col style="width:40%"><col style="width:26%"></colgroup>
-          <thead><tr><th>Person</th><th>Likes</th><th>Favorite color</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>` : `<p class="muted" style="margin:0">No one has been added to this gift exchange yet.</p>`}
+      ${people.length
+        ? `<ul class="people-rows">${rows}</ul>`
+        : `<p class="muted" style="margin:0">No one has been added to this gift exchange yet.</p>`}
     </section>
   `, { wide: true });
-  $app.querySelectorAll("tr[data-go]").forEach(tr => tr.onclick = (e) => {
-    if (!e.target.closest("a")) go(tr.dataset.go);
-  });
 });
 
 route(/^\/events\/(\d+)\/my-person$/, async (id) => {
@@ -817,11 +783,11 @@ function renderWishForm(eventId, d, item) {
   render(editing ? "Edit Gift Idea" : "Add a Gift Idea", `
     <div id="msg"></div>
     <label for="iname">What would you love?</label>
-    <input id="iname" placeholder="e.g. Warm slippers, size 7" value="${esc(editing ? item.item_name : "")}">
+    <input id="iname" value="${esc(editing ? item.item_name : "")}">
     <label for="idesc">Anything else they should know? <span class="muted">(optional)</span></label>
-    <input id="idesc" placeholder="e.g. Favorite color is blue" value="${esc(editing ? item.description || "" : "")}">
+    <input id="idesc" value="${esc(editing ? item.description || "" : "")}">
     <label for="ilink">Link to it online <span class="muted">(optional)</span></label>
-    <input id="ilink" type="url" placeholder="https://…" value="${esc(editing ? item.link_url || "" : "")}">
+    <input id="ilink" type="url" value="${esc(editing ? item.link_url || "" : "")}">
     <label for="ipriority">Priority</label>
     <select id="ipriority">${priorityOptions}</select>
     <label for="iphoto">${editing && item.photo_url ? "Replace photo" : "Photo"} <span class="muted">(optional)</span></label>
@@ -933,7 +899,7 @@ route(/^\/events\/(\d+)\/clan$/, async (id) => {
   list.sort((a, b) => a.user.display_name.localeCompare(b.user.display_name));
   render("My Clan", list.length
     ? `<p class="muted">Tap someone to see their profile and wishlist.</p><div class="person-grid" id="personGrid"></div>`
-    : `<div class="card center"><p>No one's joined this gift exchange yet.</p></div>`, { back: false });
+    : `<div class="card center"><p>No one's joined this gift exchange yet.</p></div>`);
   const grid = document.getElementById("personGrid");
   if (grid) list.forEach(entry => grid.append(personCard(entry.user, id)));
 });
@@ -965,7 +931,7 @@ route(/^\/events\/(\d+)\/messages$/, async (id) => {
     return `<section class="card"><h2>${label}: ${esc(t.with_display_name)}</h2>
       <div>${msgs}</div>
       <label for="in-${key}">Write a message</label>
-      <input id="in-${key}" maxlength="2000" placeholder="Type here…">
+      <input id="in-${key}" maxlength="2000">
       <button class="btn btn-primary" data-send="${key}">Send</button></section>`;
   }
   render("Messages", `
@@ -998,7 +964,7 @@ async function renderMessageThread(id, key, label) {
     <h2>${esc(t.with_display_name)}</h2>
     <div>${msgs}</div>
     <label for="msgin">Write a message</label>
-    <input id="msgin" maxlength="2000" placeholder="Type here…">
+    <input id="msgin" maxlength="2000">
     <button class="btn btn-primary" id="sendBtn">Send</button>
   `, { card: true });
   document.getElementById("sendBtn").onclick = async () => {
@@ -1057,7 +1023,7 @@ route(/^\/admin$/, async () => {
       <button class="btn btn-quiet" id="copyLinkBtn" style="margin-top:.5rem">Copy Registration Link</button>
       <div id="copyMsg"></div>
     </div>
-  `, { back: false, wide: true });
+  `, { wide: true });
   document.getElementById("saveClanName").onclick = async () => {
     try {
       const r = await api.patch(`/families/${FAMILY.id}`, { name: document.getElementById("clanName").value });
@@ -1090,8 +1056,8 @@ route(/^\/admin\/members$/, async () => {
   function memberRow(m) {
     const tr = h(`<tr>
       <td data-label="Name"><input data-name value="${esc(m.user.full_name)}" title="${esc(m.user.full_name)}"></td>
-      <td data-label="Phone"><input data-phone value="${esc(m.user.phone || "")}" placeholder="(555) 123-4567" title="${esc(m.user.phone || "")}"></td>
-      <td data-label="Email"><input data-email value="${esc(m.user.email || "")}" placeholder="name@example.com" title="${esc(m.user.email || "")}"></td>
+      <td data-label="Phone"><input data-phone value="${esc(m.user.phone || "")}" title="${esc(m.user.phone || "")}"></td>
+      <td data-label="Email"><input data-email value="${esc(m.user.email || "")}" title="${esc(m.user.email || "")}"></td>
       <td data-label="Household"><select data-house>${houseOpts(m.household_id)}</select></td>
       <td data-label="Admin"><input type="checkbox" data-role ${m.role === "admin" ? "checked" : ""} aria-label="Clan admin"></td>
       <td data-label="Joining">${current
@@ -1185,9 +1151,9 @@ route(/^\/admin\/members$/, async () => {
     <label for="newName">Name</label>
     <input id="newName">
     <label for="newPhone">Phone number (optional)</label>
-    <input id="newPhone" type="tel" inputmode="tel" placeholder="(555) 123-4567">
+    <input id="newPhone" type="tel" inputmode="tel">
     <label for="newEmail">Email (optional)</label>
-    <input id="newEmail" type="email" placeholder="name@example.com">
+    <input id="newEmail" type="email">
     ${current ? `
     <div class="check-row">
       <input type="checkbox" id="newJoining">
@@ -1196,7 +1162,7 @@ route(/^\/admin\/members$/, async () => {
     <div id="addMsg"></div>
     <button class="btn btn-primary" id="addMemberBtn">Add Member</button>
     </section>
-  `, { back: false, wide: true });
+  `, { wide: true });
   const tbody = $app.querySelector("#membersTable tbody");
   members.forEach(m => tbody.append(memberRow(m)));
 
@@ -1270,7 +1236,7 @@ route(/^\/admin\/groups$/, async () => {
     <input id="hname">
     <button class="btn btn-primary" id="addHouse">Add Household</button>
     </section>
-  `, { back: false, wide: true });
+  `, { wide: true });
   const gtbody = $app.querySelector("#groupsTable tbody");
   const noGroups = document.getElementById("noGroups");
   function updateEmptyState() {
@@ -1307,6 +1273,16 @@ const EVENT_STATUS = {
 };
 function eventStatus(e) { return EVENT_STATUS[e.status] || { emoji: "🚫", label: e.status, cls: "tag-done" }; }
 
+// Permanently deletes a gift exchange after a confirmation, then runs `done`.
+async function deleteEvent(ev, done) {
+  if (!confirm(`Delete "${ev.name}"? This permanently erases its wishlists, name draw and messages for everyone. It can't be undone.`)) return;
+  try {
+    await api.del(`/events/${ev.id}`);
+    await refreshCurrentEvent();
+    done();
+  } catch (e) { showError(e); }
+}
+
 function eventCard(e) {
   const st = eventStatus(e);
   const rules = [e.use_codenames ? "Fun codenames" : "", e.allow_same_household ? "Same-household matches allowed" : ""]
@@ -1329,11 +1305,13 @@ function eventCard(e) {
     <div class="wish-card-actions">
       <button class="btn btn-secondary" data-open>Manage</button>
       ${e.status !== "completed" ? `<button class="btn btn-quiet" data-edit>Edit</button>` : ""}
+      <button class="btn btn-quiet" data-delete>Delete</button>
     </div>
   </article>`).firstElementChild;
   card.querySelector("[data-open]").onclick = () => go(`/admin/events/${e.id}`);
   const edit = card.querySelector("[data-edit]");
   if (edit) edit.onclick = () => go(`/admin/events/${e.id}/edit`);
+  card.querySelector("[data-delete]").onclick = () => deleteEvent(e, () => navigate());
   return card;
 }
 
@@ -1347,7 +1325,7 @@ route(/^\/admin\/events$/, async () => {
     ${events.length
       ? `<div class="wish-grid" id="eventGrid"></div>`
       : `<div class="card"><p class="muted" style="margin:0">No gift exchanges yet. Create one and pick who's joining.</p></div>`}
-  `, { back: false, wide: true });
+  `, { wide: true });
   const grid = document.getElementById("eventGrid");
   if (grid) events.forEach(e => grid.append(eventCard(e)));
   document.getElementById("newEventBtn").onclick = () => go("/admin/events/new");
@@ -1384,17 +1362,17 @@ async function renderEventForm(ev) {
   render(editing ? "Edit Gift Exchange" : "Create a Gift Exchange", `
     <div id="msg"></div>
     <label for="ename">Name</label>
-    <input id="ename" placeholder="e.g. Christmas 2026" value="${esc(editing ? ev.name : "")}">
+    <input id="ename" value="${esc(editing ? ev.name : "")}">
     <label for="edate">Date of the exchange</label>
     <input id="edate" type="date" value="${esc(editing ? ev.event_date : "")}">
     <label for="etime">Time <span class="muted">(optional)</span></label>
     <input id="etime" type="time" value="${esc(editing ? ev.event_time || "" : "")}">
     <label for="eplace">Where <span class="muted">(optional)</span></label>
-    <input id="eplace" maxlength="255" placeholder="e.g. Lola's house, 12 Main St" value="${esc(editing ? ev.location : "")}">
+    <input id="eplace" maxlength="255" value="${esc(editing ? ev.location : "")}">
     <label for="etheme">Theme <span class="muted">(optional)</span></label>
-    <input id="etheme" maxlength="120" placeholder="e.g. Ugly sweaters" value="${esc(editing ? ev.theme : "")}">
+    <input id="etheme" maxlength="120" value="${esc(editing ? ev.theme : "")}">
     <label for="ebudget">Gift amount <span class="muted">(optional)</span></label>
-    <input id="ebudget" type="number" inputmode="decimal" placeholder="e.g. 30" value="${esc(editing && ev.budget_amount ? ev.budget_amount : "")}">
+    <input id="ebudget" type="number" inputmode="decimal" value="${esc(editing && ev.budget_amount ? ev.budget_amount : "")}">
 
     <h2 style="margin-top:1.5rem">Good to know</h2>
     <p class="muted">Everyone in the clan sees these on the event page.</p>
@@ -1425,7 +1403,7 @@ async function renderEventForm(ev) {
       <button class="btn btn-primary" id="saveEventBtn">${editing ? "Save Changes" : "Create Gift Exchange"}</button>
       <button class="btn btn-quiet" id="cancelEventBtn">Cancel</button>
     </div>
-  `, { back: true, wide: true, card: true });
+  `, { wide: true, card: true });
 
   const boxes = () => [...$app.querySelectorAll("[data-uid]")];
   if (!locked) {
@@ -1484,7 +1462,7 @@ async function renderEventForm(ev) {
 function eventFormBlocked(id, msg) {
   render("Edit Gift Exchange", alertBox(msg) + `
     <button class="btn btn-secondary" style="width:auto" onclick="go('/admin/events/${id}')">Back to Gift Exchange</button>`,
-    { back: true, wide: true });
+    { wide: true });
 }
 
 route(/^\/admin\/events\/new$/, async () => { await renderEventForm(null); });
@@ -1518,6 +1496,7 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
       : `<button class="btn btn-primary" id="draw">🎲 Draw Names</button>`;
   const doneBtn = ev.status !== "completed"
     ? `<button class="btn btn-quiet" id="markDone">Mark Event as Done</button>` : "";
+  const deleteBtn = `<button class="btn btn-quiet" id="deleteEvent">Delete Gift Exchange</button>`;
   render(ev.name, `
     <div id="msg"></div>
     <div class="card">
@@ -1536,8 +1515,9 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
     ${drawSection}
     ${doneBtn}
     <button class="btn btn-quiet" onclick="go('/admin/events/${id}/wishlists')">View Everyone's Wishlists</button>
+    ${deleteBtn}
     </div>
-  `, { back: true, wide: true });
+  `, { wide: true });
   const editBtn = document.getElementById("editEvent");
   if (editBtn) editBtn.onclick = () => go(`/admin/events/${id}/edit`);
   const draw = document.getElementById("draw");
@@ -1554,6 +1534,7 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
       await api.del(`/events/${id}/assignments`); navigate();
     }
   };
+  document.getElementById("deleteEvent").onclick = () => deleteEvent(ev, () => go("/admin/events"));
   const markDone = document.getElementById("markDone");
   if (markDone) markDone.onclick = async () => {
     if (!confirm("Mark this gift exchange as done? A new exchange will need to be created next time, with its own fresh wishlists.")) return;
@@ -1578,7 +1559,7 @@ route(/^\/admin\/events\/(\d+)\/wishlists$/, async (id) => {
     </section>`).join("");
   render("All Wishlists", all.length
     ? people
-    : `<div class="card"><p class="muted" style="margin:0">No one's joined this gift exchange yet.</p></div>`, { back: true, wide: true });
+    : `<div class="card"><p class="muted" style="margin:0">No one's joined this gift exchange yet.</p></div>`, { wide: true });
   wireBuyButtons();
 });
 
@@ -1633,13 +1614,13 @@ route(/^\/admin\/announce$/, async () => {
       </div>` : `<div class="card"><p class="muted" style="margin:0">No announcements yet.</p></div>`}
     <section class="card" style="margin-top:1.25rem">
     <h2>Post a new announcement</h2>
-    <label>Title</label><input id="atitle" placeholder="e.g. Party is at 6pm!">
+    <label>Title</label><input id="atitle">
     <label>Message</label><textarea id="abody" rows="4"></textarea>
     <div class="check-row"><input type="checkbox" id="apin"><label for="apin" style="margin:0">Pin to the top</label></div>
     <div class="check-row"><input type="checkbox" id="apub" checked><label for="apub" style="margin:0">Show on Clan Dashboard</label></div>
     <button class="btn btn-primary" id="postBtn">Post to the Family</button>
     </section>
-  `, { back: false, wide: true });
+  `, { wide: true });
 
   const tbody = document.querySelector("#annTable tbody");
   if (tbody) anns.forEach(a => tbody.append(annRow(a)));
