@@ -654,7 +654,6 @@ function pageSecuritySetup(forced) {
   `;
   render("Profile & Security", `
     ${forced ? passwordCard + profileCard : profileCard + passwordCard}
-    ${!forced ? `<button class="btn btn-quiet" id="doneBtn">Done</button>` : ""}
   `);
   const refreshPhotoUi = () => {
     document.getElementById("avatarPreview").innerHTML = avatarHtml(ME.user, "avatar-lg");
@@ -720,8 +719,6 @@ function pageSecuritySetup(forced) {
       el.innerHTML = alertBox(e.message);
     }
   };
-  const doneBtn = document.getElementById("doneBtn");
-  if (doneBtn) doneBtn.onclick = () => { history.back(); };
 }
 
 route(/^\/security$/, () => pageSecuritySetup(false));
