@@ -4,7 +4,7 @@ from flask import Blueprint, request, jsonify, g
 
 from ..extensions import db
 from ..models import Event, Message, Assignment, EventParticipant, User
-from ..middleware.auth import require_auth, require_family_member
+from ..middleware.auth import require_auth, require_family_member, archived_error
 from ..services.notification_service import notify
 
 bp = Blueprint("messages", __name__)
@@ -68,6 +68,9 @@ def get_messages(event_id):
 def send_message(event_id):
     ev = Event.query.get_or_404(event_id)
     _, err = require_family_member(ev.family_id)
+    if err:
+        return err
+    err = archived_error(ev)
     if err:
         return err
     data = request.json or {}

@@ -626,23 +626,23 @@ def test_admin_can_delete_event_and_everything_in_it(app, users, tmp_path):
     assert [e["name"] for e in admin.get(f"/api/families/{fam['id']}/events").get_json()] == ["Kept"]
 
 
-def test_only_events_that_havent_happened_can_be_deleted(users):
-    fam, admin = users["_family"], users[ADMIN_USER]
+def test_any_event_can_be_deleted_old_archived_or_upcoming(users):
+    fam, admin, bob = users["_family"], users[ADMIN_USER], users[BOB_USER]
 
     def make(name, when):
         return admin.post(f"/api/families/{fam['id']}/events",
                           json={"name": name, "event_date": when}).get_json()["event"]
 
     from datetime import date, timedelta
-    past = make("Last year", (date.today() - timedelta(days=1)).isoformat())
+    past = make("Last year", (date.today() - timedelta(days=400)).isoformat())
     today = make("Today", date.today().isoformat())
-    done = make("Done early", future_date())
-    admin.post(f"/api/events/{done['id']}/complete")
+    archived = make("Archived", future_date())
+    admin.post(f"/api/events/{archived['id']}/complete")
 
-    assert admin.delete(f"/api/events/{past['id']}").status_code == 400
-    assert admin.delete(f"/api/events/{done['id']}").status_code == 400
-    assert admin.delete(f"/api/events/{today['id']}").status_code == 200   # not over until the day is
-    assert {e["name"] for e in admin.get(f"/api/families/{fam['id']}/events").get_json()} == {"Last year", "Done early"}
+    assert bob.delete(f"/api/events/{past['id']}").status_code == 403       # only the clan admin
+    for ev in (past, archived, today):
+        assert admin.delete(f"/api/events/{ev['id']}").status_code == 200
+    assert admin.get(f"/api/families/{fam['id']}/events").get_json() == []
 
 
 def test_photos_are_resized_and_profile_photos_cropped_square(app, users, tmp_path):
@@ -715,6 +715,8 @@ def _drawn_event(users, days=30):
     fam, admin = users["_family"], users[ADMIN_USER]
     members = admin.get(f"/api/families/{fam['id']}/members").get_json()
     for i, m in enumerate(members):
+        if m.get("household_id"):
+            continue
         h = admin.post(f"/api/families/{fam['id']}/households", json={"name": f"Hh{i}"}).get_json()["household"]
         admin.patch(f"/api/families/{fam['id']}/members/{m['membership_id']}", json={"household_id": h["id"]})
     ev = admin.post(f"/api/families/{fam['id']}/events",
@@ -881,3 +883,59 @@ def test_announcements_newest_first_and_only_published_shown_to_members(users):
     assert [a["title"] for a in seen] == ["Third", "First"]           # newest first, unpublished hidden
     assert all("is_pinned" not in a for a in seen)
     assert [a["title"] for a in admin.get(f"{url}?scope=all").get_json()] == ["Third", "Hidden", "First"]
+
+
+
+def test_archived_event_is_view_only_but_everything_stays_readable(app, users, tmp_path):
+    app.static_folder = str(tmp_path)
+    fam, admin, bob, cara = users["_family"], users[ADMIN_USER], users[BOB_USER], users[CARA_USER]
+    ev = _drawn_event(users)
+    eid = ev["id"]
+    members = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    ids = {m["user"]["username"]: m["user"]["id"] for m in members}
+
+    # some history while the event is live
+    item = bob.post(f"/api/events/{eid}/wishlists", json={"item_name": "Boots"}).get_json()["item"]
+    second = bob.post(f"/api/events/{eid}/wishlists", json={"item_name": "Hat"}).get_json()["item"]
+    bob.put(f"/api/events/{eid}/dishes/mine", json={"dishes": ["Lumpia"]})
+    mine = bob.get(f"/api/events/{eid}/assignments/mine").get_json()
+    assert bob.post(f"/api/events/{eid}/messages", json={"to": "giftee", "body": "hello"}).status_code == 201
+    assert cara.post(f"/api/wishlists/{item['id']}/purchase").status_code == 200
+
+    assert admin.post(f"/api/events/{eid}/complete").status_code == 200
+
+    # ---- nothing can change any more
+    err = lambda r: r.status_code == 400 and "archived" in r.get_json()["error"]
+    assert err(bob.post(f"/api/events/{eid}/messages", json={"to": "giftee", "body": "again"}))
+    assert err(bob.post(f"/api/events/{eid}/messages", json={"to": "giver", "body": "again"}))
+    assert err(bob.post(f"/api/events/{eid}/wishlists", json={"item_name": "Scarf"}))
+    assert err(bob.patch(f"/api/wishlists/{second['id']}", json={"item_name": "Cap"}))
+    assert err(bob.delete(f"/api/wishlists/{second['id']}"))
+    assert err(bob.put(f"/api/events/{eid}/wishlists/order", json={"item_ids": [second["id"], item["id"]]}))
+    assert err(cara.post(f"/api/wishlists/{item['id']}/purchase"))       # can't undo a purchase either
+    assert err(bob.put(f"/api/events/{eid}/dishes/mine", json={"dishes": ["Rice"]}))
+    assert err(bob.delete(f"/api/events/{eid}/dishes/mine"))
+    assert err(admin.patch(f"/api/events/{eid}", json={"location": "Elsewhere"}))
+    assert err(admin.patch(f"/api/events/{eid}", json={"game_master_id": ids[CARA_USER]}))
+    assert err(admin.put(f"/api/events/{eid}/participants", json={"user_ids": [ids[ADMIN_USER]]}))
+    assert err(bob.post(f"/api/events/{eid}/participants/opt-out"))
+    assert admin.delete(f"/api/events/{eid}/assignments").status_code == 400   # no re-draw
+
+    # ---- but all of it can still be looked at
+    threads = bob.get(f"/api/events/{eid}/messages").get_json()
+    assert [m["body"] for m in threads["giftee"]["messages"]] == ["hello"]
+    listed = bob.get(f"/api/events/{eid}/wishlists/mine").get_json()
+    assert listed["archived"] is True and [i["item_name"] for i in listed["items"]] == ["Boots", "Hat"]
+    clan = cara.get(f"/api/events/{eid}/wishlists/clan").get_json()
+    boots = next(i for e in clan if e["user"]["username"] == BOB_USER for i in e["items"] if i["item_name"] == "Boots")
+    assert boots["is_purchased"] is True
+    assert [d["name"] for d in admin.get(f"/api/events/{eid}/dishes").get_json()[0]["dishes"]] == ["Lumpia"]
+    assert admin.get(f"/api/events/{eid}").get_json()["status"] == "completed"
+    assert len(admin.get(f"/api/events/{eid}/attendees").get_json()) == 3
+    assert mine["assigned"] is True
+    assert cara.get(f"/api/events/{eid}/assignments/mine").get_json()["assigned"] is True
+
+    # an active event next to it is unaffected
+    other = _drawn_event(users, days=50)
+    assert bob.post(f"/api/events/{other['id']}/wishlists", json={"item_name": "Scarf"}).status_code == 201
+    assert bob.post(f"/api/events/{other['id']}/messages", json={"to": "giftee", "body": "hi"}).status_code == 201

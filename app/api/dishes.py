@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify, g
 
 from ..extensions import db
 from ..models import Event, EventDish, EventParticipant, User
-from ..middleware.auth import require_auth, require_family_member
+from ..middleware.auth import require_auth, require_family_member, archived_error
 
 bp = Blueprint("dishes", __name__)
 
@@ -28,8 +28,9 @@ def _my_signup_error(ev):
         event_id=ev.id, user_id=g.user.id, is_participating=True).first()
     if not joining:
         return jsonify({"error": "Only people joining this gift exchange can add dishes."}), 403
-    if ev.status == "completed":
-        return jsonify({"error": "This gift exchange is finished."}), 400
+    archived = archived_error(ev)
+    if archived:
+        return archived
     if ev.status != "matched":
         return jsonify({"error": "Dish sign-up opens once names are drawn."}), 400
     return None

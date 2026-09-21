@@ -50,8 +50,16 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   user-typed URL in an href.
 - Photos: real images only (Pillow), 8MB upload cap, gift photos shrunk to 1200px,
   profile photos cropped to a 512px square. Tests must upload real images.
-- Only gift exchanges that haven't happened yet (today or later, not marked done) can be
-  deleted; past/completed ones are kept as a record.
+- Any gift exchange can be deleted by the clan admin, old or archived, taking everything
+  with it (draw, wishlists + photos, messages, dishes, its announcements) - that's how test
+  data is cleaned up.
+- Archiving (admin "Archive Gift Exchange", status `completed`) turns an event into a
+  view-only record. Everything stays readable (event page, dishes, messages, wishlists,
+  profiles, purchase tags) but nothing can change: no messages, wishlist add/edit/delete/
+  reorder, buy/unbuy, dishes, event edits, participants or re-draw. This is enforced
+  server-side with `archived_error(ev)` (middleware/auth.py); every new write endpoint that
+  belongs to an event must call it. The UI hides the controls too. Everyone finds archived
+  (and any past) events under "Past Gift Exchanges" (`/past`).
 - Wishlist priority is the order of the cards: no priority field anywhere; the owner
   long-presses a card on My Wishlist and drags it (`enableLongPressReorder`, saved with
   PUT /events/:id/wishlists/order). Everyone else sees that order, labelled Priority 1, 2...

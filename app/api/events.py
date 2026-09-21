@@ -6,7 +6,7 @@ from ..extensions import db
 from ..models import (Event, EventParticipant, FamilyMember, Assignment, WishlistItem,
                       Message, Announcement, EventDish)
 from ..services.photo_service import remove_photo
-from ..middleware.auth import require_auth, require_family_member, require_family_admin
+from ..middleware.auth import require_auth, require_family_member, require_family_admin, archived_error
 
 bp = Blueprint("events", __name__)
 
@@ -111,6 +111,9 @@ def update_event(event_id):
     _, err = require_family_admin(ev.family_id)
     if err:
         return err
+    err = archived_error(ev)
+    if err:
+        return err
     data = request.json or {}
     # Once names are drawn the matching rules are locked; when/where/what to
     # bring and the rest of the details can still change.
@@ -155,16 +158,13 @@ def update_event(event_id):
 @bp.delete("/events/<int:event_id>")
 @require_auth
 def delete_event(event_id):
-    """Permanently removes an event that hasn't happened yet, and everything scoped
-    to it: who's joining, the name draw, wishlists (and their photos), messages
-    and its announcements. Past or completed events are kept as a record."""
+    """Permanently removes an event, however old or archived, and everything scoped
+    to it: who's joining, the name draw, wishlists (and their photos), messages,
+    dishes and its announcements."""
     ev = Event.query.get_or_404(event_id)
     _, err = require_family_admin(ev.family_id)
     if err:
         return err
-    if ev.status == "completed" or ev.event_date < date.today():
-        return jsonify({"error": "This gift exchange has already happened, so it's kept as a record "
-                                 "and can't be deleted."}), 400
     photos = [i.photo_path for i in WishlistItem.query.filter_by(event_id=ev.id).all()]
     for model in (Message, Assignment, WishlistItem, EventParticipant, Announcement, EventDish):
         model.query.filter_by(event_id=ev.id).delete()
@@ -228,6 +228,9 @@ def set_participants(event_id):
     _, err = require_family_admin(ev.family_id)
     if err:
         return err
+    err = archived_error(ev)
+    if err:
+        return err
     if ev.status == "matched":
         return jsonify({"error": "Names are already drawn. Re-draw to change who's in."}), 400
     user_ids = set((request.json or {}).get("user_ids", []))
@@ -256,6 +259,9 @@ def set_participants(event_id):
 @require_auth
 def opt_out(event_id):
     ev, _, err = _event_and_membership(event_id)
+    if err:
+        return err
+    err = archived_error(ev)
     if err:
         return err
     if ev.status == "matched":

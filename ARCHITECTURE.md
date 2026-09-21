@@ -130,8 +130,8 @@ All JSON, prefixed `/api`. 🔒 = auth required, 👑 = family admin.
 - `GET /events/:id/dishes` 🔒 — everyone's dish sign-up, sorted by name: `[{ user, dishes: [{id, name}] }]`
 - `PUT /events/:id/dishes/mine` 🔒 `{ dishes: [names] }` / `DELETE /events/:id/dishes/mine` 🔒 — the caller's single entry (replace / remove). Only people joining, only while names are drawn and the event isn't completed; max 10 dishes, blanks and repeats dropped
 - `GET /events/:id/attendees` 🔒 — who's coming, for any family member: profile-safe fields only (`User.public_dict()`: no username/phone/email), sorted by name
-- `DELETE /events/:id` 👑 — only while the event hasn't happened (not completed, date today or later); permanently removes the event and everything scoped to it (participants, assignments, wishlists + photos, messages, its announcements)
-- `POST /events/:id/complete` 👑 — marks the event `completed`; it drops out of `CURRENT_EVENT` selection so the next event starts with its own fresh wishlists (`WishlistItem` is already scoped by `event_id`, so nothing carries over)
+- `DELETE /events/:id` 👑 — any event, however old or archived; permanently removes the event and everything scoped to it (participants, assignments, wishlists + photos, messages, its announcements)
+- `POST /events/:id/complete` 👑 — **archives** the event (status `completed`); it drops out of `CURRENT_EVENT` selection so the next event starts with its own fresh wishlists (`WishlistItem` is already scoped by `event_id`, so nothing carries over). An archived event is view-only: every write endpoint scoped to it (messages, wishlists incl. reorder/purchase, dishes, PATCH event, participants, opt-out, re-draw) answers 400 "archived" (`archived_error` in `middleware/auth.py`), while every GET keeps working. `wishlists/mine` and `wishlists/giftee` also return `archived`.
 - `PUT /events/:id/participants` 👑 — `{ user_ids: [...] }` (the checkbox screen)
 - `POST /events/:id/participants/:userId/opt-out` 🔒 — self only, before matching
 

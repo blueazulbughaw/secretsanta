@@ -66,6 +66,10 @@ const MAX_PHOTO_MB = 8;
 function photoTooBig(file) { return !!file && file.size > MAX_PHOTO_MB * 1024 * 1024; }
 const PHOTO_TOO_BIG = `Photos must be smaller than ${MAX_PHOTO_MB}MB.`;
 
+// An archived (completed) gift exchange can still be looked at, but nothing in it can change.
+const ARCHIVED_NOTE = "📦 This gift exchange is archived, so everything here is view-only.";
+const archivedBanner = () => alertBox(ARCHIVED_NOTE, true);
+
 function h(html) { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content; }
 // card: put the whole page in one white card (forms, threads); pages made of
 // several sections build their own cards instead.
@@ -86,6 +90,7 @@ const NAV = [
     { key: "messages-giver", eventPath: "messages/giver", label: "Message to my Secret Santa" },
     { key: "messages-giftee", eventPath: "messages/giftee", label: "Message to my Giftee" },
   ] },
+  { key: "past", label: "Past Gift Exchanges", href: "/past" },
   { key: "admin", label: "Manage My Clan", href: "/admin", adminOnly: true, children: [
     { key: "members", href: "/admin/members", label: "Members" },
     { key: "groups", href: "/admin/groups", label: "Households" },
@@ -235,9 +240,11 @@ function wishCardBody(item, rank) {
 // A gift as seen by someone other than its owner: the card, plus whether it's
 // been bought. Owners never get is_purchased for their own items, so their own
 // card just has no purchase footer. Bought cards go light grey (.bought).
-function clanWishCard(item, index) {
+function clanWishCard(item, index, readOnly = false) {
   let footer = "";
   if (item.is_purchased === undefined) footer = "";
+  else if (readOnly) footer = item.is_purchased
+    ? `<span class="tag-bought">${item.bought_by_me ? "✓ Bought by you" : "✓ Already bought"}</span>` : "";
   else if (!item.is_purchased) footer = `<button class="btn btn-green" data-buy="${item.id}">I Bought This</button>`;
   else if (item.bought_by_me) footer = `<span class="tag-bought">✓ Bought by you</span><button class="btn btn-quiet" data-buy="${item.id}">Unbought</button>`;
   else footer = `<span class="tag-bought">✓ Already bought</span>`;
@@ -246,8 +253,8 @@ function clanWishCard(item, index) {
     ${footer ? `<div class="wish-card-actions">${footer}</div>` : ""}
   </article>`;
 }
-function clanWishGrid(items) {
-  return `<div class="wish-grid">${items.map(clanWishCard).join("")}</div>`;
+function clanWishGrid(items, readOnly = false) {
+  return `<div class="wish-grid">${items.map((item, n) => clanWishCard(item, n, readOnly)).join("")}</div>`;
 }
 // Wires the "I Bought This" / "Unbought" buttons anywhere on the page.
 function wireBuyButtons() {
@@ -260,16 +267,17 @@ function wireBuyButtons() {
 // My Wishlist card (own items): small photo, name/priority, description, link
 // last, then Edit/Delete at the bottom - or a plain sentence once the item is
 // locked (someone bought it). The locked flag is all the owner ever learns.
-function myWishCard(item, eventId, rank) {
-  const footer = item.locked
+function myWishCard(item, eventId, rank, readOnly = false) {
+  const footer = readOnly ? ""
+    : item.locked
     ? `<span class="muted wish-locked-msg">Cannot edit this item as it has already been bought.</span>`
     : `<button class="btn btn-secondary" data-edit>Edit</button>
        <button class="btn btn-quiet" data-del>Delete</button>`;
   const card = h(`<article class="wish-card" data-id="${item.id}">
     ${wishCardBody(item, rank)}
-    <div class="wish-card-actions">${footer}</div>
+    ${footer ? `<div class="wish-card-actions">${footer}</div>` : ""}
   </article>`).firstElementChild;
-  if (!item.locked) {
+  if (!readOnly && !item.locked) {
     card.querySelector("[data-edit]").onclick = () => go(`/events/${eventId}/wishlist/${item.id}/edit`);
     card.querySelector("[data-del]").onclick = async () => {
       if (!confirm("Remove this gift from your list?")) return;
@@ -914,6 +922,30 @@ function mountDishes(el, ev, initial) {
   view();
 }
 
+// Past Gift Exchanges: everything that has happened, archived or not, newest first.
+// An archived one opens as a read-only record.
+function pastEventCard(e) {
+  const st = eventStatus(e);
+  return `<a class="wish-card card-link" href="#/events/${e.id}">
+    <div class="wish-card-head">
+      <span class="event-emoji" aria-hidden="true">${st.emoji}</span>
+      <div class="wish-card-title">
+        <strong>${esc(e.name)}</strong>
+        <span class="wish-priority">${esc(fmtEventDate(e.event_date))}</span>
+      </div>
+    </div>
+    <div><span class="status-tag ${st.cls}">${st.label}</span></div>
+  </a>`;
+}
+route(/^\/past$/, async () => {
+  const all = await api.get(`/families/${FAMILY.id}/events`);
+  const past = all.filter(eventHasHappened).sort((x, y) => y.event_date.localeCompare(x.event_date));
+  render("Past Gift Exchanges", past.length
+    ? `<p class="muted" style="margin-top:0">Open one to look back at its details, messages and wishlists. Archived gift exchanges are view-only.</p>
+       <div class="wish-grid">${past.map(pastEventCard).join("")}</div>`
+    : `<div class="card"><p class="muted" style="margin:0">No past gift exchanges yet.</p></div>`);
+});
+
 // The event page any clan member can open: what/where/when, the rules the clan
 // admin set, and who's coming (each row opens that person's profile).
 route(/^\/events\/(\d+)$/, async (id) => {
@@ -934,6 +966,7 @@ route(/^\/events\/(\d+)$/, async (id) => {
   const rows = people.map(u => `
     <li><a class="person-link person-row" href="#/events/${id}/clan/${u.id}">${avatarHtml(u, "avatar-sm")}<span>${esc(u.display_name)}${u.id === ME.user.id ? ` <span class="muted">(you)</span>` : ""}</span></a></li>`).join("");
   render(ev.name, `
+    ${ev.status === "completed" ? archivedBanner() : ""}
     <section class="card">
       <h2>${esc(ev.name)} <span class="status-tag ${st.cls}">${st.label}</span></h2>
       <dl class="detail-list">
@@ -943,10 +976,12 @@ route(/^\/events\/(\d+)$/, async (id) => {
         ${extras}
       </dl>
       ${extras ? "" : `<p class="muted">Your clan admin hasn't added rules or other details yet.</p>`}
-      ${isAdmin ? `<div class="form-actions">
-        ${ev.status !== "completed" ? `<button class="btn btn-secondary" onclick="go('/admin/events/${id}/edit')">Edit Details</button>` : ""}
-        <button class="btn btn-quiet" onclick="go('/admin/events/${id}')">Manage Gift Exchange</button>
-      </div>` : ""}
+      <div class="form-actions">
+        <button class="btn btn-primary" onclick="go('/events/${id}/clan')">View Clan &amp; Wishlists</button>
+        ${ev.i_am_participating ? `<button class="btn btn-primary" onclick="go('/events/${id}/messages')">View My Messages</button>` : ""}
+        ${isAdmin && ev.status !== "completed" ? `<button class="btn btn-secondary" onclick="go('/admin/events/${id}/edit')">Edit Details</button>` : ""}
+        ${isAdmin ? `<button class="btn btn-quiet" onclick="go('/admin/events/${id}')">Manage Gift Exchange</button>` : ""}
+      </div>
     </section>
     <section class="card" id="dishCard"></section>
     <section class="card">
@@ -979,19 +1014,20 @@ route(/^\/events\/(\d+)\/wishlist$/, async (id) => {
   const full = d.items.length >= d.limit;
   render("My Wishlist", `
     <div id="msg"></div>
+    ${d.archived ? archivedBanner() : ""}
     <div class="wish-toolbar">
-      <p class="muted" style="margin:0">${d.items.length} of ${d.limit} gifts${full ? " — your list is full" : ""}</p>
-      ${full ? "" : `<button class="btn btn-primary" style="width:auto;margin:0" id="newWishBtn">+ Add a Gift Idea</button>`}
+      <p class="muted" style="margin:0">${d.items.length} of ${d.limit} gifts${full && !d.archived ? " — your list is full" : ""}</p>
+      ${full || d.archived ? "" : `<button class="btn btn-primary" style="width:auto;margin:0" id="newWishBtn">+ Add a Gift Idea</button>`}
     </div>
-    ${d.items.length > 1 ? `<p class="muted" style="margin-top:0">Press and hold a gift, then drag it to change its priority. The gift at the top is the one you want most.</p>` : ""}
+    ${d.items.length > 1 && !d.archived ? `<p class="muted" style="margin-top:0">Press and hold a gift, then drag it to change its priority. The gift at the top is the one you want most.</p>` : ""}
     ${d.items.length
       ? `<div class="wish-grid" id="myWishGrid"></div>`
       : `<div class="card"><p class="muted" style="margin:0">Your list is empty. Add your first gift idea!</p></div>`}
   `);
   const grid = document.getElementById("myWishGrid");
   if (grid) {
-    d.items.forEach((i, n) => grid.append(myWishCard(i, id, n + 1)));
-    if (d.items.length > 1) enableLongPressReorder(grid, async (order) => {
+    d.items.forEach((i, n) => grid.append(myWishCard(i, id, n + 1, d.archived)));
+    if (d.items.length > 1 && !d.archived) enableLongPressReorder(grid, async (order) => {
       grid.querySelectorAll(".wish-priority").forEach((el, n) => { el.textContent = `Priority ${n + 1}`; });
       try {
         await api.put(`/events/${id}/wishlists/order`, { item_ids: order.map(Number) });
@@ -1055,6 +1091,7 @@ function wishFormBlocked(eventId, msg) {
 
 route(/^\/events\/(\d+)\/wishlist\/new$/, async (id) => {
   const d = await api.get(`/events/${id}/wishlists/mine`);
+  if (d.archived) return wishFormBlocked(id, "This gift exchange is archived, so wishlists are view-only.");
   if (d.items.length >= d.limit) {
     return wishFormBlocked(id, `Your list is full (${d.limit} gifts). Remove one to add another.`);
   }
@@ -1063,6 +1100,7 @@ route(/^\/events\/(\d+)\/wishlist\/new$/, async (id) => {
 
 route(/^\/events\/(\d+)\/wishlist\/(\d+)\/edit$/, async (id, itemId) => {
   const d = await api.get(`/events/${id}/wishlists/mine`);
+  if (d.archived) return wishFormBlocked(id, "This gift exchange is archived, so wishlists are view-only.");
   const item = d.items.find(i => i.id === Number(itemId));
   if (!item) return wishFormBlocked(id, "We couldn't find that gift idea.");
   if (item.locked) return wishFormBlocked(id, "Cannot edit this item as it has already been bought.");
@@ -1074,10 +1112,10 @@ route(/^\/events\/(\d+)\/giftee$/, async (id) => {
   try { d = await api.get(`/events/${id}/wishlists/giftee`); }
   catch (e) { return render("Their Wishlist", alertBox(e.message)); }
   const items = d.items.length
-    ? clanWishGrid(d.items)
-    : `<div class="card"><p class="muted" style="margin:0">They haven't added any gift ideas yet. Send them a friendly nudge!</p></div>`;
-  render("Their Wishlist", items + `
-    <button class="btn btn-secondary" style="width:auto;margin-top:.75rem" onclick="go('/events/${id}/messages/giftee')">Send a Secret Message</button>`);
+    ? clanWishGrid(d.items, d.archived)
+    : `<div class="card"><p class="muted" style="margin:0">${d.archived ? "They didn't add any gift ideas." : "They haven't added any gift ideas yet. Send them a friendly nudge!"}</p></div>`;
+  render("Their Wishlist", (d.archived ? archivedBanner() : "") + items + (d.archived ? "" : `
+    <button class="btn btn-secondary" style="width:auto;margin-top:.75rem" onclick="go('/events/${id}/messages/giftee')">Send a Secret Message</button>`));
   wireBuyButtons();
 });
 
@@ -1137,9 +1175,11 @@ route(/^\/events\/(\d+)\/clan$/, async (id) => {
 });
 
 route(/^\/events\/(\d+)\/clan\/(\d+)$/, async (id, uid) => {
-  const [list, mine] = await Promise.all([
+  const [list, mine, ev] = await Promise.all([
     api.get(`/events/${id}/wishlists/clan`), api.get(`/events/${id}/assignments/mine`),
+    api.get(`/events/${id}`),
   ]);
+  const archived = ev.status === "completed";
   const entry = list.find(e => e.user.id === Number(uid));
   if (!entry) {
     return render("My Clan", alertBox("We couldn't find that person in this gift exchange.") + `
@@ -1147,8 +1187,9 @@ route(/^\/events\/(\d+)\/clan\/(\d+)$/, async (id, uid) => {
   }
   const n = entry.items.length;
   const name = entry.user.display_name;
-  const isMyGiftee = mine.assigned && mine.giftee_user_id === entry.user.id;
+  const isMyGiftee = mine.assigned && mine.giftee_user_id === entry.user.id && !archived;
   render("My Clan", `
+    ${archived ? archivedBanner() : ""}
     ${idCardHtml(entry.user)}
     ${isMyGiftee ? `
     <section class="card">
@@ -1156,28 +1197,30 @@ route(/^\/events\/(\d+)\/clan\/(\d+)$/, async (id, uid) => {
       <p class="muted" style="margin:.4rem 0 0">You're ${esc(name)}'s Secret Santa. Your message is sent anonymously, so they'll only see that it's from their Secret Santa.</p>
     </section>` : ""}
     <h2 class="section-title">Wishlist${n ? ` <span class="muted">· ${n} gift idea${n === 1 ? "" : "s"}</span>` : ""}</h2>
-    ${n ? clanWishGrid(entry.items) : `<div class="card"><p class="muted" style="margin:0">No gift ideas yet.</p></div>`}
+    ${n ? clanWishGrid(entry.items, archived) : `<div class="card"><p class="muted" style="margin:0">No gift ideas yet.</p></div>`}
   `);
   wireBuyButtons();
 });
 
 route(/^\/events\/(\d+)\/messages$/, async (id) => {
   const [d, ev] = await Promise.all([api.get(`/events/${id}/messages`), api.get(`/events/${id}`)]);
+  const archived = ev.status === "completed";
   function thread(key, label) {
     const t = d[key];
     if (!t) return "";
     const msgs = t.messages.map(m =>
       `<div class="bubble ${m.mine ? "mine" : "theirs"}">${esc(m.body)}</div>`).join("")
-      || `<p class="muted center">No messages yet. Say hello!</p>`;
+      || `<p class="muted center">${archived ? "No messages." : "No messages yet. Say hello!"}</p>`;
     return `<section class="card"><h2>${label}: ${esc(t.with_display_name)}</h2>
       <div>${msgs}</div>
-      <label for="in-${key}">Write a message</label>
+      ${archived ? "" : `<label for="in-${key}">Write a message</label>
       <input id="in-${key}" maxlength="2000">
-      <button class="btn btn-primary" data-send="${key}">Send</button></section>`;
+      <button class="btn btn-primary" data-send="${key}">Send</button>`}</section>`;
   }
   render("Messages", `
     <div id="msg"></div>
     <p class="muted" style="margin-top:0">Gift exchange: <strong>${esc(ev.name)}</strong>. These conversations are only for this gift exchange.</p>
+    ${archived ? archivedBanner() : ""}
     ${thread("giftee", "To my person")}
     ${thread("giver", "With my Secret Santa")}
     ${!d.giftee && !d.giver ? `<div class="card center"><p>Messages open up after names are drawn.</p></div>` : ""}
@@ -1194,24 +1237,27 @@ route(/^\/events\/(\d+)\/messages$/, async (id) => {
 async function renderMessageThread(id, key, label) {
   const [d, ev] = await Promise.all([api.get(`/events/${id}/messages`), api.get(`/events/${id}`)]);
   const t = d[key];
+  const archived = ev.status === "completed";
   if (!t) {
     render(label, `<div class="card center"><p>Messages open up after names are drawn.</p></div>`);
     return;
   }
   const msgs = t.messages.map(m =>
     `<div class="bubble ${m.mine ? "mine" : "theirs"}">${esc(m.body)}</div>`).join("")
-    || `<p class="muted center">No messages yet. Say hello!</p>`;
+    || `<p class="muted center">${archived ? "No messages." : "No messages yet. Say hello!"}</p>`;
   render(label, `
     <div id="msg"></div>
     <p class="muted" style="margin-top:0">Gift exchange: <strong>${esc(ev.name)}</strong>. This conversation is only for this gift exchange.</p>
     <h2>${esc(t.with_display_name)}</h2>
-    ${key === "giftee" ? `<p class="muted" style="margin-top:0">Your messages here are sent anonymously.</p>` : ""}
+    ${archived ? archivedBanner() : key === "giftee" ? `<p class="muted" style="margin-top:0">Your messages here are sent anonymously.</p>` : ""}
     <div>${msgs}</div>
+    ${archived ? "" : `
     <label for="msgin">Write a message</label>
     <input id="msgin" maxlength="2000">
-    <button class="btn btn-primary" id="sendBtn">Send</button>
+    <button class="btn btn-primary" id="sendBtn">Send</button>`}
   `, { card: true });
-  document.getElementById("sendBtn").onclick = async () => {
+  const sendBtn = document.getElementById("sendBtn");
+  if (sendBtn) sendBtn.onclick = async () => {
     const input = document.getElementById("msgin");
     if (!input.value.trim()) return;
     try { await api.post(`/events/${id}/messages`, { to: key, body: input.value }); navigate(); }
@@ -1521,11 +1567,11 @@ function fmtEventTime(hhmm) {
 const EVENT_STATUS = {
   open:      { emoji: "🎄", label: "Not drawn yet", cls: "tag-open" },
   matched:   { emoji: "✅", label: "Names drawn",   cls: "tag-drawn" },
-  completed: { emoji: "🏁", label: "Completed",     cls: "tag-done" },
+  completed: { emoji: "📦", label: "Archived",      cls: "tag-done" },
 };
 function eventStatus(e) { return EVENT_STATUS[e.status] || { emoji: "🚫", label: e.status, cls: "tag-done" }; }
 
-// A gift exchange is kept as a record once its day has passed or it's marked done.
+// A gift exchange has happened once its day has passed or it's archived.
 function todayIso() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -1534,7 +1580,7 @@ function eventHasHappened(e) { return e.status === "completed" || e.event_date <
 
 // Permanently deletes a gift exchange after a confirmation, then runs `done`.
 async function deleteEvent(ev, done) {
-  if (!confirm(`Delete "${ev.name}"? This permanently erases its wishlists, name draw and messages for everyone. It can't be undone.`)) return;
+  if (!confirm(`Delete "${ev.name}"? This permanently erases the gift exchange and everything in it (name draw, wishlists, messages, dishes and its announcements) for everyone. It can't be undone.`)) return;
   try {
     await api.del(`/events/${ev.id}`);
     await refreshCurrentEvent();
@@ -1564,14 +1610,13 @@ function eventCard(e) {
     <div class="wish-card-actions">
       <button class="btn btn-secondary" data-open>Manage</button>
       ${e.status !== "completed" ? `<button class="btn btn-quiet" data-edit>Edit</button>` : ""}
-      ${!eventHasHappened(e) ? `<button class="btn btn-quiet" data-delete>Delete</button>` : ""}
+      <button class="btn btn-quiet" data-delete>Delete</button>
     </div>
   </article>`).firstElementChild;
   card.querySelector("[data-open]").onclick = () => go(`/admin/events/${e.id}`);
   const edit = card.querySelector("[data-edit]");
   if (edit) edit.onclick = () => go(`/admin/events/${e.id}/edit`);
-  const del = card.querySelector("[data-delete]");
-  if (del) del.onclick = () => deleteEvent(e, () => navigate());
+  card.querySelector("[data-delete]").onclick = () => deleteEvent(e, () => navigate());
   return card;
 }
 
@@ -1749,7 +1794,7 @@ route(/^\/admin\/events\/new$/, async () => { await renderEventForm(null); });
 route(/^\/admin\/events\/(\d+)\/edit$/, async (id) => {
   const ev = await api.get(`/events/${id}`);
   if (ev.status === "completed") {
-    return eventFormBlocked(id, "This gift exchange is complete and can't be edited.");
+    return eventFormBlocked(id, "This gift exchange is archived and can't be edited.");
   }
   await renderEventForm(ev);
 });
@@ -1768,15 +1813,14 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
         <span class="muted">${p.household_name ? "• " + esc(p.household_name) : "• ⚠ no household yet"}</span></li>`).join("")}</ul>`
     : `<p class="muted">No one is joining yet.${ev.status === "open" ? " Use Edit to choose who's in." : ""}</p>`;
   const drawSection = ev.status === "completed"
-    ? `<div class="alert alert-ok">🏁 This gift exchange is complete.</div>`
+    ? `<div class="alert alert-ok">📦 This gift exchange is archived. Everyone can look at it, but nothing in it can be changed.</div>`
     : ev.status === "matched"
       ? `<div class="alert alert-ok">✅ Names are drawn! ${st.revealed} of ${st.matched} people have peeked.</div>
          <button class="btn btn-quiet" id="reroll">Start Over (Re-Draw Names)</button>`
       : `<button class="btn btn-primary" id="draw">🎲 Draw Names</button>`;
   const doneBtn = ev.status !== "completed"
-    ? `<button class="btn btn-quiet" id="markDone">Mark Event as Done</button>` : "";
-  const deleteBtn = eventHasHappened(ev)
-    ? "" : `<button class="btn btn-quiet" id="deleteEvent">Delete Gift Exchange</button>`;
+    ? `<button class="btn btn-quiet" id="markDone">Archive Gift Exchange</button>` : "";
+  const deleteBtn = `<button class="btn btn-quiet" id="deleteEvent">Delete Gift Exchange</button>`;
   render(ev.name, `
     <div id="msg"></div>
     <div class="card">
@@ -1818,7 +1862,7 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
   if (deleteBtnEl) deleteBtnEl.onclick = () => deleteEvent(ev, () => go("/admin/events"));
   const markDone = document.getElementById("markDone");
   if (markDone) markDone.onclick = async () => {
-    if (!confirm("Mark this gift exchange as done? A new exchange will need to be created next time, with its own fresh wishlists.")) return;
+    if (!confirm("Archive this gift exchange? Everyone can still look at its messages, wishlists and dishes, but no one will be able to send messages, change wishlists, add dishes or edit it anymore. This can't be undone.")) return;
     try {
       await api.post(`/events/${id}/complete`);
       await refreshCurrentEvent();
@@ -1828,7 +1872,8 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
 });
 
 route(/^\/admin\/events\/(\d+)\/wishlists$/, async (id) => {
-  const all = await api.get(`/events/${id}/wishlists`);
+  const [all, ev] = await Promise.all([api.get(`/events/${id}/wishlists`), api.get(`/events/${id}`)]);
+  const archived = ev.status === "completed";
   all.sort((a, b) => a.user.display_name.localeCompare(b.user.display_name));
   const people = all.map(w => `
     <section class="person-section">
@@ -1836,10 +1881,10 @@ route(/^\/admin\/events\/(\d+)\/wishlists$/, async (id) => {
         ${avatarHtml(w.user, "avatar-md")}
         <h2 style="margin:0">${esc(w.user.display_name)}</h2>
       </div>
-      ${w.items.length ? clanWishGrid(w.items) : `<div class="card"><p class="muted" style="margin:0">No gift ideas yet.</p></div>`}
+      ${w.items.length ? clanWishGrid(w.items, archived) : `<div class="card"><p class="muted" style="margin:0">No gift ideas yet.</p></div>`}
     </section>`).join("");
   render("All Wishlists", all.length
-    ? people
+    ? (archived ? archivedBanner() : "") + people
     : `<div class="card"><p class="muted" style="margin:0">No one's joined this gift exchange yet.</p></div>`, { wide: true });
   wireBuyButtons();
 });

@@ -4,7 +4,7 @@ from flask import Blueprint, request, jsonify, g
 
 from ..extensions import db
 from ..models import Event, WishlistItem, Assignment, User, EventParticipant
-from ..middleware.auth import require_auth, require_family_member, require_family_admin
+from ..middleware.auth import require_auth, require_family_member, require_family_admin, archived_error
 from ..services.notification_service import notify
 from ..services.photo_service import save_photo, remove_photo
 from ..utils import normalize_link_url
@@ -38,7 +38,7 @@ def my_wishlist(event_id):
              .order_by(WishlistItem.priority, WishlistItem.id).all())
     # Owner NEVER sees purchase status.
     return jsonify({"items": [i.to_dict(include_purchase=False) for i in items],
-                    "limit": ev.wishlist_limit})
+                    "limit": ev.wishlist_limit, "archived": ev.status == "completed"})
 
 
 @bp.post("/events/<int:event_id>/wishlists")
@@ -46,6 +46,9 @@ def my_wishlist(event_id):
 def add_item(event_id):
     ev = Event.query.get_or_404(event_id)
     _, err = require_family_member(ev.family_id)
+    if err:
+        return err
+    err = archived_error(ev)
     if err:
         return err
     count = WishlistItem.query.filter_by(event_id=ev.id, user_id=g.user.id).count()
@@ -102,6 +105,9 @@ def reorder_wishlist(event_id):
     _, err = require_family_member(ev.family_id)
     if err:
         return err
+    err = archived_error(ev)
+    if err:
+        return err
     items = {i.id: i for i in WishlistItem.query.filter_by(event_id=ev.id, user_id=g.user.id).all()}
     ids = (request.get_json(silent=True) or {}).get("item_ids")
     if not isinstance(ids, list) or len(ids) != len(set(ids)) or set(ids) != set(items):
@@ -118,6 +124,9 @@ def edit_item(item_id):
     item = WishlistItem.query.get_or_404(item_id)
     if item.user_id != g.user.id:
         return jsonify({"error": "You can only edit your own list."}), 403
+    err = archived_error(Event.query.get(item.event_id))
+    if err:
+        return err
     if item.is_purchased:
         return jsonify({"error": "This gift has already been claimed and can't be changed anymore."}), 403
     data = request.form if request.form else (request.get_json(silent=True) or {})
@@ -155,6 +164,9 @@ def delete_item(item_id):
     item = WishlistItem.query.get_or_404(item_id)
     if item.user_id != g.user.id:
         return jsonify({"error": "You can only edit your own list."}), 403
+    err = archived_error(Event.query.get(item.event_id))
+    if err:
+        return err
     if item.is_purchased:
         return jsonify({"error": "This gift has already been claimed and can't be removed anymore."}), 403
     db.session.delete(item)
@@ -175,7 +187,7 @@ def giftee_wishlist(event_id):
     items = (WishlistItem.query.filter_by(event_id=ev.id, user_id=giftee_id)
              .order_by(WishlistItem.priority, WishlistItem.id).all())
     # Giver DOES see purchase status.
-    return jsonify({"items": [_item_dict(i, True) for i in items]})
+    return jsonify({"items": [_item_dict(i, True) for i in items], "archived": ev.status == "completed"})
 
 
 @bp.post("/wishlists/<int:item_id>/purchase")
@@ -184,6 +196,9 @@ def mark_purchased(item_id):
     item = WishlistItem.query.get_or_404(item_id)
     ev = Event.query.get_or_404(item.event_id)
     _, err = require_family_member(ev.family_id)
+    if err:
+        return err
+    err = archived_error(ev)
     if err:
         return err
     if item.user_id == g.user.id:
