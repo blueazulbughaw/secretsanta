@@ -20,12 +20,11 @@ def list_announcements(family_id):
     # standalone page) only ever sees what's actually published.
     if not (m.role == "admin" and request.args.get("scope") == "all"):
         q = q.filter_by(is_published=True)
-    anns = (q.order_by(Announcement.is_pinned.desc(),
-                        Announcement.created_at.desc()).limit(50).all())
+    anns = q.order_by(Announcement.created_at.desc()).limit(50).all()
     return jsonify([{
         "id": a.id, "title": a.title, "body": a.body,
         "author": a.author.display_name or a.author.full_name,
-        "is_pinned": a.is_pinned, "is_published": a.is_published, "at": a.created_at.isoformat(),
+        "is_published": a.is_published, "at": a.created_at.isoformat(),
     } for a in anns])
 
 
@@ -43,7 +42,7 @@ def post_announcement(family_id):
     is_published = bool(data.get("is_published", True))
     a = Announcement(family_id=family_id, event_id=data.get("event_id"),
                      author_id=g.user.id, title=title[:200], body=body,
-                     is_pinned=bool(data.get("is_pinned")), is_published=is_published)
+                     is_published=is_published)
     db.session.add(a)
     db.session.commit()
     if is_published:
@@ -72,8 +71,6 @@ def edit_announcement(ann_id):
         if not body:
             return jsonify({"error": "Please add a message."}), 400
         a.body = body
-    if "is_pinned" in data:
-        a.is_pinned = bool(data["is_pinned"])
     if "is_published" in data:
         a.is_published = bool(data["is_published"])
     db.session.commit()

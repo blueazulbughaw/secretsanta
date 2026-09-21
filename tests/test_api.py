@@ -868,3 +868,16 @@ def test_game_master_is_chosen_from_attendees(users):
     drawn = _drawn_event(users)
     r = admin.patch(f"/api/events/{drawn['id']}", json={"game_master_id": ids[CARA_USER]})
     assert r.status_code == 200 and r.get_json()["event"]["game_master_id"] == ids[CARA_USER]
+
+
+def test_announcements_newest_first_and_only_published_shown_to_members(users):
+    fam, admin, bob = users["_family"], users[ADMIN_USER], users[BOB_USER]
+    url = f"/api/families/{fam['id']}/announcements"
+    admin.post(url, json={"title": "First", "body": "one"})
+    admin.post(url, json={"title": "Hidden", "body": "draft", "is_published": False, "is_pinned": True})
+    admin.post(url, json={"title": "Third", "body": "three", "is_pinned": True})   # pinning no longer exists
+
+    seen = bob.get(url).get_json()
+    assert [a["title"] for a in seen] == ["Third", "First"]           # newest first, unpublished hidden
+    assert all("is_pinned" not in a for a in seen)
+    assert [a["title"] for a in admin.get(f"{url}?scope=all").get_json()] == ["Third", "Hidden", "First"]

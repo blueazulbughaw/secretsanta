@@ -370,7 +370,7 @@ function annRowReadOnly(a) {
     ? `<button class="icon-btn" aria-label="Delete announcement" data-del-ann="${a.id}">🗑</button>` : "";
   return `
     <tr>
-      <td data-label="Title"><strong>${a.is_pinned ? "📌 " : ""}${esc(a.title)}</strong></td>
+      <td data-label="Title"><strong>${esc(a.title)}</strong></td>
       <td data-label="Message" class="wrap-cell">${esc(a.body)}</td>
       <td data-label="From">${esc(a.author)}</td>
       <td data-label="Date">${new Date(a.at).toLocaleDateString()}</td>
@@ -380,7 +380,7 @@ function annRowReadOnly(a) {
 function annTable(anns) {
   return `
     <div class="table-wrap">
-      <table class="data">
+      <table class="data ann-table">
         <colgroup>
           <col style="width:18%"><col style="width:42%">
           <col style="width:15%"><col style="width:15%"><col style="width:10%">
@@ -602,7 +602,7 @@ function pageSecuritySetup(forced) {
   // holds the primary button); otherwise the profile leads.
   const canEditName = !ME.user.full_name || FAMILY?.role === "admin" || ME.user.is_app_admin;
   const profileCard = `
-    <section class="card">
+    <section class="card form-card">
       <h2>My profile</h2>
       <p class="muted">Your clan sees this on My Clan, so they know what to get you.</p>
       <div class="profile-photo-row">
@@ -638,7 +638,7 @@ function pageSecuritySetup(forced) {
   // an account with none yet just sets one.
   const hasPw = !!ME.user.has_password;
   const passwordCard = `
-    <section class="card">
+    <section class="card form-card">
     <h2>${hasPw ? "Reset your password" : "Set up your password"}</h2>
     <p class="muted">${hasPw ? "Enter your current password, then a new one." : "You'll use this to sign in."} At least 8 characters.</p>
     ${hasPw ? `
@@ -789,17 +789,20 @@ function dashEventBlock(e, d) {
 
 route(/^\/$/, async () => {
   const first = (ME.user.full_name || "").trim().split(/\s+/)[0] || "there";
-  const all = await api.get(`/families/${FAMILY.id}/events`);
+  const [all, anns] = await Promise.all([
+    api.get(`/families/${FAMILY.id}/events`),
+    api.get(`/families/${FAMILY.id}/announcements`),
+  ]);
   const upcoming = all.filter(e => !eventHasHappened(e) && e.status !== "cancelled")
     .sort((x, y) => x.event_date.localeCompare(y.event_date));
   const mine = await Promise.all(upcoming.map(e =>
     e.i_am_participating ? api.get(`/events/${e.id}/assignments/mine`) : null));
   const clanEvent = CURRENT_EVENT || upcoming[0];
-  const sections = [`
-    <div class="greeting">
-      <h2>Hello, ${esc(first)}! 👋</h2>
-      ${clanEvent ? `<button class="btn btn-primary" style="width:auto" onclick="go('/events/${clanEvent.id}/clan')">View My Clan</button>` : ""}
-    </div>`];
+  const annHtml = anns.length ? annTable(anns) : `<p class="muted" style="margin:0">No announcements yet.</p>`;
+  const sections = [
+    `<div class="greeting"><h2>Hello, ${esc(first)}! 👋</h2></div>`,
+    `<div class="dash-section"><h2>Announcements</h2>${annHtml}</div>`,
+  ];
 
   sections.push(upcoming.length ? `
     <section class="card">
@@ -812,9 +815,9 @@ route(/^\/$/, async () => {
       ${FAMILY.role === "admin" ? `<button class="btn btn-secondary" style="width:auto" onclick="go('/admin/events')">Create a Gift Exchange</button>` : ""}
     </section>`);
 
-  const anns = await api.get(`/families/${FAMILY.id}/announcements`);
-  const annHtml = anns.length ? annTable(anns) : `<p class="muted" style="margin:0">No announcements yet.</p>`;
-  sections.push(`<div class="dash-section"><h2>Announcements</h2>${annHtml}</div>`);
+  if (clanEvent) {
+    sections.push(`<button class="btn btn-primary btn-block" onclick="go('/events/${clanEvent.id}/clan')">View My Clan</button>`);
+  }
 
   render("My Dashboard", sections.join(""));
   $app.querySelectorAll("[data-del-ann]").forEach(b => b.onclick = async () => {
@@ -1250,7 +1253,7 @@ route(/^\/admin$/, async () => {
   const fam = await api.get(`/families/${FAMILY.id}`);
   const regUrl = `${location.origin}/#/join/${fam.join_code}`;
   render("Clan Admin Dashboard", `
-    <section class="card">
+    <section class="card form-card">
       <h2>Clan name</h2>
       <label for="clanName">Name</label>
       <input id="clanName" value="${esc(fam.name)}">
@@ -1258,7 +1261,7 @@ route(/^\/admin$/, async () => {
       <button class="btn btn-secondary" id="saveClanName">Save Clan Name</button>
     </section>
 
-    <div class="card center">
+    <div class="card form-card center">
       <p class="muted">Share this code so family can join:</p>
       <div class="reveal-name" style="font-size:1.8rem">${esc(fam.join_code)}</div>
       <button class="btn btn-quiet" id="copyLinkBtn" style="margin-top:.5rem">Copy Registration Link</button>
@@ -1386,7 +1389,7 @@ route(/^\/admin\/members$/, async () => {
       </table>
     </div>
 
-    <section class="card" style="margin-top:1.25rem">
+    <section class="card form-card" style="margin-top:1.25rem">
     <h2>Add a member</h2>
     <p class="muted">Adds their account directly — you'll get a username and password to give them.</p>
     <label for="newName">Name</label>
@@ -1471,7 +1474,7 @@ route(/^\/admin\/groups$/, async () => {
       </table>
     </div>
     <p class="muted center" id="noGroups">No households yet.</p>
-    <section class="card" style="margin-top:1.25rem">
+    <section class="card form-card" style="margin-top:1.25rem">
     <h2>Add a household</h2>
     <label>Household name</label>
     <input id="hname">
@@ -1840,8 +1843,7 @@ route(/^\/admin\/announce$/, async () => {
     const tr = h(`<tr>
       <td data-label="Title"><input data-title value="${esc(a.title)}"></td>
       <td data-label="Message"><textarea data-body rows="2">${esc(a.body)}</textarea></td>
-      <td data-label="Pinned"><input type="checkbox" data-pinned ${a.is_pinned ? "checked" : ""} aria-label="Pin to the top"></td>
-      <td data-label="On Dashboard"><input type="checkbox" data-published ${a.is_published ? "checked" : ""} aria-label="Show on Clan Dashboard"></td>
+      <td data-label="Show on Dashboard"><input type="checkbox" data-published ${a.is_published ? "checked" : ""} aria-label="Show on Clan Dashboard"></td>
       <td class="table-actions">
         <button class="btn btn-secondary" data-save>Save</button>
         <button class="btn btn-quiet" data-del>Delete</button>
@@ -1852,7 +1854,6 @@ route(/^\/admin\/announce$/, async () => {
         await api.patch(`/announcements/${a.id}`, {
           title: tr.querySelector("[data-title]").value,
           body: tr.querySelector("[data-body]").value,
-          is_pinned: tr.querySelector("[data-pinned]").checked,
           is_published: tr.querySelector("[data-published]").checked,
         });
         document.getElementById("msg").innerHTML = alertBox("Saved!", true);
@@ -1875,18 +1876,16 @@ route(/^\/admin\/announce$/, async () => {
       <div class="table-wrap">
         <table class="data" id="annTable">
           <colgroup>
-            <col style="width:20%"><col style="width:38%">
-            <col style="width:12%"><col style="width:12%"><col style="width:18%">
+            <col style="width:22%"><col style="width:42%"><col style="width:14%"><col style="width:22%">
           </colgroup>
-          <thead><tr><th>Title</th><th>Message</th><th>Pinned</th><th>On Dashboard</th><th></th></tr></thead>
+          <thead><tr><th>Title</th><th>Message</th><th>Show on Dashboard</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
       </div>` : `<div class="card"><p class="muted" style="margin:0">No announcements yet.</p></div>`}
-    <section class="card" style="margin-top:1.25rem">
+    <section class="card form-card" style="margin-top:1.25rem">
     <h2>Post a new announcement</h2>
     <label>Title</label><input id="atitle">
     <label>Message</label><textarea id="abody" rows="4"></textarea>
-    <div class="check-row"><input type="checkbox" id="apin"><label for="apin" style="margin:0">Pin to the top</label></div>
     <div class="check-row"><input type="checkbox" id="apub" checked><label for="apub" style="margin:0">Show on Clan Dashboard</label></div>
     <button class="btn btn-primary" id="postBtn">Post to the Family</button>
     </section>
@@ -1900,7 +1899,6 @@ route(/^\/admin\/announce$/, async () => {
       await api.post(`/families/${FAMILY.id}/announcements`, {
         title: document.getElementById("atitle").value,
         body: document.getElementById("abody").value,
-        is_pinned: document.getElementById("apin").checked,
         is_published: document.getElementById("apub").checked,
       });
       go("/");

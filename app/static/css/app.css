@@ -211,11 +211,10 @@ p  { font-size: .92rem; }
   padding: .5rem 1rem; margin: .4rem 0;
 }
 .btn:focus-visible { outline: 3px solid var(--yellow); outline-offset: 1px; }
-.btn-primary { background: var(--red); color: #fff; }
-.btn-primary:active { background: var(--red-dark); }
-.btn-secondary { background: #fff; color: var(--red); border: 1px solid var(--red); }
-.btn-green { background: var(--green); color: #fff; }
-.btn-quiet { background: #F4F4F4; color: var(--ink); }
+/* Every button is red with white text (the variant classes stay for the markup). */
+.btn-primary, .btn-secondary, .btn-quiet, .btn-green { background: var(--red); color: #fff; border-color: transparent; }
+.btn-primary:hover, .btn-secondary:hover, .btn-quiet:hover, .btn-green:hover,
+.btn-primary:active, .btn-secondary:active, .btn-quiet:active, .btn-green:active { background: var(--red-dark); }
 
 /* Inputs — same width cap as buttons, for the same reason */
 label { display: block; font-weight: 600; font-size: .88rem; margin: .8rem 0 .3rem; max-width: 480px; }
@@ -514,3 +513,25 @@ body.dragging-cards, body.dragging-cards * { cursor: grabbing !important; }
 @media (max-width: 640px) {
   .dish-chips, .dish-entry-actions { margin-left: 0; }
 }
+
+/* Announcements on a phone: just the messages (no title, sender or date), as a plain list */
+@container (max-width: 760px) {
+  table.ann-table td[data-label="Title"], table.ann-table td[data-label="From"],
+  table.ann-table td[data-label="Date"] { display: none; }
+  table.ann-table td[data-label="Message"]::before { display: none; }
+  table.ann-table tr {
+    border: none; border-bottom: 1px solid var(--line); border-radius: 0;
+    padding: .55rem 0; margin: 0; background: none;
+  }
+  table.ann-table tr:last-child { border-bottom: none; }
+  table.ann-table td.table-actions { padding: 0; text-align: right; }
+}
+
+/* Cards that hold a form sit in the middle at a readable width, and their fields fill the card */
+.form-card, .page-card { max-width: 640px; margin: 0 auto 1rem; }
+.form-card label, .form-card input, .form-card textarea, .form-card select, .form-card .btn,
+.form-card .password-field, .form-card .people-picker, .form-card .dish-row,
+.page-card label, .page-card input, .page-card textarea, .page-card select, .page-card .btn,
+.page-card .password-field, .page-card .people-picker, .page-card .dish-row { max-width: none; }
+.form-card .btn[style*="width:auto"], .page-card .btn[style*="width:auto"] { width: auto; }
+.form-card .form-actions .btn, .page-card .form-actions .btn { max-width: none; }

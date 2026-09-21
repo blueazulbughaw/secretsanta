@@ -247,7 +247,6 @@ CREATE TABLE announcements (
   author_id   BIGINT UNSIGNED NOT NULL,
   title       VARCHAR(200) NOT NULL,
   body        TEXT NOT NULL,
-  is_pinned   TINYINT(1) NOT NULL DEFAULT 0,
   is_published TINYINT(1) NOT NULL DEFAULT 1,   -- shown on the member Dashboard when true
   created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_an_family FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE,
