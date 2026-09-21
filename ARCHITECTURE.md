@@ -136,7 +136,7 @@ All JSON, prefixed `/api`. 🔒 = auth required, 👑 = family admin.
 - `POST /events/:id/participants/:userId/opt-out` 🔒 — self only, before matching
 
 **Assignments**
-- `POST /events/:id/assignments/generate` 👑 — runs validation + matcher (see §6)
+- `POST /events/:id/assignments/generate` 👑 — runs validation + matcher (see §6). Every gift exchange has its OWN draw, and a draw avoids giver→giftee pairs from all of the clan's earlier exchanges (`solve_distinct`); if the group is too small for that it avoids at least the latest exchange's pairs, and the response's `repeated` says how many pairs still repeat an earlier one (0 normally)
 - `GET /events/:id/assignments/mine` 🔒 — my giftee (name or codename, plus `giftee_user_id`); their wishlist is on their profile, i.e. `GET /events/:id/wishlists/clan` (there is no separate giver-only wishlist endpoint)
 - `DELETE /events/:id/assignments` 👑 — only while status ≠ completed; re-roll
 

@@ -42,6 +42,9 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   hold a form use `.form-card` (or render's `card:true` = `.page-card`): on desktop they are
   640px wide, centred, and their fields/buttons fill the card. Don't leave a form floating
   narrow on the left of a wide card.
+- A new gift exchange gets different giver -> giftee pairs: `matching_service.solve_distinct`
+  bans every pair from the clan's other events (falling back to just the latest event, then
+  nothing, for tiny groups) and reports `repeated`. Don't draw with plain `solve`.
 - Messages belong to one gift exchange: threads come from that event's draw and every
   thread page says which event it is. Notifications are links to what they're about.
 - A giftee's profile shows the Secret Santa a Message button with a note that it's anonymous.

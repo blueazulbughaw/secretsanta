@@ -55,6 +55,39 @@ def validate_event(event: Event):
     return participants
 
 
+def _random_matching(allowed, rng):
+    """A random perfect matching: every giver gets one receiver from allowed[giver],
+    every receiver is used once. Augmenting paths, so it finds one whenever one
+    exists. Returns {giver: receiver} or None."""
+    graph = {g: rng.sample(rs, len(rs)) for g, rs in allowed.items()}
+    taken = {}   # receiver -> giver
+
+    def place(giver, seen):
+        for receiver in graph[giver]:
+            if receiver in seen:
+                continue
+            seen.add(receiver)
+            if receiver not in taken or place(taken[receiver], seen):
+                taken[receiver] = giver
+                return True
+        return False
+
+    order = list(graph)
+    rng.shuffle(order)
+    for giver in order:
+        if not place(giver, set()):
+            return None
+    return {giver: receiver for receiver, giver in taken.items()}
+
+
+def previous_pairs(event: Event):
+    """(giver, receiver) pairs of the clan's OTHER gift exchanges, newest first."""
+    others = (Event.query.filter(Event.family_id == event.family_id, Event.id != event.id)
+              .order_by(Event.id.desc()).all())
+    return [{(a.giver_id, a.receiver_id) for a in Assignment.query.filter_by(event_id=o.id).all()}
+            for o in others]
+
+
 def solve(participants, allow_same_household=False, rng=None):
     """Constrained derangement via randomized block-shift.
 
@@ -72,7 +105,8 @@ def solve(participants, allow_same_household=False, rng=None):
       every block has size <= m, so shifting by m always lands outside
       your own block (the wraparound lands inside the first/largest
       block, which the tail positions can never belong to when m <= n/2).
-    Runs in O(n) — no backtracking, no pathological cases.
+    Runs in O(n) — no backtracking, no pathological cases. It doesn't know about
+    earlier gift exchanges; solve_distinct() is what draws use.
     """
     rng = rng or random
     n = len(participants)
@@ -102,11 +136,44 @@ def solve(participants, allow_same_household=False, rng=None):
     return {order[i]: order[(i + m) % n] for i in range(n)}
 
 
+def solve_distinct(participants, allow_same_household=False, history=(), rng=None):
+    """Draws names so that nobody gives to themselves or (unless allowed) to their
+    own household, and - a different gift exchange means different pairs - nobody
+    gets a giftee they already had in an earlier gift exchange.
+
+    participants: list of (user_id, household_id); history: pair sets of earlier
+    exchanges, newest first. If the group is too small to avoid every earlier
+    pairing, it avoids just the most recent exchange's, and as a last resort none.
+    Returns (matches, repeated): {giver_id: receiver_id} and how many of those
+    pairs did happen before. Raises MatchingError when no draw is possible."""
+    rng = rng or random
+    if len(participants) < 3:
+        raise MatchingError("You need at least 3 people to draw names.")
+    household = dict(participants)
+    allowed = {g: [r for r in household
+                   if r != g and (allow_same_household or household[r] != household[g])]
+               for g in household}
+    history = list(history)
+    levels = [history] if history else []
+    if len(history) > 1:
+        levels.append(history[:1])
+    levels.append([])
+    for level in levels:
+        banned = set().union(*level) if level else set()
+        matches = _random_matching(
+            {g: [r for r in rs if (g, r) not in banned] for g, rs in allowed.items()}, rng)
+        if matches:
+            everything = set().union(*history) if history else set()
+            return matches, sum(1 for pair in matches.items() if pair in everything)
+    raise MatchingError("No valid way to draw names with the current households.")
+
+
 def generate_assignments(event: Event):
     """Validate, solve, persist in one transaction, notify. Idempotent-safe:
-    DB unique constraints reject double inserts."""
+    DB unique constraints reject double inserts. Returns (people matched, how many
+    of the pairs repeat an earlier gift exchange - 0 unless the group is too small)."""
     participants = validate_event(event)
-    matches = solve(participants, event.allow_same_household)
+    matches, repeated = solve_distinct(participants, event.allow_same_household, previous_pairs(event))
 
     try:
         for giver, receiver in matches.items():
@@ -129,4 +196,4 @@ def generate_assignments(event: Event):
         notify(giver, "assignment", "Names have been drawn! 🎁",
                f"Tap to see who you're giving a gift to for {event.name}.",
                link_path=f"/events/{event.id}/my-person")
-    return len(matches)
+    return len(matches), repeated

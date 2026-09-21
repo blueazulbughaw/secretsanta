@@ -981,3 +981,67 @@ def test_new_gift_notification_opens_the_owners_profile(users):
     # the old giver-only list endpoint is gone
     gone = santa.get(f"/api/events/{ev['id']}/wishlists/giftee")
     assert "items" not in (gone.get_json(silent=True) or {})
+
+
+def test_each_gift_exchange_has_its_own_giver_giftee_pairs(app, users):
+    fam, admin = users["_family"], users[ADMIN_USER]
+    clients = {ADMIN_USER: admin, BOB_USER: users[BOB_USER], CARA_USER: users[CARA_USER]}
+    for name in ("dan", "eve", "fay"):
+        c = app.test_client()
+        c.post("/api/auth/register", json={"username": name, "password": PASSWORD, "full_name": name.title()})
+        c.post("/api/families/join", json={"join_code": fam["join_code"]})
+        clients[name] = c
+    members = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    for m in members:
+        h = admin.post(f"/api/families/{fam['id']}/households",
+                       json={"name": f"Home of {m['user']['username']}"}).get_json()["household"]
+        admin.patch(f"/api/families/{fam['id']}/members/{m['membership_id']}", json={"household_id": h["id"]})
+    everyone = [m["user"]["id"] for m in members]
+
+    seen = []                                        # (event, {giver: giftee})
+    for n in range(4):
+        ev = admin.post(f"/api/families/{fam['id']}/events",
+                        json={"name": f"Event {n}", "event_date": future_date(30 + n)}).get_json()["event"]
+        admin.put(f"/api/events/{ev['id']}/participants", json={"user_ids": everyone})
+        r = admin.post(f"/api/events/{ev['id']}/assignments/generate")
+        assert r.status_code == 200 and r.get_json()["repeated"] == 0
+        draw = {}
+        for c in clients.values():
+            me = c.get("/api/auth/me").get_json()["user"]["id"]
+            draw[me] = c.get(f"/api/events/{ev['id']}/assignments/mine").get_json()["giftee_user_id"]
+        assert len(draw) == 6 and all(g != r for g, r in draw.items())
+        seen.append(draw)
+
+    # nobody drew the same person twice across the four events
+    for giver in seen[0]:
+        giftees = [draw[giver] for draw in seen]
+        assert len(set(giftees)) == 4, giftees
+
+    # and their conversations stay separate even though it's the same clan
+    first, second = (admin.get(f"/api/families/{fam['id']}/events").get_json()[i] for i in (1, 0))
+    admin.post(f"/api/events/{first['id']}/messages", json={"to": "giftee", "body": "only in the first"})
+    thread = admin.get(f"/api/events/{second['id']}/messages").get_json()["giftee"]
+    assert thread["messages"] == []
+
+
+def test_gift_idea_notification_names_the_giftee(users):
+    admin, bob = users[ADMIN_USER], users[BOB_USER]
+    ev = _drawn_event(users)
+    bob_id = bob.get("/api/auth/me").get_json()["user"]["id"]
+    santa = next(c for c in (admin, users[CARA_USER])
+                 if c.get(f"/api/events/{ev['id']}/assignments/mine").get_json()["giftee_user_id"] == bob_id)
+    bob.post(f"/api/events/{ev['id']}/wishlists", json={"item_name": "Boots"})
+    assert santa.get("/api/notifications").get_json()["items"][0]["title"] == "Your giftee Bob added a gift idea"
+
+    # with codenames on, it uses their codename instead of their real name
+    fam = users["_family"]
+    coded = admin.post(f"/api/families/{fam['id']}/events",
+                       json={"name": "Coded", "event_date": future_date(45), "use_codenames": True}).get_json()["event"]
+    members = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    admin.put(f"/api/events/{coded['id']}/participants", json={"user_ids": [m["user"]["id"] for m in members]})
+    assert admin.post(f"/api/events/{coded['id']}/assignments/generate").status_code == 200
+    santa = next(c for c in (admin, users[CARA_USER])
+                 if c.get(f"/api/events/{coded['id']}/assignments/mine").get_json()["giftee_user_id"] == bob_id)
+    bob.post(f"/api/events/{coded['id']}/wishlists", json={"item_name": "Hat"})
+    title = santa.get("/api/notifications").get_json()["items"][0]["title"]
+    assert title.startswith("Your giftee ") and title.endswith(" added a gift idea") and "Bob" not in title

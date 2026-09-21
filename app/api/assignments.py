@@ -18,10 +18,10 @@ def generate(event_id):
     if err:
         return err
     try:
-        count = generate_assignments(ev)
+        count, repeated = generate_assignments(ev)
     except MatchingError as e:
         return jsonify({"error": str(e)}), 400
-    return jsonify({"ok": True, "matched": count})
+    return jsonify({"ok": True, "matched": count, "repeated": repeated})
 
 
 @bp.get("/events/<int:event_id>/assignments/mine")

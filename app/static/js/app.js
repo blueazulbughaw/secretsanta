@@ -415,6 +415,7 @@ async function navigate() {
   renderSidebar(path.replace(/^(\/events\/\d+\/wishlist)\/.+$/, "$1")
     .replace(/^(\/events\/\d+\/clan)\/.+$/, "$1")
     .replace(/^\/events\/\d+$/, "/")
+    .replace(/^\/members\/\d+$/, "/admin")
     .replace(/^(\/admin\/events)\/.+$/, "$1"));
   closeSidebar();
   for (const r of routes) {
@@ -1190,6 +1191,14 @@ route(/^\/events\/(\d+)\/clan$/, async (id) => {
   if (grid) list.forEach(entry => grid.append(personCard(entry.user, id)));
 });
 
+// A clan member's profile card on its own (no gift exchange needed), e.g. from Manage My Clan.
+route(/^\/members\/(\d+)$/, async (uid) => {
+  const members = await api.get(`/families/${FAMILY.id}/members`);
+  const m = members.find(x => x.user.id === Number(uid));
+  if (!m) return render("Clan Member", alertBox("We couldn't find that person in this clan."));
+  render(m.user.display_name, idCardHtml(m.user));
+});
+
 route(/^\/events\/(\d+)\/clan\/(\d+)$/, async (id, uid) => {
   const [list, mine, ev] = await Promise.all([
     api.get(`/events/${id}/wishlists/clan`), api.get(`/events/${id}/assignments/mine`),
@@ -1320,9 +1329,12 @@ route(/^\/notifications$/, async () => {
 
 // ---------- admin ----------
 // A card that just lists names, with the button that manages them underneath.
+// Each name is text, or {name, href} to make it a link.
 function nameListCard(title, names, empty, path, buttonLabel) {
+  const item = (n) => typeof n === "string" ? esc(n)
+    : `<a class="person-link" href="#${n.href}">${esc(n.name)}</a>`;
   const list = names.length
-    ? `<ul class="name-list">${names.map(n => `<li>${esc(n)}</li>`).join("")}</ul>`
+    ? `<ul class="name-list">${names.map(n => `<li>${item(n)}</li>`).join("")}</ul>`
     : `<p class="muted" style="margin-top:0">${empty}</p>`;
   return `
     <section class="card form-card">
@@ -1350,8 +1362,9 @@ route(/^\/admin$/, async () => {
       <button class="btn btn-secondary" id="saveClanName">Save Clan Name</button>
     </section>
 
-    ${nameListCard("Gift Exchanges", events.map(e => e.name), "No gift exchanges yet.", "/admin/events", "Manage Events")}
-    ${nameListCard("Clan Members", members.map(m => m.user.display_name).sort(byName), "No members yet.", "/admin/members", "Manage Clan Members")}
+    ${nameListCard("Gift Exchanges", events.map(e => ({ name: e.name, href: `/events/${e.id}` })), "No gift exchanges yet.", "/admin/events", "Manage Events")}
+    ${nameListCard("Clan Members", members.map(m => ({ name: m.user.display_name, href: `/members/${m.user.id}` }))
+      .sort((x, y) => byName(x.name, y.name)), "No members yet.", "/admin/members", "Manage Clan Members")}
     ${nameListCard("Households", households.map(h => h.name).sort(byName), "No households yet.", "/admin/groups", "Manage Household Names")}
 
     <section class="card form-card">
@@ -1636,7 +1649,7 @@ function eventCard(e) {
   const st = eventStatus(e);
   const rules = [e.use_codenames ? "Fun codenames" : "", e.allow_same_household ? "Same-household matches allowed" : ""]
     .filter(Boolean).join(" · ");
-  const card = h(`<article class="wish-card event-card">
+  const card = h(`<a class="wish-card card-link event-card" href="#/admin/events/${e.id}">
     <div class="wish-card-head">
       <span class="event-emoji" aria-hidden="true">${st.emoji}</span>
       <div class="wish-card-title">
@@ -1651,16 +1664,7 @@ function eventCard(e) {
       ${e.budget_amount ? `<li>💰 Budget ${esc(e.budget_currency)} ${e.budget_amount}</li>` : ""}
       ${rules ? `<li>⚙️ ${esc(rules)}</li>` : ""}
     </ul>
-    <div class="wish-card-actions">
-      <button class="btn btn-secondary" data-open>Manage</button>
-      ${e.status !== "completed" ? `<button class="btn btn-quiet" data-edit>Edit</button>` : ""}
-      <button class="btn btn-quiet" data-delete>Delete</button>
-    </div>
-  </article>`).firstElementChild;
-  card.querySelector("[data-open]").onclick = () => go(`/admin/events/${e.id}`);
-  const edit = card.querySelector("[data-edit]");
-  if (edit) edit.onclick = () => go(`/admin/events/${e.id}/edit`);
-  card.querySelector("[data-delete]").onclick = () => deleteEvent(e, () => navigate());
+  </a>`).firstElementChild;
   return card;
 }
 
@@ -1892,8 +1896,10 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
   if (draw) draw.onclick = async () => {
     try {
       const r = await api.post(`/events/${id}/assignments/generate`);
-      document.getElementById("msg").innerHTML = alertBox(`🎉 Done! ${r.matched} people matched.`, true);
-      setTimeout(navigate, 1200);
+      const repeat = r.repeated
+        ? ` Heads up: ${r.repeated} ${r.repeated === 1 ? "person has" : "people have"} the same giftee as in an earlier gift exchange, because there aren't enough people to avoid it.` : "";
+      document.getElementById("msg").innerHTML = alertBox(`🎉 Done! ${r.matched} people matched.${repeat}`, true);
+      setTimeout(navigate, repeat ? 5000 : 1200);
     } catch (e) { showError(e); }
   };
   const rr = document.getElementById("reroll");

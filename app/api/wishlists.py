@@ -88,7 +88,11 @@ def add_item(event_id):
         # Their profile shows the wishlist; with codenames on it would name them, so
         # those events go to the reveal page (which shows the codename) instead.
         link = f"/events/{ev.id}/my-person" if ev.use_codenames else f"/events/{ev.id}/clan/{g.user.id}"
-        notify(giver.giver_id, "wishlist", "Your person added a gift idea 🎁",
+        who = g.user.display_name or g.user.full_name
+        if ev.use_codenames:
+            mine = EventParticipant.query.filter_by(event_id=ev.id, user_id=g.user.id).first()
+            who = (mine.codename if mine and mine.codename else "someone")
+        notify(giver.giver_id, "wishlist", f"Your giftee {who} added a gift idea",
                "Take a look at their updated wishlist.", link_path=link)
     return jsonify({"ok": True, "item": item.to_dict()}), 201
 
