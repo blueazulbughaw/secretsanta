@@ -770,22 +770,26 @@ function detailRow(label, valueHtml, cls = "") {
 }
 const TBA = `<span class="muted">To be announced</span>`;
 
+// My giftee's name for an event; a link to their profile unless codenames are on
+// (the profile would reveal the real name). `d` is my assignment (assigned: true).
+function gifteeLink(ev, d) {
+  return ev.use_codenames || !d.giftee_user_id
+    ? `<strong>${esc(d.giftee_display_name)}</strong>`
+    : `<a class="person-link" href="#/events/${ev.id}/clan/${d.giftee_user_id}"><strong>${esc(d.giftee_display_name)}</strong> →</a>`;
+}
+
 // One upcoming gift exchange on the dashboard. `d` is my assignment there (null when I'm not in it).
 function dashEventBlock(e, d) {
-  // With codenames on, the giftee is shown as a codename - don't link to a profile that names them.
   const gifteeHtml = !d ? `<span class="muted">You're not in this gift exchange.</span>`
     : !d.assigned ? `<span class="muted">${esc(d.message)}</span>`
-    : e.use_codenames || !d.giftee_user_id
-      ? `<strong>${esc(d.giftee_display_name)}</strong>`
-      : `<a class="person-link" href="#/events/${e.id}/clan/${d.giftee_user_id}"><strong>${esc(d.giftee_display_name)}</strong> →</a>`;
+    : gifteeLink(e, d);
   return `
     <div class="event-block">
+      <h3 class="event-title"><a class="person-link" href="#/events/${e.id}">${esc(e.name)}</a></h3>
       <dl class="detail-list">
-        <dt>What</dt><dd><a class="person-link" href="#/events/${e.id}">${esc(e.name)}</a>${e.theme ? ` <span class="muted">· ${esc(e.theme)}</span>` : ""}</dd>
-        <dt>Where</dt><dd>${e.location ? esc(e.location) : TBA}</dd>
-        <dt>Date</dt><dd>${esc(fmtEventDate(e.event_date))}</dd>
-        <dt>Time</dt><dd>${e.event_time ? esc(fmtEventTime(e.event_time)) : TBA}</dd>
         <dt>My Giftee</dt><dd>${gifteeHtml}</dd>
+        <dt>Date</dt><dd>${esc(fmtEventDate(e.event_date))}</dd>
+        ${e.theme ? `<dt>Theme</dt><dd>${esc(e.theme)}</dd>` : ""}
       </dl>
       ${d && d.assigned ? `<div class="event-actions">
         <button class="btn btn-outline" onclick="go('/events/${e.id}/messages/giftee')">Message My Giftee</button>
@@ -827,6 +831,7 @@ route(/^\/$/, async () => {
   // exchange, so they only show when there is one.
   sections.push(`
     <section class="card">
+      <h2>My Links</h2>
       <div class="event-actions" style="margin-bottom:0">
         <button class="btn btn-primary" onclick="go('/security')">Edit My Profile</button>
         ${clanEvent ? `
@@ -953,6 +958,7 @@ route(/^\/events\/(\d+)$/, async (id) => {
     api.get(`/events/${id}`), api.get(`/events/${id}/attendees`), api.get(`/events/${id}/dishes`),
   ]);
   const st = eventStatus(ev);
+  const mine = ev.i_am_participating ? await api.get(`/events/${id}/assignments/mine`) : null;
   const gm = people.find(u => u.id === ev.game_master_id);
   const extras = [
     detailRow("Game master", gm ? `<a class="person-link" href="#/events/${id}/clan/${gm.id}">${esc(gm.display_name)}</a>` : ""),
@@ -960,7 +966,7 @@ route(/^\/events\/(\d+)$/, async (id) => {
     detailRow("Gift amount", ev.budget_amount ? `${esc(ev.budget_currency)} ${ev.budget_amount}` : ""),
     detailRow("Rules", esc(ev.rules)),
     detailRow("What to bring", esc(ev.what_to_bring)),
-    detailRow("Other things to know", esc(ev.other_info)),
+    detailRow("Additional Details", esc(ev.other_info)),
   ].join("");
   const isAdmin = FAMILY.role === "admin";
   const rows = people.map(u => `
@@ -983,6 +989,11 @@ route(/^\/events\/(\d+)$/, async (id) => {
         ${isAdmin ? `<button class="btn btn-quiet" onclick="go('/admin/events/${id}')">Manage Gift Exchange</button>` : ""}
       </div>
     </section>
+    ${mine && mine.assigned ? `
+    <section class="card">
+      <h2>Your Giftee is</h2>
+      <p class="giftee-name">${gifteeLink(ev, mine)}</p>
+    </section>` : ""}
     <section class="card" id="dishCard"></section>
     <section class="card">
       <h2>Who's coming (${people.length})</h2>
@@ -1685,7 +1696,7 @@ async function renderEventForm(ev) {
     <p class="muted">Everyone in the clan sees these on the event page.</p>
     ${textarea("erules", "Rules", editing ? ev.rules : "")}
     ${textarea("ebring", "What to bring", editing ? ev.what_to_bring : "")}
-    ${textarea("eother", "Other things to know", editing ? ev.other_info : "")}
+    ${textarea("eother", "Additional details", editing ? ev.other_info : "")}
 
     ${locked ? `
     <div class="alert alert-ok" style="max-width:480px">🔒 Names are already drawn, so who's joining and the draw rules can't change. Use "Start Over" on the gift exchange page if you need to.</div>

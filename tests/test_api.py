@@ -939,3 +939,17 @@ def test_archived_event_is_view_only_but_everything_stays_readable(app, users, t
     other = _drawn_event(users, days=50)
     assert bob.post(f"/api/events/{other['id']}/wishlists", json={"item_name": "Scarf"}).status_code == 201
     assert bob.post(f"/api/events/{other['id']}/messages", json={"to": "giftee", "body": "hi"}).status_code == 201
+
+
+def test_announcement_notification_title(users):
+    fam, admin, bob = users["_family"], users[ADMIN_USER], users[BOB_USER]
+    admin.post(f"/api/families/{fam['id']}/announcements",
+               json={"title": "Party time", "body": "Potluck at 6pm, bring a dish!"})
+    first = bob.get("/api/notifications").get_json()["items"][0]
+    assert first["title"] == "New Announcement posted by Admin"
+    assert first["body"] == "Party time: Potluck at 6pm, bring a dish!"
+    assert first["link_path"] == "/announcements"
+    # a draft (not shown on the dashboard) tells nobody
+    admin.post(f"/api/families/{fam['id']}/announcements",
+               json={"title": "Draft", "body": "later", "is_published": False})
+    assert len(bob.get("/api/notifications").get_json()["items"]) == 1

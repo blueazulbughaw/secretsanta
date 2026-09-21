@@ -539,3 +539,6 @@ body.dragging-cards, body.dragging-cards * { cursor: grabbing !important; }
 .page-card .password-field, .page-card .people-picker, .page-card .dish-row { max-width: none; }
 .form-card .btn[style*="width:auto"], .page-card .btn[style*="width:auto"] { width: auto; }
 .form-card .form-actions .btn, .page-card .form-actions .btn { max-width: none; }
+
+.event-title { margin: 0 0 .5rem; font-size: 1.15rem; }
+.giftee-name { margin: 0; font-size: 1.2rem; }

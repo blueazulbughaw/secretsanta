@@ -37,7 +37,7 @@ CREATE TABLE users (
                              ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_users_username (username),
   INDEX idx_users_phone (phone)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------
 -- OTP_CODES — passwordless login. Codes are hashed, never stored raw.
@@ -52,7 +52,7 @@ CREATE TABLE otp_codes (
   used_at     DATETIME     NULL,
   created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_otp_phone_expires (phone, expires_at)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------
 -- FAMILIES — top-level tenant. One family = one circle of members.
@@ -66,7 +66,7 @@ CREATE TABLE families (
   CONSTRAINT fk_families_creator FOREIGN KEY (created_by)
     REFERENCES users(id) ON DELETE RESTRICT,
   INDEX idx_families_join_code (join_code)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------
 -- HOUSEHOLDS — sub-groups within a family (e.g., "The Reyes House").
@@ -81,7 +81,7 @@ CREATE TABLE households (
     REFERENCES families(id) ON DELETE CASCADE,
   UNIQUE KEY uq_household_name_per_family (family_id, name),
   INDEX idx_households_family (family_id)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------
 -- FAMILY_MEMBERS — join table users↔families. Role lives HERE,
@@ -101,7 +101,7 @@ CREATE TABLE family_members (
   UNIQUE KEY uq_member_per_family (family_id, user_id),
   INDEX idx_fm_user (user_id),
   INDEX idx_fm_household (household_id)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------
 -- EVENTS — a single gift exchange (e.g., "Christmas 2026").
@@ -134,7 +134,7 @@ CREATE TABLE events (
   CONSTRAINT fk_events_creator FOREIGN KEY (created_by) REFERENCES users(id)    ON DELETE RESTRICT,
   INDEX idx_events_family_status (family_id, status),
   INDEX idx_events_date (event_date)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------
 -- EVENT_DISHES — dishes people will bring to one event (once names are drawn).
@@ -149,7 +149,7 @@ CREATE TABLE event_dishes (
   CONSTRAINT fk_dishes_event FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
   CONSTRAINT fk_dishes_user  FOREIGN KEY (user_id)  REFERENCES users(id)  ON DELETE CASCADE,
   INDEX idx_dishes_event_user (event_id, user_id)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------
 -- EVENT_PARTICIPANTS — who is in this specific exchange.
@@ -168,7 +168,7 @@ CREATE TABLE event_participants (
   UNIQUE KEY uq_participant_per_event (event_id, user_id),
   UNIQUE KEY uq_codename_per_event (event_id, codename),
   INDEX idx_ep_user (user_id)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------
 -- ASSIGNMENTS — the Secret Santa matches. One row per giver.
@@ -188,7 +188,7 @@ CREATE TABLE assignments (
   UNIQUE KEY uq_giver_per_event    (event_id, giver_id),      -- prevents duplicate matches
   UNIQUE KEY uq_receiver_per_event (event_id, receiver_id),   -- prevents duplicate matches
   CONSTRAINT chk_no_self CHECK (giver_id <> receiver_id)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------
 -- WISHLISTS — items a participant wants, scoped to an event.
@@ -214,7 +214,7 @@ CREATE TABLE wishlists (
   CONSTRAINT fk_w_user  FOREIGN KEY (user_id)      REFERENCES users(id)  ON DELETE CASCADE,
   CONSTRAINT fk_w_buyer FOREIGN KEY (purchased_by) REFERENCES users(id)  ON DELETE SET NULL,
   INDEX idx_w_event_user (event_id, user_id)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------
 -- MESSAGES — anonymous giver↔giftee chat, scoped to an event.
@@ -235,7 +235,7 @@ CREATE TABLE messages (
   CONSTRAINT fk_m_recipient FOREIGN KEY (recipient_id) REFERENCES users(id)  ON DELETE CASCADE,
   INDEX idx_m_recipient_read (recipient_id, read_at),
   INDEX idx_m_event (event_id)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------
 -- ANNOUNCEMENTS — admin posts to the whole family (or one event).
@@ -253,7 +253,7 @@ CREATE TABLE announcements (
   CONSTRAINT fk_an_event  FOREIGN KEY (event_id)  REFERENCES events(id)   ON DELETE CASCADE,
   CONSTRAINT fk_an_author FOREIGN KEY (author_id) REFERENCES users(id)    ON DELETE CASCADE,
   INDEX idx_an_family_created (family_id, created_at DESC)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------
 -- NOTIFICATIONS — in-app now; push-ready via `channel` + `push_sent_at`.
@@ -272,7 +272,7 @@ CREATE TABLE notifications (
   created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_n_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   INDEX idx_n_user_unread (user_id, is_read, created_at DESC)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------
 -- PUSH_SUBSCRIPTIONS — future-ready for Web Push (PWA).
@@ -288,4 +288,4 @@ CREATE TABLE push_subscriptions (
   created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_ps_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   UNIQUE KEY uq_endpoint (endpoint(191))
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

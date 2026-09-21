@@ -48,8 +48,8 @@ def post_announcement(family_id):
     if is_published:
         for m in FamilyMember.query.filter_by(family_id=family_id).all():
             if m.user_id != g.user.id:
-                notify(m.user_id, "announcement", f"📢 {title}",
-                       body[:200], link_path="/announcements")
+                notify(m.user_id, "announcement", "New Announcement posted by Admin",
+                       f"{title}: {body}"[:200], link_path="/announcements")
     return jsonify({"ok": True, "id": a.id}), 201
 
 
