@@ -298,7 +298,8 @@ const routes = [];
 function route(pattern, fn) { routes.push({ pattern, fn }); }
 async function navigate() {
   const path = location.hash.replace(/^#/, "") || "/";
-  renderSidebar(path.replace(/^(\/events\/\d+\/wishlist)\/.+$/, "$1"));
+  renderSidebar(path.replace(/^(\/events\/\d+\/wishlist)\/.+$/, "$1")
+    .replace(/^(\/admin\/events)\/.+$/, "$1"));
   closeSidebar();
   for (const r of routes) {
     const m = path.match(r.pattern);
@@ -1109,40 +1110,174 @@ route(/^\/admin\/groups$/, async () => {
   };
 });
 
+// Each gift exchange has its own participants, wishlists and giftee/gifter
+// pairs, so who's joining is chosen per exchange (from the clan's members).
+function fmtEventDate(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined,
+    { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+}
+const EVENT_STATUS = {
+  open:      { emoji: "🎄", label: "Not drawn yet", cls: "tag-open" },
+  matched:   { emoji: "✅", label: "Names drawn",   cls: "tag-drawn" },
+  completed: { emoji: "🏁", label: "Completed",     cls: "tag-done" },
+};
+function eventStatus(e) { return EVENT_STATUS[e.status] || { emoji: "🚫", label: e.status, cls: "tag-done" }; }
+
+function eventCard(e) {
+  const st = eventStatus(e);
+  const rules = [e.use_codenames ? "Fun codenames" : "", e.allow_same_household ? "Same-household matches allowed" : ""]
+    .filter(Boolean).join(" · ");
+  const card = h(`<article class="wish-card event-card">
+    <div class="wish-card-head">
+      <span class="event-emoji" aria-hidden="true">${st.emoji}</span>
+      <div class="wish-card-title">
+        <strong>${esc(e.name)}</strong>
+        <span class="wish-priority">${esc(fmtEventDate(e.event_date))}</span>
+      </div>
+    </div>
+    <div><span class="status-tag ${st.cls}">${st.label}</span></div>
+    <ul class="event-meta">
+      <li>👥 ${e.participant_count ?? 0} joining</li>
+      <li>🎁 Up to ${e.wishlist_limit} gifts each</li>
+      ${e.budget_amount ? `<li>💰 Budget ${esc(e.budget_currency)} ${e.budget_amount}</li>` : ""}
+      ${rules ? `<li>⚙️ ${esc(rules)}</li>` : ""}
+    </ul>
+    <div class="wish-card-actions">
+      <button class="btn btn-secondary" data-open>Manage</button>
+      ${e.status === "open" ? `<button class="btn btn-quiet" data-edit>Edit</button>` : ""}
+    </div>
+  </article>`).firstElementChild;
+  card.querySelector("[data-open]").onclick = () => go(`/admin/events/${e.id}`);
+  const edit = card.querySelector("[data-edit]");
+  if (edit) edit.onclick = () => go(`/admin/events/${e.id}/edit`);
+  return card;
+}
+
 route(/^\/admin\/events$/, async () => {
   const events = await api.get(`/families/${FAMILY.id}/events`);
-  const list = events.map(e => `
-    <button class="card-btn" onclick="go('/admin/events/${e.id}')">
-      <span class="emoji">${e.status === "completed" ? "🏁" : e.status === "matched" ? "✅" : "🎄"}</span>
-      <span>${esc(e.name)}<span class="sub">${esc(e.event_date)} • ${
-        e.status === "completed" ? "Completed" : e.status === "matched" ? "Names drawn" : "Not drawn yet"}</span></span>
-    </button>`).join("");
   render("Gift Exchanges", `
-    ${list}
-    <h2>Create a new exchange</h2>
-    <label>Name</label><input id="ename" placeholder="e.g. Christmas 2026">
-    <label>Date of the exchange</label><input id="edate" type="date">
-    <label>Gift budget (optional)</label><input id="ebudget" type="number" inputmode="decimal" placeholder="e.g. 30">
-    <label>Wishlist size</label><input id="elimit" type="number" value="5" min="1" max="20">
-    <div class="check-row"><input type="checkbox" id="ecodes"><label for="ecodes" style="margin:0">Use fun codenames instead of real names</label></div>
-    <div class="check-row"><input type="checkbox" id="esame"><label for="esame" style="margin:0">Allow matches within the same household</label></div>
-    <div id="msg"></div>
-    <button class="btn btn-primary" id="createEv">Create Exchange</button>
+    <div class="wish-toolbar">
+      <p class="muted" style="margin:0">${events.length ? `${events.length} gift exchange${events.length === 1 ? "" : "s"}` : ""}</p>
+      <button class="btn btn-primary" style="width:auto;margin:0" id="newEventBtn">+ Create a Gift Exchange</button>
+    </div>
+    ${events.length
+      ? `<div class="wish-grid" id="eventGrid"></div>`
+      : `<p class="muted">No gift exchanges yet. Create one and pick who's joining.</p>`}
   `, { back: false, wide: true });
-  document.getElementById("createEv").onclick = async () => {
+  const grid = document.getElementById("eventGrid");
+  if (grid) events.forEach(e => grid.append(eventCard(e)));
+  document.getElementById("newEventBtn").onclick = () => go("/admin/events/new");
+});
+
+// Add / edit share one form; `ev` is null when creating.
+async function renderEventForm(ev) {
+  const editing = !!ev;
+  const [members, households, parts] = await Promise.all([
+    api.get(`/families/${FAMILY.id}/members`),
+    api.get(`/families/${FAMILY.id}/households`),
+    editing ? api.get(`/events/${ev.id}/participants`) : Promise.resolve(null),
+  ]);
+  const houseName = Object.fromEntries(households.map(x => [x.id, x.name]));
+  // New exchange: everyone starts checked (uncheck who's sitting this one out).
+  const joining = editing
+    ? new Set(parts.filter(p => p.is_participating).map(p => p.user.id))
+    : new Set(members.map(m => m.user.id));
+  const people = [...members].sort((x, y) => x.user.display_name.localeCompare(y.user.display_name));
+  const rows = people.map(m => `
+    <label class="check-row">
+      <input type="checkbox" data-uid="${m.user.id}" ${joining.has(m.user.id) ? "checked" : ""}>
+      <span>${esc(m.user.display_name)}
+        <span class="muted">${m.household_id ? "• " + esc(houseName[m.household_id] || "") : "• ⚠ no household yet"}</span></span>
+    </label>`).join("");
+
+  render(editing ? "Edit Gift Exchange" : "Create a Gift Exchange", `
+    <div id="msg"></div>
+    <label for="ename">Name</label>
+    <input id="ename" placeholder="e.g. Christmas 2026" value="${esc(editing ? ev.name : "")}">
+    <label for="edate">Date of the exchange</label>
+    <input id="edate" type="date" value="${esc(editing ? ev.event_date : "")}">
+    <label for="ebudget">Gift budget <span class="muted">(optional)</span></label>
+    <input id="ebudget" type="number" inputmode="decimal" placeholder="e.g. 30" value="${esc(editing && ev.budget_amount ? ev.budget_amount : "")}">
+    <label for="elimit">Wishlist size <span class="muted">(gifts each person can list)</span></label>
+    <input id="elimit" type="number" min="1" max="20" value="${editing ? ev.wishlist_limit : 5}">
+    <div class="check-row"><input type="checkbox" id="ecodes" ${editing && ev.use_codenames ? "checked" : ""}><label for="ecodes" style="margin:0">Use fun codenames instead of real names</label></div>
+    <div class="check-row"><input type="checkbox" id="esame" ${editing && ev.allow_same_household ? "checked" : ""}><label for="esame" style="margin:0">Allow matches within the same household</label></div>
+
+    <h2 style="margin-top:1.5rem">Who's joining?</h2>
+    <p class="muted">Each gift exchange has its own wishlists and its own giftee/Secret Santa pairs, made only from the people checked here.</p>
+    <div class="picker-tools">
+      <span class="muted" id="joinCount"></span>
+      <button type="button" class="btn btn-quiet" id="pickAll">Select everyone</button>
+      <button type="button" class="btn btn-quiet" id="pickNone">Clear</button>
+    </div>
+    <div class="people-picker">${rows || `<p class="muted" style="padding:.6rem">No members in this clan yet.</p>`}</div>
+
+    <div class="form-actions">
+      <button class="btn btn-primary" id="saveEventBtn">${editing ? "Save Changes" : "Create Gift Exchange"}</button>
+      <button class="btn btn-quiet" id="cancelEventBtn">Cancel</button>
+    </div>
+  `, { back: true, wide: true });
+
+  const boxes = () => [...$app.querySelectorAll("[data-uid]")];
+  const updateCount = () => {
+    const n = boxes().filter(c => c.checked).length;
+    document.getElementById("joinCount").textContent = `${n} of ${boxes().length} joining`;
+  };
+  $app.querySelector(".people-picker").addEventListener("change", updateCount);
+  document.getElementById("pickAll").onclick = () => { boxes().forEach(c => c.checked = true); updateCount(); };
+  document.getElementById("pickNone").onclick = () => { boxes().forEach(c => c.checked = false); updateCount(); };
+  updateCount();
+  document.getElementById("cancelEventBtn").onclick = () =>
+    go(editing ? `/admin/events/${ev.id}` : "/admin/events");
+
+  document.getElementById("saveEventBtn").onclick = async () => {
+    const body = {
+      name: document.getElementById("ename").value,
+      event_date: document.getElementById("edate").value,
+      budget_amount: document.getElementById("ebudget").value || null,
+      wishlist_limit: Number(document.getElementById("elimit").value) || 5,
+      use_codenames: document.getElementById("ecodes").checked,
+      allow_same_household: document.getElementById("esame").checked,
+    };
+    const ids = boxes().filter(c => c.checked).map(c => Number(c.dataset.uid));
     try {
-      await api.post(`/families/${FAMILY.id}/events`, {
-        name: document.getElementById("ename").value,
-        event_date: document.getElementById("edate").value,
-        budget_amount: document.getElementById("ebudget").value || null,
-        wishlist_limit: document.getElementById("elimit").value,
-        use_codenames: document.getElementById("ecodes").checked,
-        allow_same_household: document.getElementById("esame").checked,
-      });
+      if (editing) {
+        await api.patch(`/events/${ev.id}`, body);
+        await api.put(`/events/${ev.id}/participants`, { user_ids: ids });
+        await refreshCurrentEvent();
+        return go(`/admin/events/${ev.id}`);
+      }
+      const r = await api.post(`/families/${FAMILY.id}/events`, body);
+      const newId = r.event.id;
+      try { await api.put(`/events/${newId}/participants`, { user_ids: ids }); }
+      catch (e) {
+        await refreshCurrentEvent();
+        window.alert(`The gift exchange was created, but saving who's joining failed: ${e.message}`);
+        return go(`/admin/events/${newId}/edit`);
+      }
       await refreshCurrentEvent();
-      navigate();
+      go(`/admin/events/${newId}`);
     } catch (e) { showError(e); }
   };
+}
+
+function eventFormBlocked(id, msg) {
+  render("Edit Gift Exchange", alertBox(msg) + `
+    <button class="btn btn-secondary" style="width:auto" onclick="go('/admin/events/${id}')">Back to Gift Exchange</button>`,
+    { back: true, wide: true });
+}
+
+route(/^\/admin\/events\/new$/, async () => { await renderEventForm(null); });
+
+route(/^\/admin\/events\/(\d+)\/edit$/, async (id) => {
+  const ev = await api.get(`/events/${id}`);
+  if (ev.status !== "open") {
+    return eventFormBlocked(id, ev.status === "matched"
+      ? "Names are already drawn. Start Over (re-draw) on the gift exchange first if you need to change its rules or who's joining."
+      : "This gift exchange is complete and can't be edited.");
+  }
+  await renderEventForm(ev);
 });
 
 route(/^\/admin\/events\/(\d+)$/, async (id) => {
@@ -1151,14 +1286,13 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
     api.get(`/events/${id}/participants`),
     api.get(`/events/${id}/assignments/status`),
   ]);
-  const locked = ev.status === "matched" || ev.status === "completed";
-  const rows = parts.map(p => `
-    <label class="check-row">
-      <input type="checkbox" data-uid="${p.user.id}" ${p.is_participating ? "checked" : ""}
-        ${locked ? "disabled" : ""}>
-      <span>${esc(p.user.display_name)}
-        <span class="muted">${p.household_name ? "• " + esc(p.household_name) : "• ⚠ no household yet"}</span></span>
-    </label>`).join("");
+  const status = eventStatus(ev);
+  const joining = parts.filter(p => p.is_participating)
+    .sort((x, y) => x.user.display_name.localeCompare(y.user.display_name));
+  const people = joining.length
+    ? `<ul class="people-list">${joining.map(p => `<li>${esc(p.user.display_name)}
+        <span class="muted">${p.household_name ? "• " + esc(p.household_name) : "• ⚠ no household yet"}</span></li>`).join("")}</ul>`
+    : `<p class="muted">No one is joining yet.${ev.status === "open" ? " Use Edit to choose who's in." : ""}</p>`;
   const drawSection = ev.status === "completed"
     ? `<div class="alert alert-ok">🏁 This gift exchange is complete.</div>`
     : ev.status === "matched"
@@ -1166,29 +1300,26 @@ route(/^\/admin\/events\/(\d+)$/, async (id) => {
          <button class="btn btn-quiet" id="reroll">Start Over (Re-Draw Names)</button>`
       : `<button class="btn btn-primary" id="draw">🎲 Draw Names</button>`;
   const doneBtn = ev.status !== "completed"
-    ? `<button class="btn btn-quiet" id="markDone" style="margin-top:.5rem">Mark Event as Done</button>` : "";
+    ? `<button class="btn btn-quiet" id="markDone">Mark Event as Done</button>` : "";
   render(ev.name, `
     <div id="msg"></div>
-    <h2>Who's joining?</h2>
-    ${rows}
-    ${ev.status === "open" ? `<button class="btn btn-secondary" id="saveParts">Save Participants</button>` : ""}
+    <p><span class="status-tag ${status.cls}">${status.emoji} ${status.label}</span>
+      <span class="muted">&nbsp;${esc(fmtEventDate(ev.event_date))}
+      ${ev.budget_amount ? ` • Budget ${esc(ev.budget_currency)} ${ev.budget_amount}` : ""}
+      • Up to ${ev.wishlist_limit} gifts each</span></p>
+    ${ev.status === "open" ? `<button class="btn btn-secondary" style="width:auto" id="editEvent">Edit Gift Exchange</button>` : ""}
+    <h2 style="margin-top:1.25rem">Who's joining (${joining.length})</h2>
+    ${people}
     <hr style="margin:1.5rem 0">
     ${drawSection}
     ${doneBtn}
     <button class="btn btn-quiet" onclick="go('/admin/events/${id}/wishlists')">View Everyone's Wishlists</button>
   `, { back: true, wide: true });
-  const save = document.getElementById("saveParts");
-  if (save) save.onclick = async () => {
-    const ids = [...$app.querySelectorAll("[data-uid]:checked")].map(c => Number(c.dataset.uid));
-    try { await api.put(`/events/${id}/participants`, { user_ids: ids });
-      document.getElementById("msg").innerHTML = alertBox("Participants saved!", true);
-    } catch (e) { showError(e); }
-  };
+  const editBtn = document.getElementById("editEvent");
+  if (editBtn) editBtn.onclick = () => go(`/admin/events/${id}/edit`);
   const draw = document.getElementById("draw");
   if (draw) draw.onclick = async () => {
     try {
-      const ids = [...$app.querySelectorAll("[data-uid]:checked")].map(c => Number(c.dataset.uid));
-      await api.put(`/events/${id}/participants`, { user_ids: ids });
       const r = await api.post(`/events/${id}/assignments/generate`);
       document.getElementById("msg").innerHTML = alertBox(`🎉 Done! ${r.matched} people matched.`, true);
       setTimeout(navigate, 1200);

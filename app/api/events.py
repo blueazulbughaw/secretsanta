@@ -56,6 +56,9 @@ def list_events(family_id):
         d = ev.to_dict()
         d["i_am_participating"] = EventParticipant.query.filter_by(
             event_id=ev.id, user_id=g.user.id, is_participating=True).first() is not None
+        # Each event has its own set of participants (and so its own giftee/gifter pairs)
+        d["participant_count"] = EventParticipant.query.filter_by(
+            event_id=ev.id, is_participating=True).count()
         out.append(d)
     return jsonify(out)
 
@@ -87,7 +90,10 @@ def update_event(event_id):
         if data.get(field):
             setattr(ev, field, data[field][:120])
     if data.get("event_date"):
-        ev.event_date = date.fromisoformat(data["event_date"])
+        try:
+            ev.event_date = date.fromisoformat(data["event_date"])
+        except ValueError:
+            return jsonify({"error": "Please choose a date for the event."}), 400
     for field in ("budget_amount", "wishlist_limit"):
         if field in data:
             setattr(ev, field, data[field])

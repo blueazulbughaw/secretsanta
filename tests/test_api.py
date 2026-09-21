@@ -342,3 +342,43 @@ def test_wishlist_edit_via_form_replaces_photo_and_locks_when_bought(app, users,
     assert users[ADMIN_USER].post(f"/api/wishlists/{item['id']}/purchase").status_code == 200
     assert bob.patch(f"/api/wishlists/{item['id']}", json={"item_name": "x"}).status_code == 403
     assert bob.delete(f"/api/wishlists/{item['id']}").status_code == 403
+
+
+def test_events_have_separate_participants_and_can_be_edited(users):
+    fam = users["_family"]
+    admin, bob = users[ADMIN_USER], users[BOB_USER]
+    members = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    uid = {m["user"]["username"]: m["user"]["id"] for m in members}
+    for i, m in enumerate(members):  # drawing needs everyone in a household
+        h = admin.post(f"/api/families/{fam['id']}/households",
+                       json={"name": f"House {i}"}).get_json()["household"]
+        admin.patch(f"/api/families/{fam['id']}/members/{m['membership_id']}",
+                    json={"household_id": h["id"]})
+
+    def make(name):
+        return admin.post(f"/api/families/{fam['id']}/events",
+                          json={"name": name, "event_date": "2026-12-25"}).get_json()["event"]
+
+    xmas, bday = make("Xmas"), make("Birthday")
+    admin.put(f"/api/events/{xmas['id']}/participants", json={"user_ids": list(uid.values())})
+    admin.put(f"/api/events/{bday['id']}/participants", json={"user_ids": [uid[ADMIN_USER], uid[BOB_USER]]})
+
+    listed = {e["name"]: e for e in admin.get(f"/api/families/{fam['id']}/events").get_json()}
+    assert (listed["Xmas"]["participant_count"], listed["Birthday"]["participant_count"]) == (3, 2)
+
+    # draws are per event, made only from that event's participants
+    assert admin.post(f"/api/events/{bday['id']}/assignments/generate").status_code == 400  # only 2 joining
+    assert admin.post(f"/api/events/{xmas['id']}/assignments/generate").get_json()["matched"] == 3
+    assert bob.get(f"/api/events/{bday['id']}/assignments/mine").get_json()["assigned"] is False
+
+    # editing the still-open Birthday event: rules + who's joining
+    r = admin.patch(f"/api/events/{bday['id']}", json={
+        "name": "Birthday Bash", "event_date": "2026-12-24", "budget_amount": None,
+        "wishlist_limit": 3, "use_codenames": True})
+    assert r.status_code == 200
+    ev = r.get_json()["event"]
+    assert (ev["name"], ev["event_date"], ev["wishlist_limit"], ev["use_codenames"]) ==         ("Birthday Bash", "2026-12-24", 3, True)
+    assert admin.patch(f"/api/events/{bday['id']}", json={"event_date": "nope"}).status_code == 400
+    # members can't edit; a drawn event can't be edited
+    assert bob.patch(f"/api/events/{bday['id']}", json={"name": "x"}).status_code == 403
+    assert admin.patch(f"/api/events/{xmas['id']}", json={"name": "x"}).status_code == 400
