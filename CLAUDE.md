@@ -64,8 +64,9 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   user-typed URL in an href.
 - Photos: real images only (Pillow), 8MB upload cap, gift photos shrunk to 1200px,
   profile photos cropped to a 512px square. Tests must upload real images.
-- Add a member has every field the edit row has (Display Name, Username, Phone, Email,
-  Household, Clan admin). Joining is only ever set on the event - the Members table has no
+- Add a member and the Members table's edit rows show the same fields (Display Name, Username,
+  Phone, Email, Household, Clan admin); an admin can edit a username too (unique, tidied, never
+  equal to the display name). Joining is only ever set on the event - the Members table has no
   Joining column.
 - Add member / Add household are one-line cards on a desktop (`.inline-form`; stacked on a
   phone) above their tables.

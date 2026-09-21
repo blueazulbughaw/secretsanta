@@ -183,13 +183,23 @@ def update_member(family_id, membership_id):
             if not h:
                 return jsonify({"error": "That household doesn't exist in this family."}), 400
         mem.household_id = hid
+    new_name, new_username = mem.user.full_name, mem.user.username
     if "full_name" in data:
-        name = (data.get("full_name") or "").strip()[:120]
-        if not name:
+        new_name = (data.get("full_name") or "").strip()[:120]
+        if not new_name:
             return jsonify({"error": "Name can't be empty."}), 400
-        if name != mem.user.full_name and name == mem.user.username:
-            return jsonify({"error": "A display name should be different from the username."}), 400
-        mem.user.full_name = name
+    if "username" in data:
+        try:
+            new_username = normalize_username(data.get("username") or "")
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        if new_username != mem.user.username and User.query.filter_by(username=new_username).first():
+            return jsonify({"error": "That username is already taken."}), 409
+    # A display name can't just be the username - checked whenever either one changes, so an
+    # older account that already has them equal can still be saved untouched.
+    if (new_name != mem.user.full_name or new_username != mem.user.username) and new_name == new_username:
+        return jsonify({"error": "A display name should be different from the username."}), 400
+    mem.user.full_name, mem.user.username = new_name, new_username
     if "email" in data:
         email = (data.get("email") or "").strip()
         if email:

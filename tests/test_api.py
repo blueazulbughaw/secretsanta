@@ -1202,3 +1202,36 @@ def test_add_member_takes_household_and_admin_role_like_editing_does(app, users)
     assert admin.post(url, json={"full_name": "Bad Role", "role": "owner"}).status_code == 400
     assert len(admin.get(url).get_json()) == before
     assert bob.post(url, json={"full_name": "Nope", "role": "admin"}).status_code == 403
+
+
+def test_admin_can_edit_a_members_username(app, users):
+    fam, admin, bob = users["_family"], users[ADMIN_USER], users[BOB_USER]
+    members = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    bob_m = next(m for m in members if m["user"]["username"] == BOB_USER)
+    assert bob_m["user"]["username"] == BOB_USER                      # the members list carries it (the edit row shows it)
+    url = f"/api/families/{fam['id']}/members/{bob_m['membership_id']}"
+
+    # changed, tidied like any username, and the person signs in with the new one
+    assert admin.patch(url, json={"username": "  Bobby.R "}).status_code == 200
+    assert app.test_client().post("/api/auth/login-password",
+                                  json={"username": "bobby.r", "password": PASSWORD}).status_code == 200
+    assert app.test_client().post("/api/auth/login-password",
+                                  json={"username": BOB_USER, "password": PASSWORD}).status_code == 401
+
+    # taken / badly formed / the same as the display name -> refused, nothing changes
+    assert admin.patch(url, json={"username": CARA_USER}).status_code == 409
+    assert admin.patch(url, json={"username": "no spaces!"}).status_code == 400
+    r = admin.patch(url, json={"username": "Bob", "full_name": "bob"})               # "Bob" is tidied to "bob" == display "bob"
+    assert r.status_code == 400 and "different from the username" in r.get_json()["error"]
+    assert next(m for m in admin.get(f"/api/families/{fam['id']}/members").get_json()
+                if m["membership_id"] == bob_m["membership_id"])["user"]["username"] == "bobby.r"
+
+    # the edit row sends every field on Save; unchanged values (even an old account whose
+    # display name equals its username) must still save
+    from app.models import User
+    User.query.filter_by(username="bobby.r").first().full_name = "bobby.r"
+    db.session.commit()
+    assert admin.patch(url, json={"full_name": "bobby.r", "username": "bobby.r", "phone": "", "email": ""}).status_code == 200
+
+    # members can't
+    assert bob.patch(url, json={"username": "hax"}).status_code == 403

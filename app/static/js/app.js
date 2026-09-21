@@ -1446,7 +1446,8 @@ route(/^\/admin\/members$/, async () => {
 
   function memberRow(m) {
     const tr = h(`<tr>
-      <td data-label="Name"><input data-name value="${esc(m.user.full_name)}" title="${esc(m.user.full_name)}"></td>
+      <td data-label="Display Name"><input data-name value="${esc(m.user.full_name)}" title="${esc(m.user.full_name)}"></td>
+      <td data-label="Username"><input data-username value="${esc(m.user.username)}" title="${esc(m.user.username)}" autocapitalize="none" autocomplete="off" spellcheck="false"></td>
       <td data-label="Phone"><input data-phone value="${esc(m.user.phone || "")}" title="${esc(m.user.phone || "")}"></td>
       <td data-label="Email"><input data-email value="${esc(m.user.email || "")}" title="${esc(m.user.email || "")}"></td>
       <td data-label="Household"><select data-house>${houseOpts(m.household_id)}</select></td>
@@ -1465,13 +1466,15 @@ route(/^\/admin\/members$/, async () => {
     const msg = () => document.getElementById("msg");
     tr.querySelector("[data-save]").onclick = async () => {
       const nameEl = tr.querySelector("[data-name]");
+      const userEl = tr.querySelector("[data-username]");
       const phoneEl = tr.querySelector("[data-phone]");
       const emailEl = tr.querySelector("[data-email]");
       try {
         await api.patch(`/families/${FAMILY.id}/members/${membershipId}`, {
-          full_name: nameEl.value, phone: phoneEl.value, email: emailEl.value,
+          full_name: nameEl.value, username: userEl.value, phone: phoneEl.value, email: emailEl.value,
         });
-        nameEl.title = nameEl.value; phoneEl.title = phoneEl.value; emailEl.title = emailEl.value;
+        userEl.value = userEl.value.trim().toLowerCase();   // the server saves it tidied like this
+        nameEl.title = nameEl.value; userEl.title = userEl.value; phoneEl.title = phoneEl.value; emailEl.title = emailEl.value;
         msg().innerHTML = alertBox("Saved!", true);
       } catch (err) { showError(err); }
     };
@@ -1528,11 +1531,11 @@ route(/^\/admin\/members$/, async () => {
         <div class="table-wrap">
       <table class="data" id="membersTable">
         <colgroup>
-          <col style="width:17%"><col style="width:15%"><col style="width:23%">
-          <col style="width:15%"><col style="width:8%"><col style="width:22%">
+          <col style="width:14%"><col style="width:12%"><col style="width:12%"><col style="width:19%">
+          <col style="width:13%"><col style="width:7%"><col style="width:23%">
         </colgroup>
         <thead><tr>
-          <th>Display Name</th><th>Phone</th><th>Email</th><th>Household</th>
+          <th>Display Name</th><th>Username</th><th>Phone</th><th>Email</th><th>Household</th>
           <th>Admin</th><th></th>
         </tr></thead>
         <tbody></tbody>
