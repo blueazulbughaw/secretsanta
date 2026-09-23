@@ -81,13 +81,15 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   list, event page, attendees, dishes, messages, wishlists and profiles-in-event are limited to
   events they're in (`require_event_access` in middleware/auth.py - use it for every new
   event-scoped endpoint). There is no "My Clan" page or link: the people in an event are on that
-  event's page / Clan & Wishlists. The sidebar has no per-event items
-  (My Wishlist / My Messages are gone, they were ambiguous with several events): every event on
-  the dashboard has its own My Wishlist, Message My Secret Santa and View
-  Event Details (a giftee is messaged from their profile), and the event page has My Wishlist / View My Messages / View Clan & Wishlists.
-  A member with no upcoming events sees "You're not joining any upcoming events right now. If
-  that doesn't look right, please contact your clan admin." on the dashboard. Only the admin's Manage My
-  Clan lists every member.
+  event's page / Clan & Wishlists. The sidebar's My Wishlist and My Messages are event-aware
+  (`eventChooser` in app.js, routes `/wishlist` and `/messages`): with one upcoming event
+  they go straight to it; with several, a bare picker of cards showing only "<Event Name>
+  Wishlist" / "<Event Name> Messages" (no giftee/date/theme/buttons - that full-detail layout
+  is what the Events page and dashboard use, and is deliberately NOT shown here); with none,
+  the "You're not joining any upcoming events..." message. Every event on the dashboard also
+  has its own My Wishlist, Message My Secret Santa and View Event Details (a giftee is
+  messaged from their profile), and the event page has My Wishlist / View My Messages / View
+  Clan & Wishlists. Only the admin's Manage My Clan lists every member.
 - Wording: always say "event". Never "gift exchange" (user-facing text, errors, docs).
 - There is no separate admin page for a single event. The event page (`/events/:id`) is the
   one place: for clan admins it ends with an Admin card (Draw Names / Start Over (Re-Draw

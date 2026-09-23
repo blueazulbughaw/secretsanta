@@ -309,6 +309,8 @@ table.data td.wrap-cell { overflow: visible; white-space: normal; }
 }
 /* Already bought: very light grey (unbought stays white) */
 .wish-card.bought { background: var(--card-done); border-color: #DDDDDD; }
+/* My Wishlist / My Messages picker: just the event's name, nothing else */
+.event-picker-card { align-items: center; justify-content: center; text-align: center; min-height: 72px; font-size: 1.05rem; }
 .wish-card-head { display: flex; align-items: center; gap: .75rem; }
 .wish-card .wish-thumb { width: 56px; height: 56px; }
 .wish-card-title { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }

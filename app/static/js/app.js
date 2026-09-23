@@ -84,6 +84,8 @@ function render(title, html, { wide = false, card = false } = {}) {
 const NAV = [
   { key: "dashboard", label: "My Dashboard", href: "/" },
   { key: "events", label: "Events", href: "/events" },
+  { key: "wishlist", label: "My Wishlist", href: "/wishlist" },
+  { key: "messages", label: "My Messages", href: "/messages" },
   { key: "admin", label: "Manage My Clan", href: "/admin", adminOnly: true, children: [
     { key: "members", href: "/admin/members", label: "Members" },
     { key: "groups", href: "/admin/groups", label: "Households" },
@@ -400,7 +402,9 @@ const routes = [];
 function route(pattern, fn) { routes.push({ pattern, fn }); }
 async function navigate() {
   const path = location.hash.replace(/^#/, "") || "/";
-  renderSidebar(path.replace(/^\/events\/\d+(\/.*)?$/, "/events")
+  renderSidebar(path.replace(/^\/events\/\d+\/wishlist(\/.*)?$/, "/wishlist")
+    .replace(/^\/events\/\d+\/messages(\/.*)?$/, "/messages")
+    .replace(/^\/events\/\d+(\/.*)?$/, "/events")
     .replace(/^\/members\/\d+$/, "/admin")
     .replace(/^(\/admin\/events)\/.+$/, "$1"));
   closeSidebar();
@@ -989,6 +993,25 @@ route(/^\/events$/, async () => {
 });
 // The old Past Events address still works.
 route(/^\/past$/, () => { location.replace("#/events"); });
+
+// "My Wishlist" and "My Messages" belong to an event. With one upcoming event I'm joining
+// they go straight to it; with several, a simple picker (just the event's name) - not the
+// full event details shown on the Events page.
+async function eventChooser(title, label, pathFor) {
+  const all = await api.get(`/families/${FAMILY.id}/events`);
+  const mine = all.filter(e => e.i_am_participating && !eventHasHappened(e) && e.status !== "cancelled")
+    .sort((x, y) => x.event_date.localeCompare(y.event_date));
+  if (mine.length === 1) { location.replace(`#${pathFor(mine[0])}`); return; }
+  if (!mine.length) {
+    return render(title, `<div class="card"><p style="margin:0">${FAMILY.role === "admin" ? NOT_JOINING_ADMIN : NOT_JOINING}</p></div>`);
+  }
+  render(title, `
+    <p class="muted" style="margin-top:0">You're joining more than one event. Which one?</p>
+    <div class="wish-grid">${mine.map(e => `
+      <a class="wish-card card-link event-picker-card" href="#${pathFor(e)}"><strong>${esc(e.name)} ${label}</strong></a>`).join("")}</div>`);
+}
+route(/^\/wishlist$/, () => eventChooser("My Wishlist", "Wishlist", e => `/events/${e.id}/wishlist`));
+route(/^\/messages$/, () => eventChooser("My Messages", "Messages", e => `/events/${e.id}/messages`));
 
 // The event page any clan member can open: what/where/when, the rules the clan
 // admin set, and who's coming (each row opens that person's profile).
