@@ -41,6 +41,13 @@ def create_app(config_object=None):
         return render_template("privacy_terms.html")
 
     @app.route("/")
+    def landing():
+        # The root URL specifically also renders a server-side copy of the sign-in form (see
+        # _login_fallback.html) so the SMS opt-in CTA is visible to anything that fetches this
+        # page without running JavaScript - e.g. a texting-provider compliance reviewer. Once
+        # app.js boots it overwrites this with the identical live version.
+        return render_template("index.html", initial_html=render_template("_login_fallback.html"))
+
     @app.route("/<path:_any>")
     def index(_any=None):
         # Single-page app shell; JS router handles pages.

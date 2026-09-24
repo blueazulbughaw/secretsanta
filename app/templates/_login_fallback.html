@@ -1,0 +1,33 @@
+<!-- Server-rendered copy of the sign-in screen that pageLogin() in app.js renders client-side.
+     This exists ONLY so the root URL (/) shows the real sign-in form and the SMS opt-in CTA
+     to anything that fetches the page without running JavaScript (a compliance reviewer's
+     crawler, curl, etc.) - Twilio's A2P 10DLC review rejected the campaign because the raw
+     page returned an empty <main id="app"></main> with no visible form or consent text.
+     Once app.js boots, it overwrites this markup with the identical live version, so a real
+     browser sees no functional difference. Keep this in sync with pageLogin() in
+     static/js/app.js: same fields, same button labels, same consent wording, word for word. -->
+<div class="center" style="margin-top:2rem">
+  <div style="font-size:4rem">🎁</div>
+  <h2>Welcome to Secret Santa</h2>
+  <p class="muted">Family events made simple.</p>
+</div>
+<label for="username">Username</label>
+<input id="username" autocomplete="username">
+<label for="password">Password</label>
+<div class="password-field">
+  <input id="password" type="password" autocomplete="current-password">
+  <button type="button" class="password-toggle" id="togglePw" aria-label="Show password">👁</button>
+</div>
+<div id="msg"></div>
+<button class="btn btn-primary" id="loginBtn">Sign In</button>
+<button class="btn btn-quiet" id="textCodeBtn">Text Me a Sign-In Code</button>
+<p class="muted" style="font-size:.78rem;margin:.4rem 0 0">
+  By tapping &ldquo;Text Me a Sign-In Code&rdquo; you agree to receive one text message from Genri Labs
+  with a one-time code, sent to the phone number on your account. Message and data rates may apply.
+  Reply STOP to opt out, HELP for help. Texting is optional: your password always works.
+</p>
+<p class="muted center" style="font-size:.78rem;margin-top:1.5rem">
+  By continuing you agree to our
+  <a href="/terms" target="_blank" rel="noopener">Terms of Service</a>
+  and <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.
+</p>

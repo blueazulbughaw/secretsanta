@@ -21,7 +21,7 @@
   <div id="shell">
     <div id="sidebarOverlay"></div>
     <nav id="sidebar" aria-label="Main menu" hidden></nav>
-    <main id="app" aria-live="polite"></main>
+    <main id="app" aria-live="polite">{% if initial_html %}{{ initial_html|safe }}{% endif %}</main>
   </div>
 
   <div id="lightbox" hidden>
