@@ -116,6 +116,24 @@ def test_register_requires_password(app):
     assert r.status_code == 400
 
 
+def test_me_is_a_plain_200_for_both_anonymous_and_signed_in_callers(app, users):
+    # An anonymous visitor hits this on every page load just to ask "am I signed in?" -
+    # that's the expected, constant case, not an error, so it must never be a 4xx/5xx (the
+    # browser logs any non-2xx fetch as a console error regardless of whether JS catches it).
+    anon = app.test_client()
+    r = anon.get("/api/auth/me")
+    assert r.status_code == 200
+    assert r.get_json() == {"authenticated": False}
+
+    bob = users[BOB_USER]
+    r = bob.get("/api/auth/me")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["authenticated"] is True
+    assert body["user"]["username"] == BOB_USER
+    assert "families" in body and "must_change_password" in body
+
+
 def test_password_login_flow(app):
     c = app.test_client()
     c.post("/api/auth/register",

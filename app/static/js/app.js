@@ -422,28 +422,35 @@ $sidebarOverlay.onclick = closeSidebar;
 
 // ---------- boot ----------
 async function boot() {
+  // /auth/me is a plain 200 whether or not there's a session (never a 401 here - an
+  // anonymous visitor is the normal case on every page load, not an error), so this only
+  // throws on a genuine network/server failure, not on "not logged in".
   try {
     ME = await api.get("/auth/me");
-    $topbar.hidden = false;
-    if (!ME.user.full_name) return pageName();
-    if (ME.must_change_password) return pageForcedPasswordChange();
-    if (ME.needs_security_setup) return pageSecuritySetup(true);
-    if (ME.families.length === 0) return pageNoFamily();
-    FAMILY = ME.families[0];
-    $sidebar.hidden = false;
-    $menuBtn.hidden = false;
-    $shell.classList.add("authed");
-    restoreSidebarState();
-    refreshBadge();
-    navigate();
   } catch (_) {
+    ME = { authenticated: false };
+  }
+  if (!ME.authenticated) {
     $topbar.hidden = true;
     $sidebar.hidden = true;
     $shell.classList.remove("authed");
     $menuBtn.hidden = true;
     if (IS_REGISTER_ENTRY) pageRegisterStart();
     else pageLogin();
+    return;
   }
+  $topbar.hidden = false;
+  if (!ME.user.full_name) return pageName();
+  if (ME.must_change_password) return pageForcedPasswordChange();
+  if (ME.needs_security_setup) return pageSecuritySetup(true);
+  if (ME.families.length === 0) return pageNoFamily();
+  FAMILY = ME.families[0];
+  $sidebar.hidden = false;
+  $menuBtn.hidden = false;
+  $shell.classList.add("authed");
+  restoreSidebarState();
+  refreshBadge();
+  navigate();
 }
 
 // ---------- auth pages ----------

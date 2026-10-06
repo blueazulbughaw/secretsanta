@@ -7,7 +7,7 @@ from ..models import User, FamilyMember, Family
 from ..services import otp_service, sms_service
 from ..services.photo_service import save_photo, remove_photo
 from ..middleware.auth import (issue_token, set_auth_cookie, clear_auth_cookie,
-                               require_auth)
+                               require_auth, _current_user)
 from ..utils import normalize_us_phone, normalize_username, hash_password, verify_password
 
 bp = Blueprint("auth", __name__)
@@ -146,19 +146,26 @@ def _finish_login(user, **extra):
 
 
 @bp.get("/auth/me")
-@require_auth
 def me():
-    memberships = FamilyMember.query.filter_by(user_id=g.user.id).all()
+    # Not @require_auth: the client polls this on every page load (logged in or not) to
+    # learn whether there's a session, so an anonymous visitor is a normal 200 here, not a
+    # 401. A 401 is technically correct REST but the browser logs every non-2xx fetch as a
+    # console error regardless of whether the JS catches it, so every single anonymous page
+    # load showed a "Failed to load resource: 401" the instant the page opened.
+    user = _current_user()
+    if not user or not user.is_active:
+        return jsonify({"authenticated": False})
+    memberships = FamilyMember.query.filter_by(user_id=user.id).all()
     fams = []
     for m in memberships:
         f = Family.query.get(m.family_id)
         fams.append({"id": f.id, "name": f.name, "role": m.role,
                      "household_name": m.household.name if m.household else None,
                      "join_code": f.join_code if m.role == "admin" else None})
-    return jsonify({"user": g.user.to_dict(), "families": fams,
-                    "can_create_family": g.user.is_app_admin,
-                    "needs_security_setup": not g.user.password_hash and not g.user.phone,
-                    "must_change_password": g.user.must_change_password})
+    return jsonify({"authenticated": True, "user": user.to_dict(), "families": fams,
+                    "can_create_family": user.is_app_admin,
+                    "needs_security_setup": not user.password_hash and not user.phone,
+                    "must_change_password": user.must_change_password})
 
 
 # Free-text profile fields the clan sees on My Clan, and their max lengths
