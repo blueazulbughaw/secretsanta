@@ -184,8 +184,7 @@ def test_privacy_and_terms_are_real_pages_reachable_without_signing_in(app):
     c = app.test_client()
     for path, must in [("/privacy", ["Privacy Policy", "mobile phone number", "do not share, sell, rent"]),
                        ("/terms", ["SMS Terms", "Reply STOP", "HELP", "Message and data rates may apply",
-                                   "Text Me a Sign-In Code"]),
-                       ("/privacy_terms", ["Privacy Policy", "SMS Terms"])]:
+                                   "Text Me a Sign-In Code"])]:
         r = c.get(path)
         page = r.get_data(as_text=True)
         assert r.status_code == 200 and "<title>" in page and 'id="app"' not in page, path   # not the JS shell
@@ -194,6 +193,11 @@ def test_privacy_and_terms_are_real_pages_reachable_without_signing_in(app):
     # every page links to the others and back to sign-in
     page = c.get("/privacy").get_data(as_text=True)
     assert 'href="/terms"' in page and 'href="/privacy"' in page and 'href="/"' in page
+    # the old combined page is gone; the catch-all SPA route picks it up like any other
+    # unmatched path (this app has no real 404, every path returns the JS shell) - the point
+    # is it no longer serves privacy/terms content
+    gone = c.get("/privacy_terms").get_data(as_text=True)
+    assert "Privacy Policy" not in gone and "SMS Terms" not in gone
 
 
 

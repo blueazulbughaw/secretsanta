@@ -36,10 +36,6 @@ def create_app(config_object=None):
     def terms():
         return render_template("terms.html")
 
-    @app.route("/privacy_terms")
-    def privacy_terms():
-        return render_template("privacy_terms.html")
-
     @app.route("/")
     def landing():
         # The root URL specifically also renders a server-side copy of the sign-in form (see
