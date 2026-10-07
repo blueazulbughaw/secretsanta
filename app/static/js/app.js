@@ -445,12 +445,18 @@ async function boot() {
   if (ME.needs_security_setup) return pageSecuritySetup(true);
   if (ME.families.length === 0) return pageNoFamily();
   FAMILY = ME.families[0];
+  restoreSidebarState();
+  // Render the real page into #app FIRST, then switch the layout into "authenticated" mode
+  // (reveal the sidebar, add .authed). Doing it in the other order - as this used to - flips
+  // main#app's CSS out of the centered signed-out-card layout a beat before navigate()'s
+  // own render() call replaces #app's content, so whatever was still sitting in #app (the
+  // sign-in form, right after login) would flash misstyled: unstyled-looking, left-aligned,
+  // full width, for exactly as long as that render takes.
+  await navigate();
   $sidebar.hidden = false;
   $menuBtn.hidden = false;
   $shell.classList.add("authed");
-  restoreSidebarState();
   refreshBadge();
-  navigate();
 }
 
 // ---------- auth pages ----------
