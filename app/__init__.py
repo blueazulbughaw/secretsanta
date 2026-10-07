@@ -1,4 +1,4 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, make_response
 from .extensions import db, mail, migrate
 
 
@@ -42,7 +42,24 @@ def create_app(config_object=None):
         # _login_fallback.html) so the SMS opt-in CTA is visible to anything that fetches this
         # page without running JavaScript - e.g. a texting-provider compliance reviewer. Once
         # app.js boots it overwrites this with the identical live version.
-        return render_template("index.html", initial_html=render_template("_login_fallback.html"))
+        #
+        # This is hash-routed (#/dashboard, #/admin/members, ...), so EVERY page in the app
+        # requests this exact "/" on a full reload, not just first-time sign-in. A visitor who
+        # already has a valid session cookie gets the plain empty shell instead - same as every
+        # other route - so JS boots straight into their real page with no flash of the sign-in
+        # form they're not actually looking at. Anyone without a session (which includes a
+        # compliance reviewer, who never has one) still always gets the real form.
+        from .middleware.auth import is_signed_in
+        if is_signed_in():
+            resp = make_response(render_template("index.html"))
+        else:
+            resp = make_response(render_template("index.html", initial_html=render_template("_login_fallback.html")))
+        # This response's content depends on the request's cookie, so it must never be cached
+        # and reused for a different visitor (would either leak the fallback's absence to an
+        # anonymous visitor, or - worse - could theoretically serve a cached authenticated-empty
+        # shell to someone else; neither should happen with Flask's defaults, but belt and braces).
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
 
     @app.route("/<path:_any>")
     def index(_any=None):

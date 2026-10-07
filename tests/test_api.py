@@ -134,6 +134,29 @@ def test_me_is_a_plain_200_for_both_anonymous_and_signed_in_callers(app, users):
     assert "families" in body and "must_change_password" in body
 
 
+def test_landing_page_only_shows_the_signin_form_fallback_when_signed_out(app, users):
+    # This app is hash-routed, so a full reload of ANY page (not just first-ever sign-in)
+    # requests this exact "/" from the server. A signed-in visitor must get the plain shell
+    # (same as every other route) so JS boots straight into their real page - not a flash of
+    # a sign-in form they're not looking at, which is what this guards against regressing.
+    anon = app.test_client()
+    page = anon.get("/").get_data(as_text=True)
+    assert 'id="loginBtn"' in page and "Text Me a Sign-In Code" in page
+    assert anon.get("/").headers["Cache-Control"] == "no-store"
+
+    bob = users[BOB_USER]
+    page = bob.get("/").get_data(as_text=True)
+    assert 'id="loginBtn"' not in page and "Text Me a Sign-In Code" not in page
+    assert '<main id="app" aria-live="polite"></main>' in page
+    assert bob.get("/").headers["Cache-Control"] == "no-store"
+
+    # an expired/garbage cookie is treated the same as no session at all
+    garbage = app.test_client()
+    garbage.set_cookie("gc_token", "not-a-real-token")
+    page = garbage.get("/").get_data(as_text=True)
+    assert 'id="loginBtn"' in page
+
+
 def test_password_login_flow(app):
     c = app.test_client()
     c.post("/api/auth/register",

@@ -45,6 +45,14 @@ def _current_user():
     return User.query.get(int(payload["sub"]))
 
 
+def is_signed_in():
+    """True for a request carrying a valid, active session cookie. Shared by /auth/me and
+    the "/" landing route, which only shows its server-rendered sign-in form to visitors
+    who DON'T already have a session - see landing() in app/__init__.py for why."""
+    user = _current_user()
+    return bool(user and user.is_active)
+
+
 def require_auth(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
