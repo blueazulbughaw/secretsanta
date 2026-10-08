@@ -32,9 +32,14 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   drift there is invisible in a real browser but visible to a non-JS reviewer. Every other
   route still serves the plain empty shell. Users set or reset their password from Profile &
   Security (resetting asks for the current password, except for a temporary admin-issued one).
-  The phone number is not offered on the profile page - it's set only by a clan admin, on
-  the Members page (PATCH /auth/security also accepts a phone update, but nothing in the UI
-  calls it that way today).
+  Profile & Security also lets a member set/change their own phone number (PATCH
+  /auth/security, same uniqueness check as everywhere else a phone is entered) and pick
+  their own household (PATCH /families/:id/my-household - the one Members-table field a
+  member can set for themselves; everything else there stays admin-only) - a clan admin
+  can still set/change either for someone else from the Members page too. A new account
+  missing a phone or household sees a card at the top of the dashboard nudging them to
+  Profile & Security to add it; it has no "seen it once" dismissal, it just stops
+  appearing once both are set.
 - Display name: it is the name the clan sees ("Display Name" in every label), separate from
   the username. Sign-up asks for it (required, must differ from the username), and after that
   only a clan admin can change it (their own included; members see it read-only on their

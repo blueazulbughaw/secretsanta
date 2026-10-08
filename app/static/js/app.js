@@ -472,11 +472,14 @@ async function boot() {
     return;
   }
   $topbar.hidden = false;
+  // Set before the password/security checks below (not just the final success path) -
+  // pageSecuritySetup(true) needs it for the household picker, and a brand-new account
+  // that needs a password can still already have a family (e.g. an admin-added member).
+  if (ME.families.length > 0) FAMILY = ME.families[0];
   if (!ME.user.full_name) return pageName();
   if (ME.must_change_password) return pageForcedPasswordChange();
   if (ME.needs_security_setup) return pageSecuritySetup(true);
   if (ME.families.length === 0) return pageNoFamily();
-  FAMILY = ME.families[0];
   restoreSidebarState();
   // Render the real page into #app FIRST, then switch the layout into "authenticated" mode
   // (reveal the sidebar, add .authed). Doing it in the other order - as this used to - flips
@@ -939,10 +942,13 @@ function pageForcedPasswordChange() {
   };
 }
 
-function pageSecuritySetup(forced) {
+async function pageSecuritySetup(forced) {
   // A brand-new account has to set a password first, so that card leads (and
   // holds the primary button); otherwise the profile leads.
   const canEditName = !ME.user.full_name || FAMILY?.role === "admin" || ME.user.is_app_admin;
+  const households = FAMILY ? await api.get(`/families/${FAMILY.id}/households`) : [];
+  const houseOpts = `<option value="">Not in a household yet</option>` +
+    households.map(h => `<option value="${h.id}" ${h.id === FAMILY?.household_id ? "selected" : ""}>${esc(h.name)}</option>`).join("");
   const profileCard = `
     <section class="card form-card">
       <h2>My profile</h2>
@@ -966,8 +972,15 @@ function pageSecuritySetup(forced) {
       <label>Display Name</label>
       <p style="margin:0 0 .2rem"><strong>${esc(ME.user.full_name)}</strong></p>
       <p class="muted" style="margin:0">Only your clan admin can change your display name.</p>`}
-      <label>Household</label>
-      <p style="margin:0">${FAMILY?.household_name ? esc(FAMILY.household_name) : `<span class="muted">Not in a household yet</span>`}</p>
+      <label for="profilePhone">Mobile phone number</label>
+      <div class="phone-field">
+        ${countrySelectHTML("profilePhoneCountry")}
+        <input id="profilePhone" type="tel" inputmode="tel" autocomplete="tel" value="${esc(ME.user.phone || "")}">
+      </div>
+      <p class="muted" style="margin:.3rem 0 0;font-size:.8rem">Lets you sign in with a texted code instead of a password, and is how announcements can reach you by text.</p>
+      ${FAMILY ? `
+      <label for="profileHousehold">Household</label>
+      <select id="profileHousehold">${houseOpts}</select>` : ""}
       <label for="aboutMe">About me</label>
       <textarea id="aboutMe" rows="3" maxlength="1000">${esc(ME.user.about_me)}</textarea>
       <label for="likes">My likes</label>
@@ -1041,6 +1054,30 @@ function pageSecuritySetup(forced) {
       if (canEditName) body.full_name = val("displayName");
       const r = await api.patch("/auth/me", body);
       ME.user = r.user;
+
+      // Phone lives on /auth/security (shares its validation/uniqueness check with the
+      // sign-in flow), not /auth/me - a separate call, same button. Blank is only ever
+      // treated as "left alone", not "clear it": /auth/security rejects an empty phone,
+      // and this screen has no way to remove one once set (not asked for; the admin's
+      // Members table already can).
+      const phone = val("profilePhone").trim();
+      if (phone && phone !== (ME.user.phone || "")) {
+        const pr = await api.patch("/auth/security", { phone, phone_country: val("profilePhoneCountry") });
+        ME.user = pr.user;
+      }
+
+      // Household lives on the membership, not the user, and needs its own endpoint -
+      // the only Members-table field a member can set for themselves (see
+      // update_my_household's docstring).
+      if (FAMILY) {
+        const hid = val("profileHousehold") ? Number(val("profileHousehold")) : null;
+        if (hid !== FAMILY.household_id) {
+          const hr = await api.patch(`/families/${FAMILY.id}/my-household`, { household_id: hid });
+          FAMILY.household_id = hr.household_id;
+          FAMILY.household_name = hr.household_name;
+        }
+      }
+
       document.getElementById("nameMsg").innerHTML = alertBox("Profile saved!", true);
     } catch (e) {
       document.getElementById("nameMsg").innerHTML = alertBox(e.message);
@@ -1153,8 +1190,24 @@ route(/^\/$/, async () => {
   const annHtml = anns.length ? annTable(anns) : `<p class="muted" style="margin:0">No announcements yet.</p>`;
   const sections = [
     `<div class="greeting"><h2>Hello, ${esc(first)}! 👋</h2></div>`,
-    `<div class="dash-section"><h2>Announcements</h2>${annHtml}</div>`,
   ];
+
+  // Nudges a new account toward the two things worth setting up early, until both are
+  // done - not a one-time "first login" flag (nothing tracks that), so it naturally stops
+  // showing once someone acts on it, and comes back if a household gets cleared later.
+  if (!ME.user.phone || !FAMILY.household_id) {
+    sections.push(`
+    <section class="card" style="border-left:4px solid var(--yellow)">
+      <h2>Finish setting up your account</h2>
+      <p class="muted" style="margin:0 0 .8rem">
+        ${!ME.user.phone ? "Add your phone number so you can sign in with a texted code instead of a password, and get announcements by text. " : ""}
+        ${!FAMILY.household_id ? "Also pick your household, so your clan can see who's grouped with who." : ""}
+      </p>
+      <button class="btn btn-secondary" style="width:auto" onclick="go('/security')">Go to Profile & Security</button>
+    </section>`);
+  }
+
+  sections.push(`<div class="dash-section"><h2>Announcements</h2>${annHtml}</div>`);
 
   sections.push(upcoming.length ? `
     <section class="card">

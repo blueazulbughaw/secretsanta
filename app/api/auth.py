@@ -178,6 +178,7 @@ def me():
     for m in memberships:
         f = Family.query.get(m.family_id)
         fams.append({"id": f.id, "name": f.name, "role": m.role,
+                     "household_id": m.household_id,
                      "household_name": m.household.name if m.household else None,
                      "join_code": f.join_code if m.role == "admin" else None})
     return jsonify({"authenticated": True, "user": user.to_dict(), "families": fams,

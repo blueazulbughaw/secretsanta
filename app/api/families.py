@@ -84,6 +84,27 @@ def get_family(family_id):
                     "join_code": fam.join_code if m.role == "admin" else None})
 
 
+@bp.patch("/families/<int:family_id>/my-household")
+@require_auth
+def update_my_household(family_id):
+    """Self-service: unlike every other field on a membership (role, name, username...),
+    which household someone's in is fine for them to set themselves - it's not sensitive
+    and the clan admin already can't see anything about a member they couldn't already.
+    Everything else on the Members table stays admin-only (see update_member)."""
+    m, err = require_family_member(family_id)
+    if err:
+        return err
+    hid = (request.json or {}).get("household_id")
+    if hid is not None:
+        h = Household.query.filter_by(id=hid, family_id=family_id).first()
+        if not h:
+            return jsonify({"error": "That household doesn't exist in this clan."}), 400
+    m.household_id = hid
+    db.session.commit()
+    return jsonify({"ok": True, "household_id": m.household_id,
+                    "household_name": m.household.name if m.household else None})
+
+
 @bp.patch("/families/<int:family_id>")
 @require_auth
 def rename_family(family_id):

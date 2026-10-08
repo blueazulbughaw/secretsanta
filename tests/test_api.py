@@ -1376,6 +1376,31 @@ def test_add_member_takes_household_and_admin_role_like_editing_does(app, users)
     assert bob.post(url, json={"full_name": "Nope", "role": "admin"}).status_code == 403
 
 
+def test_member_can_set_their_own_household_but_nothing_else_about_their_membership(app, users):
+    fam, admin, bob = users["_family"], users[ADMIN_USER], users[BOB_USER]
+    house = admin.post(f"/api/families/{fam['id']}/households", json={"name": "Reyes House"}).get_json()["household"]
+
+    r = bob.patch(f"/api/families/{fam['id']}/my-household", json={"household_id": house["id"]})
+    assert r.status_code == 200
+    assert r.get_json() == {"ok": True, "household_id": house["id"], "household_name": "Reyes House"}
+
+    me = bob.get("/api/auth/me").get_json()
+    bob_fam = next(f for f in me["families"] if f["id"] == fam["id"])
+    assert (bob_fam["household_id"], bob_fam["household_name"]) == (house["id"], "Reyes House")
+
+    # back to no household
+    assert bob.patch(f"/api/families/{fam['id']}/my-household", json={"household_id": None}).get_json()["household_id"] is None
+
+    # a household from a different clan (or a made-up id) is refused
+    assert bob.patch(f"/api/families/{fam['id']}/my-household", json={"household_id": 99999}).status_code == 400
+
+    # someone not in this family at all can't set anything on it
+    outsider = app.test_client()
+    outsider.post("/api/auth/register", json={"username": "outsider1", "password": PASSWORD, "full_name": "Out Sider"})
+    assert outsider.patch(f"/api/families/{fam['id']}/my-household",
+                          json={"household_id": house["id"]}).status_code == 403
+
+
 def test_admin_can_edit_a_members_username(app, users):
     fam, admin, bob = users["_family"], users[ADMIN_USER], users[BOB_USER]
     members = admin.get(f"/api/families/{fam['id']}/members").get_json()
