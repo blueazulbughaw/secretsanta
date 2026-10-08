@@ -30,28 +30,36 @@ def login_start():
                     "has_password": bool(user.password_hash)})
 
 
+GENERIC_CODE_SENT_MESSAGE = "If that number has an account, we've texted a sign-in code to it."
+
+
 @bp.post("/auth/send-code")
 def send_code():
-    """Texts a one-time sign-in code to the phone number on the account, on request."""
+    """Texts a one-time sign-in code to whichever account has this phone number, on request.
+    Phone-first by design (no username needed): a family member who's forgotten their
+    password - the whole reason this exists - still remembers their own phone number, so
+    this is the account-recovery-proof path, not gated behind recalling anything else.
+
+    Always answers with the exact same message and status regardless of whether the number
+    matches an account, so this - the one endpoint in the app reachable with zero prior
+    knowledge - can't be used to find out who's in the system. Don't change that without
+    reading this comment twice."""
     try:
-        username = normalize_username((request.json or {}).get("username", ""))
+        phone = normalize_us_phone((request.json or {}).get("phone", ""))
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    user = User.query.filter_by(username=username).first()
-    if not user:
-        return jsonify({"error": "We couldn't find that username."}), 404
-    if not user.phone:
-        return jsonify({"error": "This account doesn't have a phone number yet, so please use your "
-                                 "password. Your clan admin can add your phone number."}), 400
+        return jsonify({"error": str(e)}), 400  # about their input's format, not account existence
     try:
-        code = otp_service.request_code(user.phone)
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 429
-    try:
-        sms_service.send_otp_sms(user.phone, code)
-    except sms_service.SmsSendError as e:
-        return jsonify({"error": str(e)}), 502
-    return jsonify({"ok": True, "phone_hint": f"••• {user.phone[-4:]}"})
+        otp_service.enforce_ip_rate_limit(request.remote_addr or "unknown")
+    except ValueError:
+        return jsonify({"ok": True, "message": GENERIC_CODE_SENT_MESSAGE})  # never leak the limit either
+    user = User.query.filter_by(phone=phone).first()
+    if user:
+        try:
+            code = otp_service.request_code(phone)
+            sms_service.send_otp_sms(phone, code)
+        except (ValueError, sms_service.SmsSendError):
+            pass  # rate-limited or send failed - still answer generically; see the server log
+    return jsonify({"ok": True, "message": GENERIC_CODE_SENT_MESSAGE})
 
 
 @bp.post("/auth/register")
@@ -112,14 +120,15 @@ def register():
 
 @bp.post("/auth/verify-otp")
 def verify_otp():
+    """Pairs with /auth/send-code: phone-based, not username-based."""
     data = request.json or {}
     try:
-        username = normalize_username(data.get("username", ""))
+        phone = normalize_us_phone(data.get("phone", ""))
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     code = data.get("code", "").strip()
-    user = User.query.filter_by(username=username).first()
-    if not user or not user.phone or not otp_service.verify_code(user.phone, code):
+    user = User.query.filter_by(phone=phone).first()
+    if not user or not otp_service.verify_code(phone, code):
         return jsonify({"error": "That code didn't work. Please check it and try again."}), 401
     return _finish_login(user)
 

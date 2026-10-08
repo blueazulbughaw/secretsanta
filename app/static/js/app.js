@@ -476,12 +476,7 @@ function pageLogin() {
     </div>
     <div id="msg"></div>
     <button class="btn btn-primary" id="loginBtn">Sign In</button>
-    <button class="btn btn-quiet" id="textCodeBtn">Text Me a Sign-In Code</button>
-    <p class="muted" style="font-size:.78rem;margin:.4rem 0 0">
-      By tapping &ldquo;Text Me a Sign-In Code&rdquo; you agree to receive one text message from Genri Labs
-      with a one-time code, sent to the phone number on your account. Message and data rates may apply.
-      Reply STOP to opt out, HELP for help. Texting is optional: your password always works.
-    </p>
+    <button class="btn btn-quiet" id="useCodeBtn">Use a Text Code Instead</button>
     <p class="muted center" style="font-size:.78rem;margin-top:1.5rem">
       By continuing you agree to our
       <a href="/terms" target="_blank" rel="noopener">Terms of Service</a>
@@ -504,22 +499,59 @@ function pageLogin() {
       location.hash = "/"; boot();
     } catch (e) { showError(e); }
   };
-  document.getElementById("textCodeBtn").onclick = async () => {
-    const username = document.getElementById("username").value.trim();
-    if (!username) return showError({ message: "Please type your username first." });
+  document.getElementById("useCodeBtn").onclick = () => pagePhoneEntry();
+}
+
+// Forgotten passwords are the actual problem this solves, so this never needs a username -
+// a phone number is something people reliably remember, unlike a password. One field, one
+// checkbox (required, unchecked by default), one button.
+const SMS_CONSENT_HTML = `
+  By checking this box, I agree to receive one text message from Genri Labs with a one-time
+  sign-in code for Secret Santa. Message and data rates may apply. Message frequency: one
+  message per request. Reply STOP to opt out, HELP for help. Consent is not required to use
+  Secret Santa; you can always sign in with your password instead.
+  <a href="/terms" target="_blank" rel="noopener">Terms of Service</a>
+  and <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.`;
+
+function pagePhoneEntry() {
+  render("", `
+    <div class="center" style="margin-top:2rem">
+      <div style="font-size:3rem">💬</div>
+      <h2>Text Me a Sign-In Code</h2>
+      <p class="muted">Enter your mobile number and we'll text you a one-time code.</p>
+    </div>
+    <label for="phone">Mobile phone number</label>
+    <input id="phone" type="tel" inputmode="tel" autocomplete="tel">
+    <div class="check-row" style="align-items:flex-start;margin-top:1rem">
+      <input type="checkbox" id="smsConsent" style="margin-top:.3rem">
+      <label for="smsConsent" style="margin:0;font-size:.85rem;font-weight:400">${SMS_CONSENT_HTML}</label>
+    </div>
+    <div id="msg"></div>
+    <button class="btn btn-primary" id="sendCodeBtn">Text Me a Sign-In Code</button>
+    <button class="btn btn-quiet" id="backToLoginBtn">Back to Sign In</button>
+  `);
+  document.getElementById("backToLoginBtn").onclick = () => pageLogin();
+  document.getElementById("sendCodeBtn").onclick = async () => {
+    const phone = document.getElementById("phone").value.trim();
+    if (!phone) return showError({ message: "Please enter your phone number." });
+    if (!document.getElementById("smsConsent").checked) {
+      return showError({ message: "Please check the box to agree to receive a text message before continuing." });
+    }
     try {
-      const r = await api.post("/auth/send-code", { username });
-      pageCodeEntry(username, r.phone_hint);
+      await api.post("/auth/send-code", { phone });
+      pageCodeEntry(phone);
     } catch (e) { showError(e); }
   };
 }
 
 // The second step of signing in with a texted code (the password is always one tap away).
-function pageCodeEntry(username, phoneHint) {
+// Deliberately doesn't claim "we texted a code to you": the server never reveals whether the
+// number matched an account, so the UI can't either - see GENERIC_CODE_SENT_MESSAGE server-side.
+function pageCodeEntry(phone) {
   render("", `
     <div class="center" style="margin-top:2rem"><div style="font-size:3rem">💬</div></div>
     <h2 class="center">Enter your sign-in code</h2>
-    <p class="muted center">We texted a 6-digit code to ${esc(phoneHint)}. It works for 10 minutes.</p>
+    <p class="muted center">If that number has an account, we've texted a 6-digit code to it. It works for 10 minutes.</p>
     <label for="code">Sign-in code</label>
     <input id="code" class="code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
     <div id="msg"></div>
@@ -530,14 +562,14 @@ function pageCodeEntry(username, phoneHint) {
   document.getElementById("code").focus();
   document.getElementById("verifyBtn").onclick = async () => {
     try {
-      await api.post("/auth/verify-otp", { username, code: document.getElementById("code").value.trim() });
+      await api.post("/auth/verify-otp", { phone, code: document.getElementById("code").value.trim() });
       location.hash = "/"; boot();
     } catch (e) { showError(e); }
   };
   document.getElementById("resendBtn").onclick = async () => {
     try {
-      await api.post("/auth/send-code", { username });
-      document.getElementById("msg").innerHTML = alertBox("A new code is on its way.", true);
+      await api.post("/auth/send-code", { phone });
+      document.getElementById("msg").innerHTML = alertBox("If that number has an account, a new code is on its way.", true);
     } catch (e) { showError(e); }
   };
   document.getElementById("usePasswordBtn").onclick = () => pageLogin();

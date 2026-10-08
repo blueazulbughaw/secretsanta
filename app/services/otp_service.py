@@ -36,6 +36,30 @@ def request_code(phone: str) -> str:
     return code
 
 
+_ip_hits: dict = {}
+
+
+def enforce_ip_rate_limit(ip: str, limit: int = 10, window_minutes: int = 15):
+    """A second, lighter guard on top of the per-phone limit above, specifically for the
+    phone-first sign-in code request: that endpoint takes no username, so (unlike every
+    other endpoint in this app) it can be hit with no prior knowledge of who's even in the
+    system. The per-phone limit alone caps damage to one real account at a time; this caps
+    how many DIFFERENT numbers one requester can try in a window, regardless of whether any
+    of them match a real account (a non-match costs nothing to send, but still costs a DB
+    query, and a determined requester could otherwise walk through many real numbers one
+    each). In-memory, so it resets if the app process restarts and is tracked separately
+    per worker process under a multi-process deployment - a real but acceptable limitation
+    for this app's scale; the per-phone limit is still the primary, DB-backed defense."""
+    now = datetime.utcnow()
+    window_start = now - timedelta(minutes=window_minutes)
+    hits = [t for t in _ip_hits.get(ip, []) if t >= window_start]
+    if len(hits) >= limit:
+        _ip_hits[ip] = hits
+        raise ValueError("Too many requests from this network. Please wait a few minutes and try again.")
+    hits.append(now)
+    _ip_hits[ip] = hits
+
+
 def verify_code(phone: str, code: str) -> bool:
     phone = phone.strip()
     otp = (OtpCode.query

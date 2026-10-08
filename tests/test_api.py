@@ -3,6 +3,7 @@ import pytest
 
 from app import create_app
 from app.extensions import db
+from app.api.auth import GENERIC_CODE_SENT_MESSAGE
 
 ADMIN_USER = "admin"
 BOB_USER = "bob"
@@ -50,6 +51,8 @@ class TestConfig:
 @pytest.fixture()
 def app():
     app = create_app(TestConfig)
+    from app.services import otp_service
+    otp_service._ip_hits.clear()  # in-memory, module-level - would otherwise leak between tests
     with app.app_context():
         db.create_all()
         yield app
@@ -175,50 +178,76 @@ def test_password_login_flow(app):
 
 
 def test_phone_sign_in_code_flow(app, capsys):
+    # Phone-first by design: forgotten passwords are the actual problem this solves, and a
+    # phone number is something people reliably remember, so this path never needs a username.
     c = app.test_client()
     c.post("/api/auth/register",
            json={"username": "phoneuser", "password": PASSWORD, "full_name": "T",
                  "phone": "5551234567"})
 
-    # checking the username reports the options but never sends a text
     c2 = app.test_client()
-    r = c2.post("/api/auth/login-start", json={"username": "phoneuser"})
-    assert r.get_json()["has_phone"] is True and r.get_json()["has_password"] is True
-    assert "sign-in code" not in capsys.readouterr().out
-
-    # a text is sent only when asked for, and only the last 4 digits are shown back
-    r = c2.post("/api/auth/send-code", json={"username": "phoneuser"})
-    assert r.status_code == 200 and r.get_json()["phone_hint"].endswith("4567")
+    r = c2.post("/api/auth/send-code", json={"phone": "(555) 123-4567"})
+    assert r.status_code == 200 and r.get_json()["message"] == GENERIC_CODE_SENT_MESSAGE
     assert "+15551234567" not in r.get_data(as_text=True)
     code = re.search(r"code for \+15551234567: (\d{6})", capsys.readouterr().out).group(1)
 
     assert c2.post("/api/auth/verify-otp",
-                    json={"username": "phoneuser", "code": "000000"}).status_code == 401
-    r2 = c2.post("/api/auth/verify-otp", json={"username": "phoneuser", "code": code})
+                    json={"phone": "5551234567", "code": "000000"}).status_code == 401
+    r2 = c2.post("/api/auth/verify-otp", json={"phone": "5551234567", "code": code})
     assert r2.status_code == 200
     assert c2.get("/api/auth/me").status_code == 200
     # a used code doesn't work twice
     assert app.test_client().post("/api/auth/verify-otp",
-                                  json={"username": "phoneuser", "code": code}).status_code == 401
+                                  json={"phone": "5551234567", "code": code}).status_code == 401
     # the password still works for the same account
     assert app.test_client().post("/api/auth/login-password",
                                   json={"username": "phoneuser", "password": PASSWORD}).status_code == 200
 
 
-def test_send_code_needs_a_known_username_with_a_phone(app, users):
+def test_send_code_never_reveals_whether_a_number_has_an_account(app, users, capsys):
     c = app.test_client()
-    assert c.post("/api/auth/send-code", json={"username": "nobody"}).status_code == 404
-    assert c.post("/api/auth/send-code", json={"username": "no spaces!"}).status_code == 400
-    r = c.post("/api/auth/send-code", json={"username": BOB_USER})          # bob has no phone
-    assert r.status_code == 400 and "password" in r.get_json()["error"]
+    fam = users["_family"]
+    bob_m = next(m for m in users[ADMIN_USER].get(f"/api/families/{fam['id']}/members").get_json()
+                if m["user"]["username"] == BOB_USER)
+    users[ADMIN_USER].patch(f"/api/families/{fam['id']}/members/{bob_m['membership_id']}",
+                            json={"phone": "(555) 010-1234"})
+    capsys.readouterr()  # clear anything buffered so far
+
+    known = c.post("/api/auth/send-code", json={"phone": "(555) 010-1234"})     # bob - real
+    unknown = c.post("/api/auth/send-code", json={"phone": "(555) 999-0000"})   # nobody
+    assert known.status_code == unknown.status_code == 200
+    assert known.get_json() == unknown.get_json() == {"ok": True, "message": GENERIC_CODE_SENT_MESSAGE}
+    # a real text only went out for the real one
+    out = capsys.readouterr().out
+    assert "+15550101234" in out and "+15559990000" not in out
+    # a malformed number is the one case allowed to differ - it's about their input, not an account
+    assert c.post("/api/auth/send-code", json={"phone": "abc"}).status_code == 400
 
 
 def test_send_code_is_rate_limited_per_phone(app, capsys):
     c = app.test_client()
     c.post("/api/auth/register", json={"username": "spammed", "password": PASSWORD,
                                        "full_name": "S", "phone": "5559990000"})
-    codes = [c.post("/api/auth/send-code", json={"username": "spammed"}).status_code for _ in range(12)]
-    assert codes[:10] == [200] * 10 and set(codes[10:]) == {429}
+    for _ in range(12):
+        r = c.post("/api/auth/send-code", json={"phone": "5559990000"})
+        assert r.status_code == 200 and r.get_json()["message"] == GENERIC_CODE_SENT_MESSAGE
+    # the response never changes, but only the first 10 (the configured per-phone window)
+    # actually sent a text
+    assert capsys.readouterr().out.count("code for +15559990000:") == 10
+
+
+def test_ip_rate_limit_caps_requests_across_different_numbers(app):
+    # Unlike the per-phone limit (DB-backed, proven above), this guards against one requester
+    # walking through many DIFFERENT numbers - exercised directly since the endpoint's HTTP
+    # response is identical whether or not this limit fired (by design, so it can't leak it).
+    from app.services import otp_service
+    with app.app_context():
+        for _ in range(10):
+            otp_service.enforce_ip_rate_limit("203.0.113.5", limit=10, window_minutes=15)
+        with pytest.raises(ValueError):
+            otp_service.enforce_ip_rate_limit("203.0.113.5", limit=10, window_minutes=15)
+        # a different IP is unaffected
+        otp_service.enforce_ip_rate_limit("203.0.113.9", limit=10, window_minutes=15)
 
 
 def test_privacy_and_terms_are_real_pages_reachable_without_signing_in(app):
