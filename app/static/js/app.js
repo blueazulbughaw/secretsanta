@@ -487,6 +487,38 @@ async function boot() {
   refreshBadge();
 }
 
+// A password input with a show/hide eye button - used for every password field, typed-in
+// or newly-created. Pass `confirm: true` to also get a matching "Confirm password" field
+// right after (same id + "Confirm"); check the pair with passwordMismatchError() before
+// submitting. Call wirePasswordToggles() once after render() to wire up every eye button
+// currently in #app - safe to call even when a page has none.
+function passwordFieldHTML(id, label, { autocomplete = "new-password", confirm = false } = {}) {
+  const field = (fieldId, fieldLabel, fieldAutocomplete) => `
+    <label for="${fieldId}">${esc(fieldLabel)}</label>
+    <div class="password-field">
+      <input id="${fieldId}" type="password" autocomplete="${fieldAutocomplete}">
+      <button type="button" class="password-toggle" data-pw-toggle="${fieldId}" aria-label="Show password">👁</button>
+    </div>`;
+  return field(id, label, autocomplete) + (confirm ? field(id + "Confirm", "Confirm Password", autocomplete) : "");
+}
+function wirePasswordToggles() {
+  $app.querySelectorAll("[data-pw-toggle]").forEach((btn) => {
+    const input = document.getElementById(btn.dataset.pwToggle);
+    btn.onclick = () => {
+      const showing = input.type === "password";
+      input.type = showing ? "text" : "password";
+      btn.textContent = showing ? "🙈" : "👁";
+      btn.setAttribute("aria-label", showing ? "Hide password" : "Show password");
+    };
+  });
+}
+// Pairs with the `confirm: true` option above - call right before submitting.
+function passwordMismatchError(id) {
+  const a = document.getElementById(id).value;
+  const b = document.getElementById(id + "Confirm").value;
+  return a !== b ? { message: "Passwords don't match. Please check both fields." } : null;
+}
+
 // ---------- auth pages ----------
 function pageLogin() {
   render("", `
@@ -497,11 +529,7 @@ function pageLogin() {
     </div>
     <label for="username">Username</label>
     <input id="username" autocomplete="username">
-    <label for="password">Password</label>
-    <div class="password-field">
-      <input id="password" type="password" autocomplete="current-password">
-      <button type="button" class="password-toggle" id="togglePw" aria-label="Show password">👁</button>
-    </div>
+    ${passwordFieldHTML("password", "Password", { autocomplete: "current-password" })}
     <div id="msg"></div>
     <button class="btn btn-primary" id="loginBtn">Sign In</button>
     <button class="btn btn-quiet" id="useCodeBtn">Use a Text Code Instead</button>
@@ -512,14 +540,7 @@ function pageLogin() {
       and <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.
     </p>
   `);
-  document.getElementById("togglePw").onclick = () => {
-    const pw = document.getElementById("password");
-    const btn = document.getElementById("togglePw");
-    const showing = pw.type === "password";
-    pw.type = showing ? "text" : "password";
-    btn.textContent = showing ? "🙈" : "👁";
-    btn.setAttribute("aria-label", showing ? "Hide password" : "Show password");
-  };
+  wirePasswordToggles();
   document.getElementById("loginBtn").onclick = async () => {
     const username = document.getElementById("username").value.trim();
     const password = document.getElementById("password").value;
@@ -732,12 +753,14 @@ function pageRegister(username) {
     <label for="regName">Display Name</label>
     <input id="regName" autocomplete="name">
     <p class="muted" style="margin:.3rem 0 0;font-size:.8rem">This is the name your clan sees. It has to be different from your username, and only your clan admin can change it later.</p>
-    <label for="regPassword">Create Password</label>
-    <input id="regPassword" type="password" autocomplete="new-password">
+    ${passwordFieldHTML("regPassword", "Create Password", { confirm: true })}
     <div id="msg"></div>
     <button class="btn btn-primary" id="createBtn">Create Account</button>
   `);
+  wirePasswordToggles();
   document.getElementById("createBtn").onclick = async () => {
+    const mismatch = passwordMismatchError("regPassword");
+    if (mismatch) return showError(mismatch);
     try {
       const r = await api.post("/auth/register", {
         username,
@@ -796,12 +819,14 @@ function pageForcedPasswordChange() {
   render("Set a New Password", `
     <h2>Please set a new password</h2>
     <p class="muted">Your clan admin gave you a temporary password. Choose a new one only you know.</p>
-    <label for="newPw">New password</label>
-    <input id="newPw" type="password" autocomplete="new-password">
+    ${passwordFieldHTML("newPw", "New password", { confirm: true })}
     <div id="msg"></div>
     <button class="btn btn-primary" id="setPwBtn">Reset Password</button>
   `);
+  wirePasswordToggles();
   document.getElementById("setPwBtn").onclick = async () => {
+    const mismatch = passwordMismatchError("newPw");
+    if (mismatch) return showError(mismatch);
     try {
       await api.patch("/auth/security", { password: document.getElementById("newPw").value });
       boot();
@@ -857,11 +882,8 @@ function pageSecuritySetup(forced) {
     <section class="card form-card">
     <h2>${hasPw ? "Reset your password" : "Set up your password"}</h2>
     <p class="muted">${hasPw ? "Enter your current password, then a new one." : "You'll use this to sign in."} At least 8 characters.</p>
-    ${hasPw ? `
-    <label for="currentPassword">Current password</label>
-    <input id="currentPassword" type="password" autocomplete="current-password">` : ""}
-    <label for="newPassword">${hasPw ? "New password" : "Password"}</label>
-    <input id="newPassword" type="password" autocomplete="new-password">
+    ${hasPw ? passwordFieldHTML("currentPassword", "Current password", { autocomplete: "current-password" }) : ""}
+    ${passwordFieldHTML("newPassword", hasPw ? "New password" : "Password", { confirm: true })}
     <div id="pwMsg"></div>
     <button class="btn ${forced ? 'btn-primary' : 'btn-secondary'}" id="savePwBtn">${hasPw ? "Reset Password" : "Save Password"}</button>
     </section>
@@ -869,6 +891,7 @@ function pageSecuritySetup(forced) {
   render("Profile & Security", `
     ${forced ? passwordCard + profileCard : profileCard + passwordCard}
   `);
+  wirePasswordToggles();
   const refreshPhotoUi = () => {
     document.getElementById("avatarPreview").innerHTML = avatarHtml(ME.user, "avatar-lg");
     document.getElementById("photoLabel").textContent = ME.user.photo_url ? "Change photo" : "Add a photo";
@@ -919,6 +942,8 @@ function pageSecuritySetup(forced) {
     }
   };
   document.getElementById("savePwBtn").onclick = async () => {
+    const mismatch = passwordMismatchError("newPassword");
+    if (mismatch) return document.getElementById("pwMsg").innerHTML = alertBox(mismatch.message);
     const password = document.getElementById("newPassword").value;
     const current = document.getElementById("currentPassword");
     try {
@@ -927,6 +952,7 @@ function pageSecuritySetup(forced) {
       ME.user.has_password = true;
       document.getElementById("pwMsg").innerHTML = alertBox(hasPw ? "Password reset!" : "Password saved!", true);
       document.getElementById("newPassword").value = "";
+      document.getElementById("newPasswordConfirm").value = "";
       if (current) current.value = "";
     } catch (e) {
       const el = document.getElementById("pwMsg");
