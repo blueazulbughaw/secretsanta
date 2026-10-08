@@ -1027,6 +1027,16 @@ async function pageSecuritySetup(forced) {
     ${forced ? passwordCard + profileCard : profileCard + passwordCard}
   `);
   wirePasswordToggles();
+  document.getElementById("profilePhoneCountry").onchange = () => {
+    // A number already on file shows with its real "+<code>" prefix (see guessCountryIso
+    // above), and that leading "+" always wins over whichever country is selected - so
+    // picking a different country here would otherwise silently do nothing if the old
+    // "+1..." text is still sitting in the field. Clear it so there's no stale "+" left
+    // to override the country they just picked, and typing their real number saves
+    // under that country like they'd expect.
+    const phoneInput = document.getElementById("profilePhone");
+    if (phoneInput.value.trim().startsWith("+")) phoneInput.value = "";
+  };
   const refreshPhotoUi = () => {
     document.getElementById("avatarPreview").innerHTML = avatarHtml(ME.user, "avatar-lg");
     document.getElementById("photoLabel").textContent = ME.user.photo_url ? "Change photo" : "Add a photo";
