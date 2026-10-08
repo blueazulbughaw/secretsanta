@@ -7,7 +7,8 @@
      primary action per screen). Once app.js boots, it replaces this with the live version, so
      a real browser sees only the sign-in screen first, same as always. Keep this in sync with
      pageLogin()/pagePhoneEntry() in static/js/app.js: same fields, button labels and consent
-     wording, word for word. -->
+     wording, word for word - including the country dropdown's option list, which must match
+     COUNTRY_CODES in static/js/app.js value for value. -->
 <div class="center" style="margin-top:2rem">
   <div style="font-size:4rem">🎁</div>
   <h2>Welcome to Secret Santa</h2>
@@ -37,7 +38,53 @@
   <p class="muted">Enter your mobile number and we'll text you a one-time code.</p>
 </div>
 <label for="fallback-phone">Mobile phone number</label>
-<input id="fallback-phone" type="tel" inputmode="tel" autocomplete="tel">
+<div class="phone-field">
+  <select id="fallback-phoneCountry" aria-label="Country code">
+    <option value="US" selected>United States (+1)</option>
+    <option value="AR">Argentina (+54)</option>
+    <option value="AU">Australia (+61)</option>
+    <option value="BD">Bangladesh (+880)</option>
+    <option value="BR">Brazil (+55)</option>
+    <option value="CA">Canada (+1)</option>
+    <option value="CN">China (+86)</option>
+    <option value="CO">Colombia (+57)</option>
+    <option value="DO">Dominican Republic (+1)</option>
+    <option value="EG">Egypt (+20)</option>
+    <option value="FR">France (+33)</option>
+    <option value="DE">Germany (+49)</option>
+    <option value="HK">Hong Kong (+852)</option>
+    <option value="IN">India (+91)</option>
+    <option value="ID">Indonesia (+62)</option>
+    <option value="IE">Ireland (+353)</option>
+    <option value="IL">Israel (+972)</option>
+    <option value="IT">Italy (+39)</option>
+    <option value="JM">Jamaica (+1)</option>
+    <option value="JP">Japan (+81)</option>
+    <option value="KE">Kenya (+254)</option>
+    <option value="MY">Malaysia (+60)</option>
+    <option value="MX">Mexico (+52)</option>
+    <option value="NL">Netherlands (+31)</option>
+    <option value="NZ">New Zealand (+64)</option>
+    <option value="NG">Nigeria (+234)</option>
+    <option value="PK">Pakistan (+92)</option>
+    <option value="PH">Philippines (+63)</option>
+    <option value="PL">Poland (+48)</option>
+    <option value="PT">Portugal (+351)</option>
+    <option value="PR">Puerto Rico (+1)</option>
+    <option value="SA">Saudi Arabia (+966)</option>
+    <option value="SG">Singapore (+65)</option>
+    <option value="ZA">South Africa (+27)</option>
+    <option value="KR">South Korea (+82)</option>
+    <option value="ES">Spain (+34)</option>
+    <option value="SE">Sweden (+46)</option>
+    <option value="TW">Taiwan (+886)</option>
+    <option value="TH">Thailand (+66)</option>
+    <option value="AE">United Arab Emirates (+971)</option>
+    <option value="GB">United Kingdom (+44)</option>
+    <option value="VN">Vietnam (+84)</option>
+  </select>
+  <input id="fallback-phone" type="tel" inputmode="tel" autocomplete="tel">
+</div>
 <div class="check-row" style="align-items:flex-start;margin-top:1rem">
   <input type="checkbox" id="fallback-smsConsent" style="margin-top:.3rem">
   <label for="fallback-smsConsent" style="margin:0;font-size:.85rem;font-weight:400">

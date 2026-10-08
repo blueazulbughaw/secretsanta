@@ -6,7 +6,7 @@ from flask import Blueprint, request, jsonify, g
 from ..extensions import db
 from ..models import Family, FamilyMember, Household, User
 from ..middleware.auth import require_auth, require_family_member, require_family_admin
-from ..utils import normalize_us_phone, normalize_username, hash_password, slugify_username_base
+from ..utils import normalize_phone, normalize_username, hash_password, slugify_username_base
 
 bp = Blueprint("families", __name__)
 
@@ -113,7 +113,7 @@ def add_member(family_id):
     phone = None
     if data.get("phone"):
         try:
-            phone = normalize_us_phone(data.get("phone", ""))
+            phone = normalize_phone(data.get("phone", ""), data.get("phone_country", "US"))
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
         if User.query.filter_by(phone=phone).first():
@@ -211,7 +211,7 @@ def update_member(family_id, membership_id):
         raw = data.get("phone") or ""
         if raw:
             try:
-                phone = normalize_us_phone(raw)
+                phone = normalize_phone(raw, data.get("phone_country", "US"))
             except ValueError as e:
                 return jsonify({"error": str(e)}), 400
             existing = User.query.filter_by(phone=phone).first()

@@ -502,6 +502,65 @@ function pageLogin() {
   document.getElementById("useCodeBtn").onclick = () => pagePhoneEntry();
 }
 
+// Country calling codes for the phone-entry dropdowns. Just a convenience default for
+// reading a plain national number ("818 555 0100" + US -> +18185550100) - it never
+// restricts input: typing a full "+44 7911 123456" always wins over whatever's picked
+// here (normalize_phone() server-side ignores the selected country once it sees a "+").
+// Keep this array in sync, value for value, with the one in templates/sms_optin.html and
+// the static <option> list in templates/_login_fallback.html.
+const COUNTRY_CODES = [
+  ["US", "United States", 1],
+  ["AR", "Argentina", 54],
+  ["AU", "Australia", 61],
+  ["BD", "Bangladesh", 880],
+  ["BR", "Brazil", 55],
+  ["CA", "Canada", 1],
+  ["CN", "China", 86],
+  ["CO", "Colombia", 57],
+  ["DO", "Dominican Republic", 1],
+  ["EG", "Egypt", 20],
+  ["FR", "France", 33],
+  ["DE", "Germany", 49],
+  ["HK", "Hong Kong", 852],
+  ["IN", "India", 91],
+  ["ID", "Indonesia", 62],
+  ["IE", "Ireland", 353],
+  ["IL", "Israel", 972],
+  ["IT", "Italy", 39],
+  ["JM", "Jamaica", 1],
+  ["JP", "Japan", 81],
+  ["KE", "Kenya", 254],
+  ["MY", "Malaysia", 60],
+  ["MX", "Mexico", 52],
+  ["NL", "Netherlands", 31],
+  ["NZ", "New Zealand", 64],
+  ["NG", "Nigeria", 234],
+  ["PK", "Pakistan", 92],
+  ["PH", "Philippines", 63],
+  ["PL", "Poland", 48],
+  ["PT", "Portugal", 351],
+  ["PR", "Puerto Rico", 1],
+  ["SA", "Saudi Arabia", 966],
+  ["SG", "Singapore", 65],
+  ["ZA", "South Africa", 27],
+  ["KR", "South Korea", 82],
+  ["ES", "Spain", 34],
+  ["SE", "Sweden", 46],
+  ["TW", "Taiwan", 886],
+  ["TH", "Thailand", 66],
+  ["AE", "United Arab Emirates", 971],
+  ["GB", "United Kingdom", 44],
+  ["VN", "Vietnam", 84],
+];
+
+function countrySelectHTML(id, selectedIso) {
+  selectedIso = selectedIso || "US";
+  const opts = COUNTRY_CODES.map(([iso, name, dial]) =>
+    `<option value="${iso}" ${iso === selectedIso ? "selected" : ""}>${esc(name)} (+${dial})</option>`
+  ).join("");
+  return `<select id="${id}" class="country-select" aria-label="Country code">${opts}</select>`;
+}
+
 // Forgotten passwords are the actual problem this solves, so this never needs a username -
 // a phone number is something people reliably remember, unlike a password. One field, one
 // checkbox (required, unchecked by default), one button.
@@ -521,7 +580,10 @@ function pagePhoneEntry() {
       <p class="muted">Enter your mobile number and we'll text you a one-time code.</p>
     </div>
     <label for="phone">Mobile phone number</label>
-    <input id="phone" type="tel" inputmode="tel" autocomplete="tel">
+    <div class="phone-field">
+      ${countrySelectHTML("phoneCountry")}
+      <input id="phone" type="tel" inputmode="tel" autocomplete="tel">
+    </div>
     <div class="check-row" style="align-items:flex-start;margin-top:1rem">
       <input type="checkbox" id="smsConsent" style="margin-top:.3rem">
       <label for="smsConsent" style="margin:0;font-size:.85rem;font-weight:400">${SMS_CONSENT_HTML}</label>
@@ -533,13 +595,14 @@ function pagePhoneEntry() {
   document.getElementById("backToLoginBtn").onclick = () => pageLogin();
   document.getElementById("sendCodeBtn").onclick = async () => {
     const phone = document.getElementById("phone").value.trim();
+    const phone_country = document.getElementById("phoneCountry").value;
     if (!phone) return showError({ message: "Please enter your phone number." });
     if (!document.getElementById("smsConsent").checked) {
       return showError({ message: "Please check the box to agree to receive a text message before continuing." });
     }
     try {
-      await api.post("/auth/send-code", { phone });
-      pageCodeEntry(phone);
+      await api.post("/auth/send-code", { phone, phone_country });
+      pageCodeEntry(phone, phone_country);
     } catch (e) { showError(e); }
   };
 }
@@ -547,7 +610,7 @@ function pagePhoneEntry() {
 // The second step of signing in with a texted code (the password is always one tap away).
 // Deliberately doesn't claim "we texted a code to you": the server never reveals whether the
 // number matched an account, so the UI can't either - see GENERIC_CODE_SENT_MESSAGE server-side.
-function pageCodeEntry(phone) {
+function pageCodeEntry(phone, phone_country) {
   render("", `
     <div class="center" style="margin-top:2rem"><div style="font-size:3rem">💬</div></div>
     <h2 class="center">Enter your sign-in code</h2>
@@ -562,13 +625,13 @@ function pageCodeEntry(phone) {
   document.getElementById("code").focus();
   document.getElementById("verifyBtn").onclick = async () => {
     try {
-      await api.post("/auth/verify-otp", { phone, code: document.getElementById("code").value.trim() });
+      await api.post("/auth/verify-otp", { phone, phone_country, code: document.getElementById("code").value.trim() });
       location.hash = "/"; boot();
     } catch (e) { showError(e); }
   };
   document.getElementById("resendBtn").onclick = async () => {
     try {
-      await api.post("/auth/send-code", { phone });
+      await api.post("/auth/send-code", { phone, phone_country });
       document.getElementById("msg").innerHTML = alertBox("If that number has an account, a new code is on its way.", true);
     } catch (e) { showError(e); }
   };
@@ -1622,7 +1685,9 @@ route(/^\/admin\/members$/, async () => {
       <div class="inline-form-row">
         <div><label for="newName">Display Name</label><input id="newName"></div>
         <div><label for="newUsername">Username</label><input id="newUsername" autocapitalize="none" autocomplete="off" spellcheck="false"></div>
-        <div><label for="newPhone">Phone (optional)</label><input id="newPhone" type="tel" inputmode="tel"></div>
+        <div><label for="newPhone">Phone (optional)</label>
+          <div class="phone-field">${countrySelectHTML("newPhoneCountry")}<input id="newPhone" type="tel" inputmode="tel"></div>
+        </div>
         <div><label for="newEmail">Email (optional)</label><input id="newEmail" type="email"></div>
         <div><label for="newHouse">Household</label><select id="newHouse">${houseOpts(null)}</select></div>
         <label class="inline-check"><input type="checkbox" id="newAdmin"> Clan admin</label>
@@ -1656,6 +1721,7 @@ route(/^\/admin\/members$/, async () => {
         full_name: document.getElementById("newName").value,
         username: document.getElementById("newUsername").value,
         phone: document.getElementById("newPhone").value,
+        phone_country: document.getElementById("newPhoneCountry").value,
         email: document.getElementById("newEmail").value,
         household_id: document.getElementById("newHouse").value ? Number(document.getElementById("newHouse").value) : null,
         role: document.getElementById("newAdmin").checked ? "admin" : "member",
@@ -1665,6 +1731,7 @@ route(/^\/admin\/members$/, async () => {
       document.getElementById("newName").value = "";
       document.getElementById("newUsername").value = "";
       document.getElementById("newPhone").value = "";
+      document.getElementById("newPhoneCountry").value = "US";
       document.getElementById("newEmail").value = "";
       document.getElementById("newHouse").value = "";
       document.getElementById("newAdmin").checked = false;

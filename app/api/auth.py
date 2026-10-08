@@ -8,7 +8,7 @@ from ..services import otp_service, sms_service
 from ..services.photo_service import save_photo, remove_photo
 from ..middleware.auth import (issue_token, set_auth_cookie, clear_auth_cookie,
                                require_auth, _current_user)
-from ..utils import normalize_us_phone, normalize_username, hash_password, verify_password
+from ..utils import normalize_phone, normalize_username, hash_password, verify_password
 
 bp = Blueprint("auth", __name__)
 
@@ -44,8 +44,9 @@ def send_code():
     matches an account, so this - the one endpoint in the app reachable with zero prior
     knowledge - can't be used to find out who's in the system. Don't change that without
     reading this comment twice."""
+    data = request.json or {}
     try:
-        phone = normalize_us_phone((request.json or {}).get("phone", ""))
+        phone = normalize_phone(data.get("phone", ""), data.get("phone_country", "US"))
     except ValueError as e:
         return jsonify({"error": str(e)}), 400  # about their input's format, not account existence
     try:
@@ -91,7 +92,7 @@ def register():
     phone = None
     if data.get("phone"):
         try:
-            phone = normalize_us_phone(data.get("phone", ""))
+            phone = normalize_phone(data.get("phone", ""), data.get("phone_country", "US"))
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
         if User.query.filter_by(phone=phone).first():
@@ -123,7 +124,7 @@ def verify_otp():
     """Pairs with /auth/send-code: phone-based, not username-based."""
     data = request.json or {}
     try:
-        phone = normalize_us_phone(data.get("phone", ""))
+        phone = normalize_phone(data.get("phone", ""), data.get("phone_country", "US"))
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     code = data.get("code", "").strip()
@@ -262,7 +263,7 @@ def update_security():
         g.user.must_change_password = False
     if "phone" in data:
         try:
-            phone = normalize_us_phone(data.get("phone", ""))
+            phone = normalize_phone(data.get("phone", ""), data.get("phone_country", "US"))
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
         existing = User.query.filter_by(phone=phone).first()

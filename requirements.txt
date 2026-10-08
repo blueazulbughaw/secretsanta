@@ -7,3 +7,4 @@ PyMySQL>=1.1
 PyJWT>=2.8
 python-dotenv>=1.0
 Pillow>=10.0
+phonenumbers>=9.0

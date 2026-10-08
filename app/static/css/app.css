@@ -67,7 +67,8 @@ main#app { flex: 1 1 auto; min-width: 0; padding: 1.25rem 1.5rem; max-width: 640
 /* ...and everything in that card - labels, fields, buttons - spans the whole card */
 #shell:not(.authed) main#app label, #shell:not(.authed) main#app input,
 #shell:not(.authed) main#app textarea, #shell:not(.authed) main#app select,
-#shell:not(.authed) main#app .btn, #shell:not(.authed) main#app .password-field { max-width: none; }
+#shell:not(.authed) main#app .btn, #shell:not(.authed) main#app .password-field,
+#shell:not(.authed) main#app .phone-field { max-width: none; }
 
 /* My Dashboard sections are cards; the giftee block is a heading over a
    grid of gift cards */
@@ -142,7 +143,7 @@ nav#sidebar {
   input, textarea, select { font-size: 16px; }
   .btn, .card-btn { max-width: none; }
   label { max-width: none; }
-  input, textarea, select, .password-field { max-width: none; }
+  input, textarea, select, .password-field, .phone-field { max-width: none; }
 }
 
 /* Data table (admin views). The wrapper is a size container so the table
@@ -235,6 +236,10 @@ input:focus, textarea:focus, select:focus {
   border-color: var(--red); outline: none; box-shadow: 0 0 0 3px rgba(192,57,43,.12);
 }
 .code-input { letter-spacing: .4em; text-align: center; font-size: 1.3rem; }
+
+.phone-field { display: flex; gap: .5rem; max-width: 480px; }
+.phone-field select { flex: 0 0 auto; width: auto; max-width: 9.5rem; }
+.phone-field input { flex: 1 1 auto; }
 
 .password-field { position: relative; max-width: 480px; }
 .password-field input { padding-right: 2.6rem; }
@@ -544,9 +549,9 @@ body.dragging-cards, body.dragging-cards * { cursor: grabbing !important; }
 /* Cards that hold a form sit in the middle at a readable width, and their fields fill the card */
 .form-card, .page-card { max-width: 640px; margin: 0 auto 1rem; }
 .form-card label, .form-card input, .form-card textarea, .form-card select, .form-card .btn,
-.form-card .password-field, .form-card .people-picker, .form-card .dish-row,
+.form-card .password-field, .form-card .phone-field, .form-card .people-picker, .form-card .dish-row,
 .page-card label, .page-card input, .page-card textarea, .page-card select, .page-card .btn,
-.page-card .password-field, .page-card .people-picker, .page-card .dish-row { max-width: none; }
+.page-card .password-field, .page-card .phone-field, .page-card .people-picker, .page-card .dish-row { max-width: none; }
 .form-card .btn[style*="width:auto"], .page-card .btn[style*="width:auto"] { width: auto; }
 .form-card .form-actions .btn, .page-card .form-actions .btn { max-width: none; }
 

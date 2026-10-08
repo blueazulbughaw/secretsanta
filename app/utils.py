@@ -1,6 +1,7 @@
 import re
 from urllib.parse import urlparse
 
+import phonenumbers
 from werkzeug.security import generate_password_hash, check_password_hash
 
 
@@ -62,15 +63,27 @@ def verify_password(raw: str, password_hash: str) -> bool:
     return check_password_hash(password_hash, raw)
 
 
-def normalize_us_phone(raw: str) -> str:
-    """Normalizes a US phone number to E.164 (+1XXXXXXXXXX).
+def normalize_phone(raw: str, region: str = "US") -> str:
+    """Normalizes a phone number to E.164 (e.g. "+15551234567").
 
-    Accepts common input shapes like "(555) 123-4567", "555-123-4567",
-    "5551234567", or the same with a leading country code "1".
+    `region` is the ISO 3166-1 alpha-2 country the number should be read in
+    when it's typed in local/national format (e.g. "555-123-4567" + region
+    "US" -> "+15551234567"). If `raw` already starts with "+" it's parsed as
+    a full international number and `region` is ignored - so a selected
+    country in the UI is just a convenience default, never a restriction:
+    typing a full "+44 7911 123456" always works regardless of what's picked.
     """
-    digits = re.sub(r"\D", "", raw or "")
-    if len(digits) == 11 and digits[0] == "1":
-        digits = digits[1:]
-    if len(digits) != 10:
-        raise ValueError("Please enter a valid 10-digit US phone number.")
-    return f"+1{digits}"
+    raw = (raw or "").strip()
+    if not raw:
+        raise ValueError("Please enter a phone number.")
+    region = (region or "US").strip().upper() or "US"
+    try:
+        parsed = phonenumbers.parse(raw, None if raw.startswith("+") else region)
+    except phonenumbers.NumberParseException:
+        raise ValueError("Please enter a valid phone number.")
+    # is_possible_number (length/shape only), not is_valid_number (real assigned ranges):
+    # the latter rejects reserved-for-fictional-use numbers like 555-xxx-xxxx, which this
+    # app's own tests and anyone demoing with a placeholder number rely on working.
+    if not phonenumbers.is_possible_number(parsed):
+        raise ValueError("Please enter a valid phone number.")
+    return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)

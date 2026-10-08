@@ -18,7 +18,8 @@
     stand-in) - it calls the exact same /api/auth/send-code and /api/auth/verify-otp
     endpoints the real app uses. Keep the phone field, checkbox and consent wording here
     in sync, word for word, with pagePhoneEntry() in static/js/app.js and the matching
-    block in templates/_login_fallback.html.
+    block in templates/_login_fallback.html - including the country dropdown's option
+    list, which must match COUNTRY_CODES in static/js/app.js value for value.
   -->
   <style>
     :root { --red: #C0392B; --red-dark: #A93226; --ink: #1A1A1A; --muted: #5A5A5A; --line: #D8D8D8; }
@@ -38,6 +39,9 @@
       width: 100%; max-width: 360px; min-height: 44px; font-size: 1rem;
       padding: .5rem .7rem; border: 1px solid var(--line); border-radius: 8px;
     }
+    .phone-field { display: flex; gap: .5rem; max-width: 480px; }
+    .phone-field select { flex: 0 0 auto; width: auto; max-width: 9.5rem; min-height: 44px; font-size: 1rem; padding: .5rem .4rem; border: 1px solid var(--line); border-radius: 8px; }
+    .phone-field input { flex: 1 1 auto; max-width: none; }
     .check-row { display: flex; align-items: flex-start; gap: .6rem; margin: 1rem 0; max-width: 480px; }
     .check-row input { margin-top: .3rem; width: 18px; height: 18px; flex: 0 0 auto; }
     .check-row label { margin: 0; font-weight: 400; font-size: .85rem; }
@@ -64,7 +68,53 @@
 
     <div id="step1">
       <label for="phone">Mobile phone number</label>
-      <input id="phone" type="tel" inputmode="tel" autocomplete="tel">
+      <div class="phone-field">
+        <select id="phoneCountry" aria-label="Country code">
+          <option value="US" selected>United States (+1)</option>
+          <option value="AR">Argentina (+54)</option>
+          <option value="AU">Australia (+61)</option>
+          <option value="BD">Bangladesh (+880)</option>
+          <option value="BR">Brazil (+55)</option>
+          <option value="CA">Canada (+1)</option>
+          <option value="CN">China (+86)</option>
+          <option value="CO">Colombia (+57)</option>
+          <option value="DO">Dominican Republic (+1)</option>
+          <option value="EG">Egypt (+20)</option>
+          <option value="FR">France (+33)</option>
+          <option value="DE">Germany (+49)</option>
+          <option value="HK">Hong Kong (+852)</option>
+          <option value="IN">India (+91)</option>
+          <option value="ID">Indonesia (+62)</option>
+          <option value="IE">Ireland (+353)</option>
+          <option value="IL">Israel (+972)</option>
+          <option value="IT">Italy (+39)</option>
+          <option value="JM">Jamaica (+1)</option>
+          <option value="JP">Japan (+81)</option>
+          <option value="KE">Kenya (+254)</option>
+          <option value="MY">Malaysia (+60)</option>
+          <option value="MX">Mexico (+52)</option>
+          <option value="NL">Netherlands (+31)</option>
+          <option value="NZ">New Zealand (+64)</option>
+          <option value="NG">Nigeria (+234)</option>
+          <option value="PK">Pakistan (+92)</option>
+          <option value="PH">Philippines (+63)</option>
+          <option value="PL">Poland (+48)</option>
+          <option value="PT">Portugal (+351)</option>
+          <option value="PR">Puerto Rico (+1)</option>
+          <option value="SA">Saudi Arabia (+966)</option>
+          <option value="SG">Singapore (+65)</option>
+          <option value="ZA">South Africa (+27)</option>
+          <option value="KR">South Korea (+82)</option>
+          <option value="ES">Spain (+34)</option>
+          <option value="SE">Sweden (+46)</option>
+          <option value="TW">Taiwan (+886)</option>
+          <option value="TH">Thailand (+66)</option>
+          <option value="AE">United Arab Emirates (+971)</option>
+          <option value="GB">United Kingdom (+44)</option>
+          <option value="VN">Vietnam (+84)</option>
+        </select>
+        <input id="phone" type="tel" inputmode="tel" autocomplete="tel">
+      </div>
 
       <div class="check-row">
         <input type="checkbox" id="smsConsent">
@@ -107,6 +157,7 @@
 
       document.getElementById("sendBtn").addEventListener("click", function () {
         var phone = document.getElementById("phone").value.trim();
+        var phone_country = document.getElementById("phoneCountry").value;
         if (!phone) return showMsg("Please enter your phone number.", "error");
         if (!document.getElementById("smsConsent").checked) {
           return showMsg("Please check the box to agree to receive a text message before continuing.", "error");
@@ -114,7 +165,7 @@
         fetch("/api/auth/send-code", {
           method: "POST", credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone: phone }),
+          body: JSON.stringify({ phone: phone, phone_country: phone_country }),
         })
           .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
           .then(function (res) {
@@ -129,20 +180,22 @@
 
       document.getElementById("resendBtn").addEventListener("click", function () {
         var phone = document.getElementById("phone").value.trim();
+        var phone_country = document.getElementById("phoneCountry").value;
         fetch("/api/auth/send-code", {
           method: "POST", credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone: phone }),
+          body: JSON.stringify({ phone: phone, phone_country: phone_country }),
         }).then(function () { showMsg("If that number has an account, a new code is on its way.", "ok"); });
       });
 
       document.getElementById("verifyBtn").addEventListener("click", function () {
         var phone = document.getElementById("phone").value.trim();
+        var phone_country = document.getElementById("phoneCountry").value;
         var code = document.getElementById("code").value.trim();
         fetch("/api/auth/verify-otp", {
           method: "POST", credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone: phone, code: code }),
+          body: JSON.stringify({ phone: phone, phone_country: phone_country, code: code }),
         })
           .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
           .then(function (res) {

@@ -2,21 +2,37 @@
 Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS PWA.
 - Follow ARCHITECTURE.md exactly (structure, endpoints, roles).
 - Schema of record is schema.sql; models live in app/models.py. Use Flask-Migrate for changes.
-- Auth: username -> JWT in httpOnly cookie. The password ALWAYS works. If the account has
-  a phone (admin-set), the sign-in page also offers "Text Me a Sign-In Code" (Twilio, POST
-  /auth/send-code then /auth/verify-otp) with the SMS consent wording beside the button; a code
-  is only ever sent when asked for (login-start never texts). Keep the password until text
-  delivery (Twilio A2P 10DLC) is confirmed. Public /privacy and /terms are server-rendered
-  pages (they carry the SMS terms Twilio reviews); don't turn them back into SPA routes. The
-  root URL (/) also server-renders a copy of the sign-in form (app/templates/_login_fallback.html,
-  wired in app/__init__.py's landing() route) so the SMS opt-in CTA is visible to anything
-  that fetches the page without running JavaScript - Twilio rejected the campaign (error
-  30909) because the raw page was an empty `<main id="app"></main>`. Keep that fragment in
-  sync with pageLogin() in static/js/app.js word for word (fields, button labels, consent
-  text); app.js overwrites it on boot, so drift is invisible in a real browser but visible to
-  a non-JS reviewer. Every other route still serves the plain empty shell. Users set or reset
-  their password from Profile & Security (resetting asks for the current password, except for a
-  temporary admin-issued one). The phone number is not offered on the profile page.
+- Auth: username/password is the primary sign-in (POST /auth/login-password). "Use a Text
+  Code Instead" is phone-first and needs no username - a family member who's forgotten their
+  password (the actual problem this solves) still remembers their own phone number: enter it
+  + an unchecked SMS-consent checkbox, POST /auth/send-code, then /auth/verify-otp. A code is
+  only ever sent when asked for. /auth/send-code and /auth/verify-otp always answer with the
+  exact same generic message/status regardless of whether the number matches an account
+  (GENERIC_CODE_SENT_MESSAGE in app/api/auth.py) so that endpoint - reachable with zero prior
+  knowledge - can't be used to find out who's in the system; don't change that without reading
+  the comment above it twice. Phone numbers are normalized with normalize_phone(raw, region)
+  in app/utils.py (phonenumbers library): a leading "+" is always parsed as a full
+  international number regardless of region; otherwise `region` (ISO 3166-1 alpha-2, default
+  "US") says how to read a plain national number. Every phone-entry field pairs a country
+  <select> (COUNTRY_CODES in static/js/app.js, defaulted to US) with the number input and
+  sends both as `phone` + `phone_country`; the dropdown is just a convenience default, never a
+  restriction. Public /privacy and /terms are server-rendered pages (they carry the SMS terms
+  Twilio reviews); don't turn them back into SPA routes. The root URL (/) also server-renders
+  a copy of the sign-in + phone-entry forms (app/templates/_login_fallback.html, wired in
+  app/__init__.py's landing() route) so the SMS opt-in CTA is visible to anything that fetches
+  the page without running JavaScript - Twilio rejected the campaign (error 30909) because the
+  raw page was an empty `<main id="app"></main>`. /sms-optin is a second, deliberately plain
+  standalone (non-SPA) page with the same real, functional opt-in form, kept because Twilio's
+  automated review flagged the main site's centered-card styling as looking like a chat
+  widget/pop-up. Keep all three (pageLogin()/pagePhoneEntry() in static/js/app.js,
+  _login_fallback.html, sms_optin.html) in sync word for word - fields, button labels, consent
+  text, and the country dropdown's option list; app.js overwrites the fallback on boot, so
+  drift there is invisible in a real browser but visible to a non-JS reviewer. Every other
+  route still serves the plain empty shell. Users set or reset their password from Profile &
+  Security (resetting asks for the current password, except for a temporary admin-issued one).
+  The phone number is not offered on the profile page - it's set only by a clan admin, on
+  the Members page (PATCH /auth/security also accepts a phone update, but nothing in the UI
+  calls it that way today).
 - Display name: it is the name the clan sees ("Display Name" in every label), separate from
   the username. Sign-up asks for it (required, must differ from the username), and after that
   only a clan admin can change it (their own included; members see it read-only on their
