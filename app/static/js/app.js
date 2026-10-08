@@ -404,6 +404,18 @@ async function refreshBadge() {
 // ---------- router ----------
 const routes = [];
 function route(pattern, fn) { routes.push({ pattern, fn }); }
+// Lands on the dashboard right after signing in. Uses replaceState, not `location.hash =`,
+// specifically so it does NOT fire a hashchange event: that event is wired straight to
+// navigate(), which would then run concurrently with the boot() call right after this -
+// racing to read the global ME before boot() has reloaded it from the now-signed-in
+// /auth/me, and crashing routes that assume a signed-in ME (e.g. "Cannot read properties
+// of undefined (reading 'full_name')" on the dashboard). boot() calls navigate() itself
+// once ME is fresh, so this only needs to get the URL right, not route anything.
+function goToDashboardAfterSignIn() {
+  history.replaceState(null, "", "#/");
+  boot();
+}
+
 async function navigate() {
   const path = location.hash.replace(/^#/, "") || "/";
   renderSidebar(path.replace(/^\/events\/\d+\/wishlist(\/.*)?$/, "/wishlist")
@@ -500,7 +512,7 @@ function pageLogin() {
     const password = document.getElementById("password").value;
     try {
       await api.post("/auth/login-password", { username, password });
-      location.hash = "/"; boot();
+      goToDashboardAfterSignIn();
     } catch (e) { showError(e); }
   };
   document.getElementById("useCodeBtn").onclick = () => pagePhoneEntry();
@@ -653,7 +665,7 @@ function pageCodeEntry(phone, phone_country) {
   document.getElementById("verifyBtn").onclick = async () => {
     try {
       await api.post("/auth/verify-otp", { phone, phone_country, code: document.getElementById("code").value.trim() });
-      location.hash = "/"; boot();
+      goToDashboardAfterSignIn();
     } catch (e) { showError(e); }
   };
   document.getElementById("resendBtn").onclick = async () => {
