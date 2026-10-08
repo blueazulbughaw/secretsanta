@@ -805,9 +805,11 @@ function pageRegisterStart() {
     <div class="center" style="margin-top:2rem">
       <div style="font-size:4rem">🎁</div>
       <h2>Create Your Account</h2>
-      <p class="muted">${PENDING_JOIN_CODE
-        ? `You've been invited to join ${esc(PENDING_JOIN_CLAN_NAME || "a clan")}. Pick a username to get started.`
-        : "Pick a username to get started."}</p>
+      ${PENDING_JOIN_CODE ? `
+      <p class="muted" style="margin:0 0 .2rem">You've been invited to join</p>
+      <p style="font-size:1.6rem;font-weight:700;margin:0 0 .5rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(PENDING_JOIN_CLAN_NAME || "a clan")}</p>
+      <p class="muted">Pick a username to get started.</p>
+      ` : `<p class="muted">Pick a username to get started.</p>`}
     </div>
     <label for="newUsername">Create Username</label>
     <input id="newUsername" autocomplete="username">
@@ -856,8 +858,23 @@ function pageRegister(username) {
         password: document.getElementById("regPassword").value,
         clan_name: joining ? "" : `${username}'s Clan`,
       });
-      if (r.family) pageClanCreated(r.family);
-      else boot();
+      if (joining) {
+        // Already confirmed which clan on the previous screen (pageConfirmJoinClan) -
+        // join it now instead of landing on pageNoFamily()'s own "confirm to join" step
+        // and making them approve the same thing twice.
+        try {
+          await api.post("/families/join", { join_code: PENDING_JOIN_CODE });
+          PENDING_JOIN_CODE = null;
+          PENDING_JOIN_CLAN_NAME = null;
+        } catch (_) {
+          // The account's made either way; let them retry the join from pageNoFamily()
+          // (PENDING_JOIN_CODE is still set, so it'll be pre-filled there) instead of
+          // stranding them on a form that would now reject this same username.
+        }
+        return boot();
+      }
+      if (r.family) return pageClanCreated(r.family);
+      boot();
     } catch (e) { showError(e); }
   };
 }
