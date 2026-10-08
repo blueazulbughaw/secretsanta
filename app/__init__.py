@@ -36,6 +36,14 @@ def create_app(config_object=None):
     def terms():
         return render_template("terms.html")
 
+    @app.route("/sms-optin")
+    def sms_optin():
+        # A stable, plain reference page for SMS compliance review: the same real opt-in
+        # form (phone field, unchecked consent checkbox, "Text Me a Sign-In Code") shown in
+        # isolation, deliberately NOT styled like the main app (see the long comment at the
+        # top of sms_optin.html for why). Fully functional, not a mockup.
+        return render_template("sms_optin.html")
+
     @app.route("/")
     def landing():
         # The root URL specifically also renders a server-side copy of the sign-in form (see

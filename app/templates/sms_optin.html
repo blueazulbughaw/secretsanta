@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Text Me a Sign-In Code — Secret Santa</title>
+  <meta name="theme-color" content="#ffffff">
+  <!--
+    Deliberately a plain, standalone page: its own inline styling, its own small inline
+    script, no link to app.css or app.js, not part of the hash-routed single-page app.
+    This exists as a stable, unambiguous reference URL for SMS compliance review, after a
+    Twilio reviewer's automated check flagged the same opt-in form on the main sign-in
+    page ("/") as looking like it was collected in a chat widget or pop-up - almost
+    certainly because that page renders as one centered card floating over a colored
+    background, a pattern automated scanners associate with embedded widgets. This page
+    intentionally looks nothing like that: ordinary white background, ordinary flowing
+    content, no boxed/floating card. It's fully functional (not a mockup/screenshot
+    stand-in) - it calls the exact same /api/auth/send-code and /api/auth/verify-otp
+    endpoints the real app uses. Keep the phone field, checkbox and consent wording here
+    in sync, word for word, with pagePhoneEntry() in static/js/app.js and the matching
+    block in templates/_login_fallback.html.
+  -->
+  <style>
+    :root { --red: #C0392B; --red-dark: #A93226; --ink: #1A1A1A; --muted: #5A5A5A; --line: #D8D8D8; }
+    * { box-sizing: border-box; }
+    html { font-size: 17px; }
+    body {
+      margin: 0; background: #ffffff; color: var(--ink);
+      font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; line-height: 1.5;
+    }
+    main { max-width: 640px; margin: 0 auto; padding: 2rem 1.5rem 3rem; }
+    h1 { font-size: 1.4rem; margin: 0 0 .3rem; }
+    h2 { font-size: 1.1rem; margin: 2rem 0 .3rem; }
+    p { font-size: .95rem; }
+    .muted { color: var(--muted); }
+    label { display: block; font-weight: 600; font-size: .9rem; margin: 1rem 0 .3rem; }
+    input[type=tel], input[type=text] {
+      width: 100%; max-width: 360px; min-height: 44px; font-size: 1rem;
+      padding: .5rem .7rem; border: 1px solid var(--line); border-radius: 8px;
+    }
+    .check-row { display: flex; align-items: flex-start; gap: .6rem; margin: 1rem 0; max-width: 480px; }
+    .check-row input { margin-top: .3rem; width: 18px; height: 18px; flex: 0 0 auto; }
+    .check-row label { margin: 0; font-weight: 400; font-size: .85rem; }
+    button {
+      display: inline-block; min-height: 44px; font-size: .95rem; font-weight: 600;
+      background: var(--red); color: #fff; border: none; border-radius: 8px;
+      padding: .5rem 1.3rem; margin-top: 1rem; cursor: pointer;
+    }
+    button:active { background: var(--red-dark); }
+    button.secondary { background: #fff; color: var(--red); border: 1px solid var(--red); margin-left: .5rem; }
+    #msg { margin-top: 1rem; font-size: .9rem; }
+    #msg.error { color: var(--red-dark); }
+    #msg.ok { color: #2E7D4F; }
+    #step2 { display: none; }
+    footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: .85rem; }
+    a { color: var(--red); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Text Me a Sign-In Code</h1>
+    <p class="muted">Secret Santa, operated by Genri Labs LLC.</p>
+    <p>Enter your mobile phone number below. If it's on a Secret Santa account, we'll text you a one-time sign-in code.</p>
+
+    <div id="step1">
+      <label for="phone">Mobile phone number</label>
+      <input id="phone" type="tel" inputmode="tel" autocomplete="tel">
+
+      <div class="check-row">
+        <input type="checkbox" id="smsConsent">
+        <label for="smsConsent">
+          By checking this box, I agree to receive one text message from Genri Labs with a one-time
+          sign-in code for Secret Santa. Message and data rates may apply. Message frequency: one
+          message per request. Reply STOP to opt out, HELP for help. Consent is not required to use
+          Secret Santa; you can always sign in with your password instead.
+          <a href="/terms" target="_blank" rel="noopener">Terms of Service</a>
+          and <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.
+        </label>
+      </div>
+
+      <button type="button" id="sendBtn">Text Me a Sign-In Code</button>
+    </div>
+
+    <div id="step2">
+      <h2>Enter your code</h2>
+      <p class="muted">If that number has an account, we've texted a 6-digit code to it. It works for 10 minutes.</p>
+      <label for="code">Sign-in code</label>
+      <input id="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" style="max-width:140px;letter-spacing:.3em;text-align:center">
+      <div>
+        <button type="button" id="verifyBtn">Sign In</button>
+        <button type="button" class="secondary" id="resendBtn">Send Me a New Code</button>
+      </div>
+    </div>
+
+    <div id="msg"></div>
+
+    <footer>
+      <p>Prefer a password, or already signed in? <a href="/">Go to Secret Santa</a>.</p>
+      <p><a href="/terms">Terms of Service</a> &middot; <a href="/privacy">Privacy Policy</a></p>
+    </footer>
+  </main>
+
+  <script>
+    (function () {
+      var msg = document.getElementById("msg");
+      function showMsg(text, cls) { msg.textContent = text; msg.className = cls || ""; }
+
+      document.getElementById("sendBtn").addEventListener("click", function () {
+        var phone = document.getElementById("phone").value.trim();
+        if (!phone) return showMsg("Please enter your phone number.", "error");
+        if (!document.getElementById("smsConsent").checked) {
+          return showMsg("Please check the box to agree to receive a text message before continuing.", "error");
+        }
+        fetch("/api/auth/send-code", {
+          method: "POST", credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: phone }),
+        })
+          .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
+          .then(function (res) {
+            if (!res.ok) return showMsg(res.data.error || "Something went wrong. Please try again.", "error");
+            document.getElementById("step1").style.display = "none";
+            document.getElementById("step2").style.display = "block";
+            document.getElementById("code").focus();
+            showMsg("", "");
+          })
+          .catch(function () { showMsg("Something went wrong. Please check your connection and try again.", "error"); });
+      });
+
+      document.getElementById("resendBtn").addEventListener("click", function () {
+        var phone = document.getElementById("phone").value.trim();
+        fetch("/api/auth/send-code", {
+          method: "POST", credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: phone }),
+        }).then(function () { showMsg("If that number has an account, a new code is on its way.", "ok"); });
+      });
+
+      document.getElementById("verifyBtn").addEventListener("click", function () {
+        var phone = document.getElementById("phone").value.trim();
+        var code = document.getElementById("code").value.trim();
+        fetch("/api/auth/verify-otp", {
+          method: "POST", credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: phone, code: code }),
+        })
+          .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
+          .then(function (res) {
+            if (!res.ok) return showMsg(res.data.error || "That code didn't work. Please check it and try again.", "error");
+            showMsg("Signed in! Taking you to Secret Santa...", "ok");
+            location.href = "/";
+          })
+          .catch(function () { showMsg("Something went wrong. Please check your connection and try again.", "error"); });
+      });
+    })();
+  </script>
+</body>
+</html>

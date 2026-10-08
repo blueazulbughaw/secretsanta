@@ -270,6 +270,29 @@ def test_privacy_and_terms_are_real_pages_reachable_without_signing_in(app):
     assert "Privacy Policy" not in gone and "SMS Terms" not in gone
 
 
+def test_sms_optin_is_a_plain_standalone_page_with_the_real_opt_in_form(app):
+    # A stable, plain reference URL for SMS compliance review (a Twilio reviewer flagged the
+    # opt-in on "/" as looking like a chat widget / pop-up, likely because it's styled as one
+    # centered card floating on a colored background). This page must NOT look like that.
+    c = app.test_client()
+    r = c.get("/sms-optin")
+    page = r.get_data(as_text=True)
+    assert r.status_code == 200 and "<title>" in page
+    assert 'id="app"' not in page                                   # not the JS SPA shell
+    assert 'href="/static/css/app.css"' not in page                 # doesn't inherit the app's styling
+    assert 'src="/static/js/app.js"' not in page                    # standalone, own script only
+    assert 'type="tel"' in page and 'id="phone"' in page
+    assert 'type="checkbox" id="smsConsent"' in page and "checked" not in page.split('id="smsConsent"')[0][-60:]
+    flat = " ".join(page.split())  # HTML source line-wraps; normalize before checking wording spans lines
+    assert "one-time sign-in code for Secret Santa" in flat and "Reply STOP to opt out" in flat
+    assert "Text Me a Sign-In Code" in page
+    assert "Genri Labs LLC" in page
+    assert 'href="/terms"' in page and 'href="/privacy"' in page
+
+    # genuinely functional, not a mockup: it drives the same real endpoints
+    assert '"/api/auth/send-code"' in page and '"/api/auth/verify-otp"' in page
+
+
 
 def test_register_with_clan_name_creates_family_and_makes_admin(app):
     c = app.test_client()
