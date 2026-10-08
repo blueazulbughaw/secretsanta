@@ -459,7 +459,11 @@ async function boot() {
     $sidebar.hidden = true;
     $shell.classList.remove("authed");
     $menuBtn.hidden = true;
-    if (IS_REGISTER_ENTRY) pageRegisterStart();
+    // A join link (#/join/CODE) is only useful to someone who doesn't have an account yet
+    // (an existing member would just sign in normally, then still has no way to add a
+    // second family - a real but separate gap). Straight to account creation, code and
+    // all, instead of a plain sign-in screen with no visible way to use it.
+    if (IS_REGISTER_ENTRY || PENDING_JOIN_CODE) pageRegisterStart();
     else pageLogin();
     return;
   }
@@ -501,6 +505,7 @@ function pageLogin() {
     <div id="msg"></div>
     <button class="btn btn-primary" id="loginBtn">Sign In</button>
     <button class="btn btn-quiet" id="useCodeBtn">Use a Text Code Instead</button>
+    <button class="btn btn-quiet" id="createAccountBtn">Don't Have an Account? Create One</button>
     <p class="muted center" style="font-size:.78rem;margin-top:1.5rem">
       By continuing you agree to our
       <a href="/terms" target="_blank" rel="noopener">Terms of Service</a>
@@ -524,6 +529,7 @@ function pageLogin() {
     } catch (e) { showError(e); }
   };
   document.getElementById("useCodeBtn").onclick = () => pagePhoneEntry();
+  document.getElementById("createAccountBtn").onclick = () => pageRegisterStart();
 }
 
 // Country calling codes for the phone-entry dropdowns. Just a convenience default for
@@ -690,7 +696,9 @@ function pageRegisterStart() {
     <div class="center" style="margin-top:2rem">
       <div style="font-size:4rem">🎁</div>
       <h2>Create Your Account</h2>
-      <p class="muted">Pick a username to get started.</p>
+      <p class="muted">${PENDING_JOIN_CODE
+        ? "You've been invited to join a family. Pick a username to get started."
+        : "Pick a username to get started."}</p>
     </div>
     <label for="newUsername">Create Username</label>
     <input id="newUsername" autocomplete="username">
