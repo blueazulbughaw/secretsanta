@@ -417,6 +417,14 @@ function goToDashboardAfterSignIn() {
 }
 
 async function navigate() {
+  // Every route below assumes a signed-in ME (several read ME.user or FAMILY directly,
+  // with no auth check of their own - boot() is normally the only gatekeeper). navigate()
+  // is also wired to the hashchange event though, so anything that fires a hashchange
+  // while still anonymous (e.g. a link that does `location.hash = x` before boot() has
+  // ever run, or runs again, with a real session) reaches these routes straight past that
+  // gatekeeper and crashes on the first ME.user access. Guard here once instead of in
+  // every route, and land back on the sign-in screen instead of a crash.
+  if (!ME || !ME.authenticated) { pageLogin(); return; }
   const path = location.hash.replace(/^#/, "") || "/";
   renderSidebar(path.replace(/^\/events\/\d+\/wishlist(\/.*)?$/, "/wishlist")
     .replace(/^\/events\/\d+\/messages(\/.*)?$/, "/messages")
@@ -701,7 +709,11 @@ function pageRegisterStart() {
       }
     } catch (e) { showError(e); }
   };
-  document.getElementById("loginInsteadBtn").onclick = () => { location.hash = ""; pageLogin(); };
+  document.getElementById("loginInsteadBtn").onclick = () => {
+    // replaceState, not `location.hash =` - see the comment at the top of navigate().
+    history.replaceState(null, "", location.pathname + location.search);
+    pageLogin();
+  };
 }
 
 function pageRegister(username) {
