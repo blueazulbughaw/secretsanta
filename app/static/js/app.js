@@ -461,9 +461,12 @@ async function boot() {
     $menuBtn.hidden = true;
     // A join link (#/join/CODE) is only useful to someone who doesn't have an account yet
     // (an existing member would just sign in normally, then still has no way to add a
-    // second family - a real but separate gap). Straight to account creation, code and
-    // all, instead of a plain sign-in screen with no visible way to use it.
-    if (IS_REGISTER_ENTRY || PENDING_JOIN_CODE) pageRegisterStart();
+    // second family - a real but separate gap). Straight to the same name-confirmation
+    // step pageJoinClan()'s manual entry uses, instead of a plain sign-in screen with no
+    // visible way to use it - also catches a stale/bad code in a link, same as a typo'd
+    // one typed by hand.
+    if (IS_REGISTER_ENTRY) pageRegisterStart();
+    else if (PENDING_JOIN_CODE) confirmOrFixJoinCode(PENDING_JOIN_CODE);
     else pageLogin();
     return;
   }
@@ -533,8 +536,14 @@ function pageLogin() {
     <div id="msg"></div>
     <button class="btn btn-primary" id="loginBtn">Sign In</button>
     <button class="btn btn-quiet" id="useCodeBtn">Use a Text Code Instead</button>
+
+    <p class="muted center" style="margin:1.5rem 0 0">— or —</p>
+    <p class="muted center" style="font-size:.85rem;margin:.3rem 0 .8rem">Ask your clan admin for your clan code.</p>
     <button class="btn btn-quiet" id="joinClanBtn">Join a Clan</button>
+
+    <p class="muted center" style="margin:1.5rem 0 .8rem">— or —</p>
     <button class="btn btn-quiet" id="createClanBtn">Create a New Clan</button>
+
     <p class="muted center" style="font-size:.78rem;margin-top:1.5rem">
       By continuing you agree to our
       <a href="/terms" target="_blank" rel="noopener">Terms of Service</a>
@@ -563,7 +572,10 @@ function pageLogin() {
 
 // Entering a clan code before creating an account - the admin shares this code the same
 // way they'd share the #/join/CODE link, just read aloud or typed instead of clicked.
-function pageJoinClan() {
+// prefillCode/prefillError are only set when a #/join/CODE link itself didn't check out
+// (see confirmOrFixJoinCode) - showing the bad code already typed in, with why, instead
+// of silently dropping the person back on a blank form.
+function pageJoinClan(prefillCode, prefillError) {
   render("", `
     <div class="center" style="margin-top:2rem">
       <div style="font-size:3rem">🔑</div>
@@ -571,8 +583,8 @@ function pageJoinClan() {
       <p class="muted">Ask your clan admin for your clan's code, then enter it below.</p>
     </div>
     <label for="clanCode">Clan code</label>
-    <input id="clanCode" class="code-input" maxlength="8" style="text-transform:uppercase">
-    <div id="msg"></div>
+    <input id="clanCode" class="code-input" maxlength="8" style="text-transform:uppercase" value="${esc(prefillCode || "")}">
+    <div id="msg">${prefillError ? alertBox(prefillError) : ""}</div>
     <button class="btn btn-primary" id="findClanBtn">Continue</button>
     <button class="btn btn-quiet" id="backToLoginBtn2">Back to Sign In</button>
   `);
@@ -585,6 +597,19 @@ function pageJoinClan() {
       pageConfirmJoinClan(code, r.name);
     } catch (e) { showError(e); }
   };
+}
+
+// Landing on a #/join/CODE link (shared or typed) goes through the same name-check as
+// typing the code in by hand, instead of straight to registration - shows the clan's name
+// at the top to confirm, and catches a stale or mistyped code in the link itself.
+async function confirmOrFixJoinCode(code) {
+  try {
+    const r = await api.get(`/families/lookup-code/${encodeURIComponent(code)}`);
+    pageConfirmJoinClan(code, r.name);
+  } catch (e) {
+    PENDING_JOIN_CODE = null;
+    pageJoinClan(code, e.message);
+  }
 }
 
 // One extra step before account creation: shows the clan's actual name so whoever's
