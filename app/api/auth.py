@@ -30,7 +30,10 @@ def login_start():
                     "has_password": bool(user.password_hash)})
 
 
-GENERIC_CODE_SENT_MESSAGE = "If that number has an account, we've texted a sign-in code to it."
+NO_ACCOUNT_MESSAGE = "That phone number isn't on an account. Please contact your Clan Admin."
+CODE_SENT_MESSAGE = "We've texted a sign-in code to that number."
+# The IP-rate-limited branch below deliberately answers with this same message - see why
+# in the enforce_ip_rate_limit() docstring and the function comment above.
 
 
 @bp.post("/auth/send-code")
@@ -40,10 +43,12 @@ def send_code():
     password - the whole reason this exists - still remembers their own phone number, so
     this is the account-recovery-proof path, not gated behind recalling anything else.
 
-    Always answers with the exact same message and status regardless of whether the number
-    matches an account, so this - the one endpoint in the app reachable with zero prior
-    knowledge - can't be used to find out who's in the system. Don't change that without
-    reading this comment twice."""
+    Does say whether the number matches an account (NO_ACCOUNT_MESSAGE vs. a real send) -
+    a deliberate choice, not an oversight: this app is a small trusted family group, and
+    "that number isn't on file, ask your Clan Admin" is worth more than the enumeration
+    protection it costs. The IP rate limit below is the one case that still answers
+    generically - whether a requester is being throttled is a separate, lower-stakes kind
+    of information than whose phone numbers are in the system."""
     data = request.json or {}
     try:
         phone = normalize_phone(data.get("phone", ""), data.get("phone_country", "US"))
@@ -52,15 +57,18 @@ def send_code():
     try:
         otp_service.enforce_ip_rate_limit(request.remote_addr or "unknown")
     except ValueError:
-        return jsonify({"ok": True, "message": GENERIC_CODE_SENT_MESSAGE})  # never leak the limit either
+        return jsonify({"ok": True, "message": CODE_SENT_MESSAGE})  # never leak the limit
     user = User.query.filter_by(phone=phone).first()
-    if user:
-        try:
-            code = otp_service.request_code(phone)
-            sms_service.send_otp_sms(phone, code)
-        except (ValueError, sms_service.SmsSendError):
-            pass  # rate-limited or send failed - still answer generically; see the server log
-    return jsonify({"ok": True, "message": GENERIC_CODE_SENT_MESSAGE})
+    if not user:
+        return jsonify({"error": NO_ACCOUNT_MESSAGE}), 404
+    try:
+        code = otp_service.request_code(phone)
+        sms_service.send_otp_sms(phone, code)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 429  # phone-level rate limit (OTP_REQUESTS_PER_WINDOW)
+    except sms_service.SmsSendError as e:
+        return jsonify({"error": str(e)}), 502
+    return jsonify({"ok": True, "message": CODE_SENT_MESSAGE})
 
 
 @bp.post("/auth/register")

@@ -3,7 +3,7 @@ import pytest
 
 from app import create_app
 from app.extensions import db
-from app.api.auth import GENERIC_CODE_SENT_MESSAGE
+from app.api.auth import CODE_SENT_MESSAGE, NO_ACCOUNT_MESSAGE
 
 ADMIN_USER = "admin"
 BOB_USER = "bob"
@@ -187,7 +187,7 @@ def test_phone_sign_in_code_flow(app, capsys):
 
     c2 = app.test_client()
     r = c2.post("/api/auth/send-code", json={"phone": "(555) 123-4567"})
-    assert r.status_code == 200 and r.get_json()["message"] == GENERIC_CODE_SENT_MESSAGE
+    assert r.status_code == 200 and r.get_json()["message"] == CODE_SENT_MESSAGE
     assert "+15551234567" not in r.get_data(as_text=True)
     code = re.search(r"code for \+15551234567: (\d{6})", capsys.readouterr().out).group(1)
 
@@ -204,7 +204,10 @@ def test_phone_sign_in_code_flow(app, capsys):
                                   json={"username": "phoneuser", "password": PASSWORD}).status_code == 200
 
 
-def test_send_code_never_reveals_whether_a_number_has_an_account(app, users, capsys):
+def test_send_code_reveals_whether_a_number_has_an_account(app, users, capsys):
+    # Deliberately NOT enumeration-safe (see the comment above send_code() in
+    # app/api/auth.py): a small trusted family app, where "that number isn't on file,
+    # ask your Clan Admin" is worth more than hiding who has an account.
     c = app.test_client()
     fam = users["_family"]
     bob_m = next(m for m in users[ADMIN_USER].get(f"/api/families/{fam['id']}/members").get_json()
@@ -215,12 +218,12 @@ def test_send_code_never_reveals_whether_a_number_has_an_account(app, users, cap
 
     known = c.post("/api/auth/send-code", json={"phone": "(555) 010-1234"})     # bob - real
     unknown = c.post("/api/auth/send-code", json={"phone": "(555) 999-0000"})   # nobody
-    assert known.status_code == unknown.status_code == 200
-    assert known.get_json() == unknown.get_json() == {"ok": True, "message": GENERIC_CODE_SENT_MESSAGE}
+    assert known.status_code == 200 and known.get_json() == {"ok": True, "message": CODE_SENT_MESSAGE}
+    assert unknown.status_code == 404 and unknown.get_json() == {"error": NO_ACCOUNT_MESSAGE}
     # a real text only went out for the real one
     out = capsys.readouterr().out
     assert "+15550101234" in out and "+15559990000" not in out
-    # a malformed number is the one case allowed to differ - it's about their input, not an account
+    # a malformed number is its own, different kind of error
     assert c.post("/api/auth/send-code", json={"phone": "abc"}).status_code == 400
 
 
@@ -230,7 +233,10 @@ def test_send_code_is_rate_limited_per_phone(app, capsys):
                                        "full_name": "S", "phone": "5559990000"})
     for _ in range(12):
         r = c.post("/api/auth/send-code", json={"phone": "5559990000"})
-        assert r.status_code == 200 and r.get_json()["message"] == GENERIC_CODE_SENT_MESSAGE
+        # Past the 10th call, the IP-level limiter (also 10 in this window, see
+        # enforce_ip_rate_limit) fires first and masks with the normal-looking response -
+        # that's deliberate (see send_code()'s docstring), so this stays 200 throughout.
+        assert r.status_code == 200 and r.get_json()["message"] == CODE_SENT_MESSAGE
     # the response never changes, but only the first 10 (the configured per-phone window)
     # actually sent a text
     assert capsys.readouterr().out.count("code for +15559990000:") == 10

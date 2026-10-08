@@ -6,11 +6,13 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   Code Instead" is phone-first and needs no username - a family member who's forgotten their
   password (the actual problem this solves) still remembers their own phone number: enter it
   + an unchecked SMS-consent checkbox, POST /auth/send-code, then /auth/verify-otp. A code is
-  only ever sent when asked for. /auth/send-code and /auth/verify-otp always answer with the
-  exact same generic message/status regardless of whether the number matches an account
-  (GENERIC_CODE_SENT_MESSAGE in app/api/auth.py) so that endpoint - reachable with zero prior
-  knowledge - can't be used to find out who's in the system; don't change that without reading
-  the comment above it twice. Phone numbers are normalized with normalize_phone(raw, region)
+  only ever sent when asked for. /auth/send-code deliberately DOES say whether a number is on
+  an account - NO_ACCOUNT_MESSAGE ("...contact your Clan Admin"), 404, vs. CODE_SENT_MESSAGE,
+  200 (app/api/auth.py) - a considered tradeoff for a small trusted family group, not an
+  oversight; see the comment above send_code(). enforce_ip_rate_limit (otp_service.py) is the
+  main defense against that being walked to enumerate every number in the family - it still
+  answers with the generic CODE_SENT_MESSAGE when it fires, the one case left deliberately
+  unrevealing. Phone numbers are normalized with normalize_phone(raw, region)
   in app/utils.py (phonenumbers library): a leading "+" is always parsed as a full
   international number regardless of region; otherwise `region` (ISO 3166-1 alpha-2, default
   "US") says how to read a plain national number. Every phone-entry field pairs a country

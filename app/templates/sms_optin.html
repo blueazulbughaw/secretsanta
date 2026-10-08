@@ -133,7 +133,7 @@
 
     <div id="step2">
       <h2>Enter your code</h2>
-      <p class="muted">If that number has an account, we've texted a 6-digit code to it. It expires in 10 minutes.</p>
+      <p class="muted">We've texted a 6-digit code to it. It expires in 10 minutes.</p>
       <label for="code">Sign-in code</label>
       <input id="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" style="max-width:140px;letter-spacing:.3em;text-align:center">
       <div>
@@ -200,7 +200,13 @@
           method: "POST", credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ phone: phone, phone_country: phone_country }),
-        }).then(function () { showMsg("If that number has an account, a new code is on its way.", "ok"); });
+        })
+          .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
+          .then(function (res) {
+            if (!res.ok) return showMsg(res.data.error || "Something went wrong. Please try again.", "error");
+            showMsg("A new code is on its way.", "ok");
+          })
+          .catch(function () { showMsg("Something went wrong. Please check your connection and try again.", "error"); });
       });
 
       document.getElementById("verifyBtn").addEventListener("click", function () {

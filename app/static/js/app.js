@@ -633,13 +633,14 @@ function pagePhoneEntry() {
 }
 
 // The second step of signing in with a texted code (the password is always one tap away).
-// Deliberately doesn't claim "we texted a code to you": the server never reveals whether the
-// number matched an account, so the UI can't either - see GENERIC_CODE_SENT_MESSAGE server-side.
+// Only reached once /auth/send-code has already confirmed the number is on an account - a
+// number that isn't errors out on pagePhoneEntry() instead (NO_ACCOUNT_MESSAGE server-side),
+// so this can say "we've texted" outright.
 function pageCodeEntry(phone, phone_country) {
   render("", `
     <div class="center" style="margin-top:2rem"><div style="font-size:3rem">💬</div></div>
     <h2 class="center">Enter your sign-in code</h2>
-    <p class="muted center">If that number has an account, we've texted a 6-digit code to it. It expires in 10 minutes.</p>
+    <p class="muted center">We've texted a 6-digit code to it. It expires in 10 minutes.</p>
     <label for="code">Sign-in code</label>
     <input id="code" class="code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
     <div id="msg"></div>
@@ -658,7 +659,7 @@ function pageCodeEntry(phone, phone_country) {
   document.getElementById("resendBtn").onclick = async () => {
     try {
       await api.post("/auth/send-code", { phone, phone_country });
-      document.getElementById("msg").innerHTML = alertBox("If that number has an account, a new code is on its way.", true);
+      document.getElementById("msg").innerHTML = alertBox("A new code is on its way.", true);
     } catch (e) { showError(e); }
   };
   document.getElementById("usePasswordBtn").onclick = () => pageLogin();
