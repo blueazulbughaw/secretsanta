@@ -704,6 +704,22 @@ function countrySelectHTML(id, selectedIso) {
   ).join("");
   return `<select id="${id}" class="country-select" aria-label="Country code">${opts}</select>`;
 }
+// Best-effort: which listed country an already-saved E.164 number's dial code matches,
+// so re-opening a field that already has a non-US number shows that country selected
+// instead of always defaulting to US. Without this, editing an existing +63... number
+// without also remembering to reselect the Philippines would silently re-save it as a
+// US number instead (the typed digits get read as a US national number). Longest dial
+// code wins so e.g. +971 (UAE) doesn't match on +97 of nothing shorter by accident.
+function guessCountryIso(e164) {
+  if (!e164 || !e164.startsWith("+")) return "US";
+  const digits = e164.slice(1);
+  let bestIso = "US", bestLen = 0;
+  for (const [iso, , , dial] of COUNTRY_CODES) {
+    const d = String(dial);
+    if (digits.startsWith(d) && d.length > bestLen) { bestIso = iso; bestLen = d.length; }
+  }
+  return bestIso;
+}
 
 // On Android Chrome, automatically fills the code input the instant the text arrives -
 // no need to switch apps and copy it. Relies on the SMS ending with the WebOTP binding
@@ -974,7 +990,7 @@ async function pageSecuritySetup(forced) {
       <p class="muted" style="margin:0">Only your clan admin can change your display name.</p>`}
       <label for="profilePhone">Mobile phone number</label>
       <div class="phone-field">
-        ${countrySelectHTML("profilePhoneCountry")}
+        ${countrySelectHTML("profilePhoneCountry", guessCountryIso(ME.user.phone))}
         <input id="profilePhone" type="tel" inputmode="tel" autocomplete="tel" value="${esc(ME.user.phone || "")}">
       </div>
       <p class="muted" style="margin:.3rem 0 0;font-size:.8rem">Lets you sign in with a texted code instead of a password, and is how announcements can reach you by text.</p>
@@ -993,14 +1009,15 @@ async function pageSecuritySetup(forced) {
       <button class="btn ${forced ? 'btn-secondary' : 'btn-primary'}" id="saveNameBtn">Save Profile</button>
     </section>
   `;
-  // Someone who already has a password resets it with the current one (masked);
-  // an account with none yet just sets one.
+  // No "enter your current password" step, on purpose: being on this screen at all
+  // already requires a valid signed-in session, and real users here (elderly family
+  // members) routinely forget their old password - the whole reason the texted
+  // sign-in code exists too. See the comment on update_security() server-side.
   const hasPw = !!ME.user.has_password;
   const passwordCard = `
     <section class="card form-card">
     <h2>${hasPw ? "Reset your password" : "Set up your password"}</h2>
-    <p class="muted">${hasPw ? "Enter your current password, then a new one." : "You'll use this to sign in."} At least 8 characters.</p>
-    ${hasPw ? passwordFieldHTML("currentPassword", "Current password", { autocomplete: "current-password" }) : ""}
+    <p class="muted">${hasPw ? "Choose a new password." : "You'll use this to sign in."} At least 8 characters.</p>
     ${passwordFieldHTML("newPassword", hasPw ? "New password" : "Password", { confirm: true })}
     <div id="pwMsg"></div>
     <button class="btn ${forced ? 'btn-primary' : 'btn-secondary'}" id="savePwBtn">${hasPw ? "Reset Password" : "Save Password"}</button>
@@ -1087,15 +1104,13 @@ async function pageSecuritySetup(forced) {
     const mismatch = passwordMismatchError("newPassword");
     if (mismatch) return document.getElementById("pwMsg").innerHTML = alertBox(mismatch.message);
     const password = document.getElementById("newPassword").value;
-    const current = document.getElementById("currentPassword");
     try {
-      await api.patch("/auth/security", { password, current_password: current ? current.value : undefined });
+      await api.patch("/auth/security", { password });
       if (forced) return boot();
       ME.user.has_password = true;
       document.getElementById("pwMsg").innerHTML = alertBox(hasPw ? "Password reset!" : "Password saved!", true);
       document.getElementById("newPassword").value = "";
       document.getElementById("newPasswordConfirm").value = "";
-      if (current) current.value = "";
     } catch (e) {
       const el = document.getElementById("pwMsg");
       el.innerHTML = alertBox(e.message);

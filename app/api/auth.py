@@ -261,11 +261,10 @@ def update_security():
         password = data.get("password") or ""
         if len(password) < 8:
             return jsonify({"error": "Password must be at least 8 characters."}), 400
-        # Resetting an existing password needs the current one. Not when it's a
-        # temporary password the person just signed in with, or when none is set yet.
-        if g.user.password_hash and not g.user.must_change_password and \
-                not verify_password(data.get("current_password") or "", g.user.password_hash):
-            return jsonify({"error": "Your current password isn't right."}), 400
+        # Deliberately doesn't ask for the current password: this app's real users
+        # routinely forget it (that's the actual problem the texted sign-in code solves
+        # too), and reaching this endpoint at all already requires a valid session - that
+        # bar is the same one every other change on this account goes through.
         if g.user.must_change_password and verify_password(password, g.user.password_hash):
             return jsonify({"error": "Please choose a different password than the one you were given."}), 400
         g.user.password_hash = hash_password(password)

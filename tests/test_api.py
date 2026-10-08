@@ -733,13 +733,12 @@ def test_only_clan_admin_can_change_names(app, users):
     assert users[CARA_USER].patch("/api/auth/me", json={"full_name": "Cara"}).status_code == 200
 
 
-def test_password_reset_needs_current_password(app, users):
+def test_password_reset_does_not_need_the_current_password(app, users):
+    # Deliberate: a valid session is already the bar (see update_security()'s comment) -
+    # real users here routinely forget their old password.
     bob = users[BOB_USER]
-    assert bob.patch("/api/auth/security", json={"password": "another-long-pass"}).status_code == 400
-    assert bob.patch("/api/auth/security", json={"password": "another-long-pass",
-                                                 "current_password": "wrong-password"}).status_code == 400
-    assert bob.patch("/api/auth/security", json={"password": "another-long-pass",
-                                                 "current_password": PASSWORD}).status_code == 200
+    assert bob.patch("/api/auth/security", json={"password": "short"}).status_code == 400  # still enforced
+    assert bob.patch("/api/auth/security", json={"password": "another-long-pass"}).status_code == 200
     fresh = app.test_client()
     assert fresh.post("/api/auth/login-password",
                       json={"username": BOB_USER, "password": "another-long-pass"}).status_code == 200
