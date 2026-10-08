@@ -720,6 +720,20 @@ function guessCountryIso(e164) {
   }
   return bestIso;
 }
+// The country <select> next to a phone field already shows its dial code, so the field
+// itself showing an already-saved number's full "+18185551234" repeats it right back -
+// this strips the matched dial code (same matching as guessCountryIso, so they always
+// agree on where the split is), leaving just the plain national number to display/edit.
+function nationalPartOf(e164) {
+  if (!e164 || !e164.startsWith("+")) return e164 || "";
+  const digits = e164.slice(1);
+  let bestLen = 0;
+  for (const [, , , dial] of COUNTRY_CODES) {
+    const d = String(dial);
+    if (digits.startsWith(d) && d.length > bestLen) bestLen = d.length;
+  }
+  return bestLen ? digits.slice(bestLen) : digits;
+}
 
 // On Android Chrome, automatically fills the code input the instant the text arrives -
 // no need to switch apps and copy it. Relies on the SMS ending with the WebOTP binding
@@ -962,6 +976,11 @@ async function pageSecuritySetup(forced) {
   // A brand-new account has to set a password first, so that card leads (and
   // holds the primary button); otherwise the profile leads.
   const canEditName = !ME.user.full_name || FAMILY?.role === "admin" || ME.user.is_app_admin;
+  // The field shows/edits just the national number (the country <select> already shows
+  // the dial code - no need to repeat it inside the text too); these are what it starts
+  // at, so Save can tell whether either one actually changed.
+  const originalPhoneNational = nationalPartOf(ME.user.phone);
+  const originalPhoneCountry = guessCountryIso(ME.user.phone);
   const households = FAMILY ? await api.get(`/families/${FAMILY.id}/households`) : [];
   const houseOpts = `<option value="">Not in a household yet</option>` +
     households.map(h => `<option value="${h.id}" ${h.id === FAMILY?.household_id ? "selected" : ""}>${esc(h.name)}</option>`).join("");
@@ -990,8 +1009,8 @@ async function pageSecuritySetup(forced) {
       <p class="muted" style="margin:0">Only your clan admin can change your display name.</p>`}
       <label for="profilePhone">Mobile phone number</label>
       <div class="phone-field">
-        ${countrySelectHTML("profilePhoneCountry", guessCountryIso(ME.user.phone))}
-        <input id="profilePhone" type="tel" inputmode="tel" autocomplete="tel" value="${esc(ME.user.phone || "")}">
+        ${countrySelectHTML("profilePhoneCountry", originalPhoneCountry)}
+        <input id="profilePhone" type="tel" inputmode="tel" autocomplete="tel" value="${esc(originalPhoneNational)}">
       </div>
       <p class="muted" style="margin:.3rem 0 0;font-size:.8rem">Lets you sign in with a texted code instead of a password, and is how announcements can reach you by text.</p>
       ${FAMILY ? `
@@ -1083,13 +1102,17 @@ async function pageSecuritySetup(forced) {
       ME.user = r.user;
 
       // Phone lives on /auth/security (shares its validation/uniqueness check with the
-      // sign-in flow), not /auth/me - a separate call, same button. Blank is only ever
-      // treated as "left alone", not "clear it": /auth/security rejects an empty phone,
-      // and this screen has no way to remove one once set (not asked for; the admin's
-      // Members table already can).
+      // sign-in flow), not /auth/me - a separate call, same button. Compared against
+      // what the field/country started at (not ME.user.phone directly - that's the full
+      // E.164 string, not the bare national number this field shows), so just reopening
+      // and resaving the form without touching either doesn't resend it. Blank is only
+      // ever treated as "left alone", not "clear it": /auth/security rejects an empty
+      // phone, and this screen has no way to remove one once set (not asked for; the
+      // admin's Members table already can).
       const phone = val("profilePhone").trim();
-      if (phone && phone !== (ME.user.phone || "")) {
-        const pr = await api.patch("/auth/security", { phone, phone_country: val("profilePhoneCountry") });
+      const phoneCountry = val("profilePhoneCountry");
+      if (phone && (phone !== originalPhoneNational || phoneCountry !== originalPhoneCountry)) {
+        const pr = await api.patch("/auth/security", { phone, phone_country: phoneCountry });
         ME.user = pr.user;
       }
 
