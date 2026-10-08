@@ -6,6 +6,7 @@ from flask import Blueprint, request, jsonify, g
 from ..extensions import db
 from ..models import Family, FamilyMember, Household, User
 from ..middleware.auth import require_auth, require_family_member, require_family_admin
+from ..services import otp_service
 from ..utils import normalize_phone, normalize_username, hash_password, slugify_username_base
 
 bp = Blueprint("families", __name__)
@@ -17,6 +18,25 @@ def _make_join_code():
         code = "".join(secrets.choice(alphabet) for _ in range(8))
         if not Family.query.filter_by(join_code=code).first():
             return code
+
+
+@bp.get("/families/lookup-code/<code>")
+def lookup_join_code(code):
+    """The one deliberately unauthenticated endpoint in this file - used by the "Join a
+    Clan" screen before an account exists, so someone can see which clan a code belongs
+    to and confirm it's the right one before creating an account tied to it. Only ever
+    returns a name, never a member list or anything else, and the code space (8 random
+    letters/digits, ~2.8 trillion combinations) makes it impractical to guess - but it's
+    still reachable with zero prior knowledge, so it gets the same IP rate limit as
+    /auth/send-code for the same reason (see enforce_ip_rate_limit's docstring)."""
+    try:
+        otp_service.enforce_ip_rate_limit(request.remote_addr or "unknown")
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 429
+    fam = Family.query.filter_by(join_code=code.strip().upper()).first()
+    if not fam:
+        return jsonify({"error": "That clan code isn't valid. Please check it and try again."}), 404
+    return jsonify({"name": fam.name})
 
 
 @bp.post("/families")

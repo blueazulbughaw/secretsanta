@@ -533,7 +533,8 @@ function pageLogin() {
     <div id="msg"></div>
     <button class="btn btn-primary" id="loginBtn">Sign In</button>
     <button class="btn btn-quiet" id="useCodeBtn">Use a Text Code Instead</button>
-    <button class="btn btn-quiet" id="createAccountBtn">Don't Have an Account? Create One</button>
+    <button class="btn btn-quiet" id="joinClanBtn">Join a Clan</button>
+    <button class="btn btn-quiet" id="createClanBtn">Create a New Clan</button>
     <p class="muted center" style="font-size:.78rem;margin-top:1.5rem">
       By continuing you agree to our
       <a href="/terms" target="_blank" rel="noopener">Terms of Service</a>
@@ -550,7 +551,66 @@ function pageLogin() {
     } catch (e) { showError(e); }
   };
   document.getElementById("useCodeBtn").onclick = () => pagePhoneEntry();
-  document.getElementById("createAccountBtn").onclick = () => pageRegisterStart();
+  document.getElementById("joinClanBtn").onclick = () => pageJoinClan();
+  document.getElementById("createClanBtn").onclick = () => {
+    // Starting a brand-new clan, not joining one - clear any code left over from a
+    // previous "Join a Clan" attempt in this same tab so it can't bleed in here.
+    PENDING_JOIN_CODE = null;
+    history.replaceState(null, "", location.pathname + location.search);
+    pageRegisterStart();
+  };
+}
+
+// Entering a clan code before creating an account - the admin shares this code the same
+// way they'd share the #/join/CODE link, just read aloud or typed instead of clicked.
+function pageJoinClan() {
+  render("", `
+    <div class="center" style="margin-top:2rem">
+      <div style="font-size:3rem">🔑</div>
+      <h2>Join a Clan</h2>
+      <p class="muted">Ask your clan admin for your clan's code, then enter it below.</p>
+    </div>
+    <label for="clanCode">Clan code</label>
+    <input id="clanCode" class="code-input" maxlength="8" style="text-transform:uppercase">
+    <div id="msg"></div>
+    <button class="btn btn-primary" id="findClanBtn">Continue</button>
+    <button class="btn btn-quiet" id="backToLoginBtn2">Back to Sign In</button>
+  `);
+  document.getElementById("backToLoginBtn2").onclick = () => pageLogin();
+  document.getElementById("findClanBtn").onclick = async () => {
+    const code = document.getElementById("clanCode").value.trim().toUpperCase();
+    if (!code) return showError({ message: "Please enter a clan code." });
+    try {
+      const r = await api.get(`/families/lookup-code/${encodeURIComponent(code)}`);
+      pageConfirmJoinClan(code, r.name);
+    } catch (e) { showError(e); }
+  };
+}
+
+// One extra step before account creation: shows the clan's actual name so whoever's
+// joining can confirm it's the right one before committing to it - a typo'd code could
+// otherwise land them in a stranger's clan with no warning until it's done.
+function pageConfirmJoinClan(code, clanName) {
+  render("", `
+    <div class="center" style="margin-top:2rem">
+      <div style="font-size:3rem">🎉</div>
+      <h2>${esc(clanName)}</h2>
+      <p class="muted">Is this the clan you're trying to join?</p>
+    </div>
+    <button class="btn btn-primary" id="confirmJoinBtn">Yes, Join This Clan</button>
+    <button class="btn btn-quiet" id="notRightClanBtn">That's Not It - Try Another Code</button>
+  `);
+  document.getElementById("notRightClanBtn").onclick = () => pageJoinClan();
+  document.getElementById("confirmJoinBtn").onclick = () => {
+    // Same effect as landing on a shared #/join/CODE link (captureEntryIntent() sets this
+    // from the URL on a fresh page load); setting it directly here does the same thing
+    // without a reload, since this is already a live, running page. replaceState (not
+    // `location.hash =`) so the URL still ends up matching a real share link, without
+    // firing a hashchange - see the comment at the top of navigate().
+    PENDING_JOIN_CODE = code;
+    history.replaceState(null, "", "#/join/" + code);
+    pageRegisterStart();
+  };
 }
 
 // Country calling codes for the phone-entry dropdowns. Just a convenience default for

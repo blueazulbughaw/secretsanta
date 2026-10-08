@@ -312,6 +312,27 @@ def test_register_with_clan_name_creates_family_and_makes_admin(app):
     assert len(me["families"]) == 1 and me["families"][0]["role"] == "admin"
 
 
+def test_lookup_join_code_is_public_and_only_ever_returns_a_name(app):
+    c = app.test_client()
+    r = c.post("/api/auth/register", json={
+        "username": "founder2", "password": PASSWORD, "full_name": "Founder Two", "clan_name": "The Rivera Clan",
+    })
+    code = r.get_json()["family"]["join_code"]
+
+    # No cookie at all - this is the one endpoint in families.py reachable signed out.
+    anon = app.test_client()
+    ok = anon.get(f"/api/families/lookup-code/{code}")
+    assert ok.status_code == 200
+    assert ok.get_json() == {"name": "The Rivera Clan"}
+
+    bad = anon.get("/api/families/lookup-code/NOTREAL1")
+    assert bad.status_code == 404
+    assert "isn't valid" in bad.get_json()["error"]
+
+    # lowercase still resolves (mirrors how /families/join normalizes the code)
+    assert anon.get(f"/api/families/lookup-code/{code.lower()}").get_json() == {"name": "The Rivera Clan"}
+
+
 def test_first_family_creation_free_for_any_user(app):
     # A user who registered without a clan_name (no family yet) can still
     # create their first family later via POST /families without needing
