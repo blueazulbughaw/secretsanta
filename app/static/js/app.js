@@ -17,6 +17,7 @@ let ME = null;          // { user, families }
 let FAMILY = null;      // active family {id, name, role}
 let PENDING_JOIN_CODE = null;
 let IS_REGISTER_ENTRY = false;
+let _otpAbortController = null;  // see startOtpAutofill() below
 
 (function captureEntryIntent() {
   // Support both hash-based (#/join/CODE, #/register) and plain-path
@@ -73,6 +74,9 @@ function h(html) { const t = document.createElement("template"); t.innerHTML = h
 // card: put the whole page in one white card (forms, threads); pages made of
 // several sections build their own cards instead.
 function render(title, html, { wide = false, card = false } = {}) {
+  // Leaving whatever page was listening for a texted code (see startOtpAutofill) -
+  // stop listening so it doesn't resolve into a page that no longer has a #code field.
+  if (_otpAbortController) { _otpAbortController.abort(); _otpAbortController = null; }
   $title.textContent = title;
   $app.classList.toggle("wide", wide);
   $app.innerHTML = "";
@@ -506,59 +510,80 @@ function pageLogin() {
 // reading a plain national number ("818 555 0100" + US -> +18185550100) - it never
 // restricts input: typing a full "+44 7911 123456" always wins over whatever's picked
 // here (normalize_phone() server-side ignores the selected country once it sees a "+").
-// Keep this array in sync, value for value, with the one in templates/sms_optin.html and
-// the static <option> list in templates/_login_fallback.html.
+// Shown as flag + dial code (not the full name) so the dropdown stays narrow next to the
+// phone field, especially on a phone screen; the full name is still there as a tooltip
+// and in the open dropdown list. Keep this array in sync, value for value, with the one
+// in templates/sms_optin.html and the static <option> list in templates/_login_fallback.html.
 const COUNTRY_CODES = [
-  ["US", "United States", 1],
-  ["AR", "Argentina", 54],
-  ["AU", "Australia", 61],
-  ["BD", "Bangladesh", 880],
-  ["BR", "Brazil", 55],
-  ["CA", "Canada", 1],
-  ["CN", "China", 86],
-  ["CO", "Colombia", 57],
-  ["DO", "Dominican Republic", 1],
-  ["EG", "Egypt", 20],
-  ["FR", "France", 33],
-  ["DE", "Germany", 49],
-  ["HK", "Hong Kong", 852],
-  ["IN", "India", 91],
-  ["ID", "Indonesia", 62],
-  ["IE", "Ireland", 353],
-  ["IL", "Israel", 972],
-  ["IT", "Italy", 39],
-  ["JM", "Jamaica", 1],
-  ["JP", "Japan", 81],
-  ["KE", "Kenya", 254],
-  ["MY", "Malaysia", 60],
-  ["MX", "Mexico", 52],
-  ["NL", "Netherlands", 31],
-  ["NZ", "New Zealand", 64],
-  ["NG", "Nigeria", 234],
-  ["PK", "Pakistan", 92],
-  ["PH", "Philippines", 63],
-  ["PL", "Poland", 48],
-  ["PT", "Portugal", 351],
-  ["PR", "Puerto Rico", 1],
-  ["SA", "Saudi Arabia", 966],
-  ["SG", "Singapore", 65],
-  ["ZA", "South Africa", 27],
-  ["KR", "South Korea", 82],
-  ["ES", "Spain", 34],
-  ["SE", "Sweden", 46],
-  ["TW", "Taiwan", 886],
-  ["TH", "Thailand", 66],
-  ["AE", "United Arab Emirates", 971],
-  ["GB", "United Kingdom", 44],
-  ["VN", "Vietnam", 84],
+  ["US", "🇺🇸", "United States", 1],
+  ["AR", "🇦🇷", "Argentina", 54],
+  ["AU", "🇦🇺", "Australia", 61],
+  ["BD", "🇧🇩", "Bangladesh", 880],
+  ["BR", "🇧🇷", "Brazil", 55],
+  ["CA", "🇨🇦", "Canada", 1],
+  ["CN", "🇨🇳", "China", 86],
+  ["CO", "🇨🇴", "Colombia", 57],
+  ["DO", "🇩🇴", "Dominican Republic", 1],
+  ["EG", "🇪🇬", "Egypt", 20],
+  ["FR", "🇫🇷", "France", 33],
+  ["DE", "🇩🇪", "Germany", 49],
+  ["HK", "🇭🇰", "Hong Kong", 852],
+  ["IN", "🇮🇳", "India", 91],
+  ["ID", "🇮🇩", "Indonesia", 62],
+  ["IE", "🇮🇪", "Ireland", 353],
+  ["IL", "🇮🇱", "Israel", 972],
+  ["IT", "🇮🇹", "Italy", 39],
+  ["JM", "🇯🇲", "Jamaica", 1],
+  ["JP", "🇯🇵", "Japan", 81],
+  ["KE", "🇰🇪", "Kenya", 254],
+  ["MY", "🇲🇾", "Malaysia", 60],
+  ["MX", "🇲🇽", "Mexico", 52],
+  ["NL", "🇳🇱", "Netherlands", 31],
+  ["NZ", "🇳🇿", "New Zealand", 64],
+  ["NG", "🇳🇬", "Nigeria", 234],
+  ["PK", "🇵🇰", "Pakistan", 92],
+  ["PH", "🇵🇭", "Philippines", 63],
+  ["PL", "🇵🇱", "Poland", 48],
+  ["PT", "🇵🇹", "Portugal", 351],
+  ["PR", "🇵🇷", "Puerto Rico", 1],
+  ["SA", "🇸🇦", "Saudi Arabia", 966],
+  ["SG", "🇸🇬", "Singapore", 65],
+  ["ZA", "🇿🇦", "South Africa", 27],
+  ["KR", "🇰🇷", "South Korea", 82],
+  ["ES", "🇪🇸", "Spain", 34],
+  ["SE", "🇸🇪", "Sweden", 46],
+  ["TW", "🇹🇼", "Taiwan", 886],
+  ["TH", "🇹🇭", "Thailand", 66],
+  ["AE", "🇦🇪", "United Arab Emirates", 971],
+  ["GB", "🇬🇧", "United Kingdom", 44],
+  ["VN", "🇻🇳", "Vietnam", 84],
 ];
 
 function countrySelectHTML(id, selectedIso) {
   selectedIso = selectedIso || "US";
-  const opts = COUNTRY_CODES.map(([iso, name, dial]) =>
-    `<option value="${iso}" ${iso === selectedIso ? "selected" : ""}>${esc(name)} (+${dial})</option>`
+  const opts = COUNTRY_CODES.map(([iso, flag, name, dial]) =>
+    `<option value="${iso}" title="${esc(name)} (+${dial})" ${iso === selectedIso ? "selected" : ""}>${flag} +${dial}</option>`
   ).join("");
   return `<select id="${id}" class="country-select" aria-label="Country code">${opts}</select>`;
+}
+
+// On Android Chrome, automatically fills the code input the instant the text arrives -
+// no need to switch apps and copy it. Relies on the SMS ending with the WebOTP binding
+// line (see sms_service.py) and is a no-op everywhere else (desktop, iOS - those already
+// get a keyboard-level suggestion from autocomplete="one-time-code" on the input, which
+// this doesn't replace). Only ever fills the field; the person still taps Sign In.
+function startOtpAutofill(inputId) {
+  if (!("OTPCredential" in window)) return;
+  _otpAbortController = new AbortController();
+  navigator.credentials.get({ otp: { transport: ["sms"] }, signal: _otpAbortController.signal })
+    .then((otp) => {
+      const el = document.getElementById(inputId);
+      if (el && otp && otp.code) {
+        el.value = otp.code;
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    })
+    .catch(() => {});  // aborted (navigated away) or none arrived - nothing to show for either
 }
 
 // Forgotten passwords are the actual problem this solves, so this never needs a username -
@@ -614,7 +639,7 @@ function pageCodeEntry(phone, phone_country) {
   render("", `
     <div class="center" style="margin-top:2rem"><div style="font-size:3rem">💬</div></div>
     <h2 class="center">Enter your sign-in code</h2>
-    <p class="muted center">If that number has an account, we've texted a 6-digit code to it. It works for 10 minutes.</p>
+    <p class="muted center">If that number has an account, we've texted a 6-digit code to it. It expires in 10 minutes.</p>
     <label for="code">Sign-in code</label>
     <input id="code" class="code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
     <div id="msg"></div>
@@ -623,6 +648,7 @@ function pageCodeEntry(phone, phone_country) {
     <button class="btn btn-quiet" id="usePasswordBtn">Use My Password Instead</button>
   `);
   document.getElementById("code").focus();
+  startOtpAutofill("code");
   document.getElementById("verifyBtn").onclick = async () => {
     try {
       await api.post("/auth/verify-otp", { phone, phone_country, code: document.getElementById("code").value.trim() });

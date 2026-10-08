@@ -32,3 +32,8 @@ class Config:
     OTP_REQUESTS_PER_WINDOW = 3       # per phone number
     OTP_WINDOW_MINUTES = 15
     JWT_DAYS = 7
+
+    # The bare domain (no scheme) the sign-in code SMS is bound to for WebOTP autofill
+    # (see sms_service.py) - Android Chrome only auto-fills the code when the text ends
+    # with "@<this domain> #<code>" and the page requesting it is served from that domain.
+    SITE_DOMAIN = os.getenv("SITE_DOMAIN", "secretsanta.glad.codes")
