@@ -16,6 +16,7 @@ const $lightboxClose = document.getElementById("lightboxClose");
 let ME = null;          // { user, families }
 let FAMILY = null;      // active family {id, name, role}
 let PENDING_JOIN_CODE = null;
+let PENDING_JOIN_CLAN_NAME = null;   // set once confirmOrFixJoinCode/pageJoinClan has looked up PENDING_JOIN_CODE
 let IS_REGISTER_ENTRY = false;
 let _otpAbortController = null;  // see startOtpAutofill() below
 
@@ -565,6 +566,7 @@ function pageLogin() {
     // Starting a brand-new clan, not joining one - clear any code left over from a
     // previous "Join a Clan" attempt in this same tab so it can't bleed in here.
     PENDING_JOIN_CODE = null;
+    PENDING_JOIN_CLAN_NAME = null;
     history.replaceState(null, "", location.pathname + location.search);
     pageRegisterStart();
   };
@@ -633,6 +635,7 @@ function pageConfirmJoinClan(code, clanName) {
     // `location.hash =`) so the URL still ends up matching a real share link, without
     // firing a hashchange - see the comment at the top of navigate().
     PENDING_JOIN_CODE = code;
+    PENDING_JOIN_CLAN_NAME = clanName;
     history.replaceState(null, "", "#/join/" + code);
     pageRegisterStart();
   };
@@ -803,7 +806,7 @@ function pageRegisterStart() {
       <div style="font-size:4rem">🎁</div>
       <h2>Create Your Account</h2>
       <p class="muted">${PENDING_JOIN_CODE
-        ? "You've been invited to join a family. Pick a username to get started."
+        ? `You've been invited to join ${esc(PENDING_JOIN_CLAN_NAME || "a clan")}. Pick a username to get started.`
         : "Pick a username to get started."}</p>
     </div>
     <label for="newUsername">Create Username</label>
@@ -1069,6 +1072,7 @@ function pageNoFamily() {
     try {
       await api.post("/families/join", { join_code: document.getElementById("jcode").value });
       PENDING_JOIN_CODE = null;
+      PENDING_JOIN_CLAN_NAME = null;
       boot();
     } catch (e) { showError(e); }
   };
