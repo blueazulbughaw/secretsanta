@@ -12,6 +12,10 @@ const $shell = document.getElementById("shell");
 const $lightbox = document.getElementById("lightbox");
 const $lightboxImg = document.getElementById("lightboxImg");
 const $lightboxClose = document.getElementById("lightboxClose");
+const $installBanner = document.getElementById("installBanner");
+const $installBannerText = document.getElementById("installBannerText");
+const $installBtn = document.getElementById("installBtn");
+const $installDismissBtn = document.getElementById("installDismissBtn");
 
 let ME = null;          // { user, families }
 let FAMILY = null;      // active family {id, name, role}
@@ -36,6 +40,54 @@ let _otpAbortController = null;  // see startOtpAutofill() below
   }
   if (hashPath === "/register" || plainPath === "/register") {
     IS_REGISTER_ENTRY = true;
+  }
+})();
+
+// ---------- "install this app" prompt ----------
+// Registered at top level (not inside boot() or any page function) so it's listening
+// from the very first moment the page loads - Chrome can fire beforeinstallprompt early,
+// and the event is only ever delivered once; missing it means no install button all
+// session. Lives outside #app (see index.html) so it survives every page navigation
+// instead of being wiped by render().
+(function installPrompt() {
+  const DISMISS_KEY = "installBannerDismissed";
+  let dismissedRecently = false;
+  try { dismissedRecently = localStorage.getItem(DISMISS_KEY) === "1"; } catch (_) {}
+
+  function dismiss() {
+    $installBanner.hidden = true;
+    try { localStorage.setItem(DISMISS_KEY, "1"); } catch (_) {}
+  }
+  $installDismissBtn.onclick = dismiss;
+
+  // Android/Chrome: Chrome decides it's installable and offers to hand us the prompt -
+  // e.preventDefault() stops Chrome's own banner so this one is the only one shown.
+  let deferredPrompt = null;
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    if (dismissedRecently) return;
+    $installBannerText.textContent = "Install Secret Santa on your phone for quick access.";
+    $installBtn.hidden = false;
+    $installBanner.hidden = false;
+  });
+  $installBtn.onclick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;   // each prompt() only works once
+    $installBanner.hidden = true;
+  };
+  window.addEventListener("appinstalled", () => { $installBanner.hidden = true; });
+
+  // iOS Safari never fires beforeinstallprompt - there's no programmatic install at all,
+  // just Share > Add to Home Screen - so this is a static hint instead of a real button.
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isStandalone = window.navigator.standalone === true
+    || window.matchMedia("(display-mode: standalone)").matches;
+  if (isIOS && !isStandalone && !dismissedRecently) {
+    $installBannerText.textContent = 'Install Secret Santa: tap Share, then "Add to Home Screen."';
+    $installBanner.hidden = false;   // installBtn stays hidden - nothing to tap-to-install here
   }
 })();
 
