@@ -51,8 +51,6 @@ class TestConfig:
 @pytest.fixture()
 def app():
     app = create_app(TestConfig)
-    from app.services import otp_service
-    otp_service._ip_hits.clear()  # in-memory, module-level - would otherwise leak between tests
     with app.app_context():
         db.create_all()
         yield app

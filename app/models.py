@@ -76,6 +76,18 @@ class OtpCode(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 
+class RateLimitHit(db.Model):
+    """One counted request for an IP rate limit (otp_service.check_ip_rate_limit). Kept in
+    the database, not process memory: production runs several app processes that restart
+    often, so an in-memory count was split between them and kept being wiped."""
+    __tablename__ = "rate_limit_hits"
+    id = db.Column(BigIntPK, primary_key=True)
+    bucket = db.Column(db.String(20), nullable=False)
+    ip = db.Column(db.String(64), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    __table_args__ = (db.Index("ix_rate_limit_lookup", "bucket", "ip", "created_at"),)
+
+
 class Family(db.Model):
     __tablename__ = "families"
     id = db.Column(BigIntPK, primary_key=True)

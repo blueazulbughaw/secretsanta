@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from flask import current_app
 
 from ..extensions import db
-from ..models import OtpCode
+from ..models import OtpCode, RateLimitHit
 
 
 def _hash(code: str) -> str:
@@ -36,7 +36,7 @@ def request_code(phone: str) -> str:
     return code
 
 
-_ip_hits: dict = {}
+RATE_LIMIT_KEEP = timedelta(hours=1)  # longer than any window; older rows are pruned
 
 
 def enforce_ip_rate_limit(ip: str, limit: int = 10, window_minutes: int = 15):
@@ -46,32 +46,28 @@ def enforce_ip_rate_limit(ip: str, limit: int = 10, window_minutes: int = 15):
     system. /auth/send-code tells the caller outright whether a number is on an account
     (see the comment above send_code() in api/auth.py), so this cap on how many DIFFERENT
     numbers one requester can try in a window is the main thing standing between that and
-    someone enumerating every phone number in the family by brute force. In-memory, so it
-    resets if the app process restarts and is tracked separately per worker process under
-    a multi-process deployment - a real but acceptable limitation for this app's scale."""
+    someone enumerating every phone number in the family by brute force."""
     check_ip_rate_limit(ip, "code", limit, window_minutes)
     record_ip_hit(ip, "code")
 
 
-def _recent_hits(key, window_minutes):
-    window_start = datetime.utcnow() - timedelta(minutes=window_minutes)
-    hits = [t for t in _ip_hits.get(key, []) if t >= window_start]
-    if hits:
-        _ip_hits[key] = hits
-    else:
-        _ip_hits.pop(key, None)  # don't keep idle IPs around forever
-    return hits
-
-
 def check_ip_rate_limit(ip: str, bucket: str, limit: int, window_minutes: int = 15):
     """Raises ValueError once `ip` has `limit` recorded hits in `bucket` within the window.
-    Doesn't record anything itself - see record_ip_hit()."""
-    if len(_recent_hits((bucket, ip), window_minutes)) >= limit:
+    Doesn't record anything itself - see record_ip_hit(). Counted in the database so every
+    app process shares one count (production runs several, and recycles them often)."""
+    window_start = datetime.utcnow() - timedelta(minutes=window_minutes)
+    recent = RateLimitHit.query.filter(
+        RateLimitHit.bucket == bucket, RateLimitHit.ip == ip[:64],
+        RateLimitHit.created_at >= window_start).count()
+    if recent >= limit:
         raise ValueError("Too many requests from this network. Please wait a few minutes and try again.")
 
 
 def record_ip_hit(ip: str, bucket: str):
-    _ip_hits.setdefault((bucket, ip), []).append(datetime.utcnow())
+    now = datetime.utcnow()
+    RateLimitHit.query.filter(RateLimitHit.created_at < now - RATE_LIMIT_KEEP).delete()
+    db.session.add(RateLimitHit(bucket=bucket, ip=ip[:64], created_at=now))
+    db.session.commit()
 
 
 def verify_code(phone: str, code: str) -> bool:

@@ -54,6 +54,16 @@ CREATE TABLE otp_codes (
   INDEX idx_otp_phone_expires (phone, expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- IP rate limits (wrong passwords, sign-in code requests, clan-code lookups). One row per
+-- counted request; rows older than the window are pruned as new ones come in.
+CREATE TABLE rate_limit_hits (
+  id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  bucket      VARCHAR(20)  NOT NULL,           -- 'code' | 'login'
+  ip          VARCHAR(64)  NOT NULL,
+  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX ix_rate_limit_lookup (bucket, ip, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ------------------------------------------------------------
 -- FAMILIES — top-level tenant. One family = one circle of members.
 -- ------------------------------------------------------------
