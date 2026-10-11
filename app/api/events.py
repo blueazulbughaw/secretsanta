@@ -6,6 +6,7 @@ from ..extensions import db
 from ..models import (Event, EventParticipant, FamilyMember, Assignment, WishlistItem,
                       Message, Announcement, EventDish)
 from ..services.photo_service import remove_photo
+from ..utils import parse_amount
 from ..middleware.auth import (require_auth, require_family_member, require_family_admin, archived_error,
                                require_event_access)
 
@@ -35,6 +36,20 @@ def _apply_details(ev, data):
     return None
 
 
+WISHLIST_LIMIT_RANGE = (1, 20)  # matches the event form's min/max
+
+
+def _parse_wishlist_limit(raw):
+    lo, hi = WISHLIST_LIMIT_RANGE
+    try:
+        limit = int(raw)
+    except (TypeError, ValueError):
+        limit = None
+    if limit is None or not lo <= limit <= hi:
+        raise ValueError(f"The gift limit has to be a number from {lo} to {hi}.")
+    return limit
+
+
 def _event_and_membership(event_id):
     ev = Event.query.get_or_404(event_id)
     m, err = require_event_access(ev)
@@ -55,11 +70,17 @@ def create_event(family_id):
         return jsonify({"error": "Please choose a date for the event."}), 400
     if not name:
         return jsonify({"error": "Please give the event a name."}), 400
+    try:
+        budget = parse_amount(data.get("budget_amount"), "gift amount")
+        raw_limit = data.get("wishlist_limit")
+        limit = 5 if raw_limit in (None, "") else _parse_wishlist_limit(raw_limit)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     ev = Event(
         family_id=family_id, name=name[:120], event_date=event_date,
-        budget_amount=data.get("budget_amount"),
+        budget_amount=budget,
         budget_currency=(data.get("budget_currency") or "USD")[:3].upper(),
-        wishlist_limit=int(data.get("wishlist_limit") or 5),
+        wishlist_limit=limit,
         use_codenames=bool(data.get("use_codenames")),
         allow_same_household=bool(data.get("allow_same_household")),
         status="open", created_by=g.user.id,
@@ -123,16 +144,20 @@ def update_event(event_id):
     rule_fields = ("wishlist_limit", "use_codenames", "allow_same_household")
     if ev.status == "matched" and any(f in data for f in rule_fields):
         return jsonify({"error": "Names are already drawn. Re-draw to change rules."}), 400
-    if data.get("name"):
-        ev.name = data["name"][:120]
+    if str(data.get("name") or "").strip():
+        ev.name = str(data["name"]).strip()[:120]
     if data.get("event_date"):
         try:
-            ev.event_date = date.fromisoformat(data["event_date"])
+            ev.event_date = date.fromisoformat(str(data["event_date"]))
         except ValueError:
             return jsonify({"error": "Please choose a date for the event."}), 400
-    for field in ("budget_amount", "wishlist_limit"):
-        if field in data:
-            setattr(ev, field, data[field])
+    try:
+        if "budget_amount" in data:
+            ev.budget_amount = parse_amount(data["budget_amount"], "gift amount")
+        if "wishlist_limit" in data:
+            ev.wishlist_limit = _parse_wishlist_limit(data["wishlist_limit"])
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     for field in ("use_codenames", "allow_same_household"):
         if field in data:
             setattr(ev, field, bool(data[field]))

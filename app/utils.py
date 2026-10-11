@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal, InvalidOperation
 from urllib.parse import urlparse
 
 import phonenumbers
@@ -34,6 +35,20 @@ def normalize_link_url(raw) -> str:
     if parts.scheme.lower() not in ("http", "https") or not _HOST_RE.match(host):
         raise bad
     return url
+
+
+def parse_amount(raw, what="amount"):
+    """A money amount from a form: blank -> None, else a non-negative Decimal with
+    two places. Raises ValueError with a plain-language message."""
+    if raw is None or str(raw).strip() == "":
+        return None
+    try:
+        amount = Decimal(str(raw).strip())
+    except InvalidOperation:
+        raise ValueError(f"Please enter the {what} as a number, like 25 or 25.50.")
+    if not amount.is_finite() or amount < 0 or amount >= Decimal("100000000"):
+        raise ValueError(f"Please enter the {what} as a number, like 25 or 25.50.")
+    return amount.quantize(Decimal("0.01"))
 
 
 def normalize_username(raw: str) -> str:

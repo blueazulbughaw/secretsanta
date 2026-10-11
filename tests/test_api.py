@@ -934,7 +934,7 @@ def test_wishlist_order_is_the_priority(users):
     members = admin.get(f"/api/families/{fam['id']}/members").get_json()
     admin.put(f"/api/events/{ev['id']}/participants", json={"user_ids": [m["user"]["id"] for m in members]})
     clan = admin.get(f"/api/events/{ev['id']}/wishlists/clan").get_json()
-    bob_items = next(e for e in clan if e["user"]["username"] == BOB_USER)["items"]
+    bob_items = next(e for e in clan if e["user"]["display_name"] == "Bob")["items"]
     assert [i["item_name"] for i in bob_items] == ["Lamp", "Socks", "Book"]
 
     # a gift added later lands last, and editing never changes the order
@@ -1120,7 +1120,7 @@ def test_archived_event_is_view_only_but_everything_stays_readable(app, users, t
     listed = bob.get(f"/api/events/{eid}/wishlists/mine").get_json()
     assert listed["archived"] is True and [i["item_name"] for i in listed["items"]] == ["Boots", "Hat"]
     clan = cara.get(f"/api/events/{eid}/wishlists/clan").get_json()
-    boots = next(i for e in clan if e["user"]["username"] == BOB_USER for i in e["items"] if i["item_name"] == "Boots")
+    boots = next(i for e in clan if e["user"]["display_name"] == "Bob" for i in e["items"] if i["item_name"] == "Boots")
     assert boots["is_purchased"] is True
     assert [d["name"] for d in admin.get(f"/api/events/{eid}/dishes").get_json()[0]["dishes"]] == ["Lumpia"]
     assert admin.get(f"/api/events/{eid}").get_json()["status"] == "completed"
@@ -1280,8 +1280,8 @@ def test_household_shows_on_me_and_on_profiles(users):
     admin.put(f"/api/events/{ev['id']}/participants", json={"user_ids": [m["user"]["id"] for m in members]})
     for path in (f"/api/events/{ev['id']}/wishlists/clan", f"/api/events/{ev['id']}/wishlists"):
         entries = admin.get(path).get_json()
-        got = {e["user"]["username"]: e["household_name"] for e in entries}
-        assert got[BOB_USER] == "Reyes House" and got[CARA_USER] == ""
+        got = {e["user"]["display_name"]: e["household_name"] for e in entries}
+        assert got["Bob"] == "Reyes House" and got["Cara"] == ""
 
 
 def test_admin_can_choose_a_username_when_adding_a_member(app, users):
@@ -1340,7 +1340,7 @@ def test_members_only_see_the_events_they_are_joining(users):
     assert bob.get(f"/api/events/{mine['id']}/attendees").status_code == 200
     # the clan list in his event doesn't include people from events he's not in - only this event's people
     clan = bob.get(f"/api/events/{mine['id']}/wishlists/clan").get_json()
-    assert sorted(e["user"]["username"] for e in clan) == sorted([ADMIN_USER, BOB_USER, CARA_USER])
+    assert sorted(e["user"]["display_name"] for e in clan) == ["Ana", "Bob", "Cara"]
 
     # being added to the event gives access; being removed takes it away again
     admin.put(f"/api/events/{eid}/participants", json={"user_ids": [uid[ADMIN_USER], uid[CARA_USER], uid[BOB_USER]]})
@@ -1431,3 +1431,126 @@ def test_admin_can_edit_a_members_username(app, users):
 
     # members can't
     assert bob.patch(url, json={"username": "hax"}).status_code == 403
+
+
+def test_members_never_see_each_others_phone_email_or_username(app, users):
+    fam = users["_family"]
+    admin, bob = users[ADMIN_USER], users[BOB_USER]
+    users[CARA_USER].patch("/api/auth/security", json={"phone": "(555) 010-7777"})
+    users[CARA_USER].patch("/api/auth/me", json={"avoid_gifts": "Socks"})
+    private = {"phone", "email", "username", "is_app_admin", "has_password"}
+
+    # the members list: full details for the clan admin's Members page only
+    rows = bob.get(f"/api/families/{fam['id']}/members").get_json()
+    assert all(not (private & set(r["user"])) for r in rows)
+    cara = next(r["user"] for r in rows if r["user"]["display_name"] == "Cara")
+    assert cara["avoid_gifts"] == "Socks"                 # the profile card still needs this
+    admin_rows = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    assert next(r["user"] for r in admin_rows if r["user"]["display_name"] == "Cara")["phone"] == "+15550107777"
+
+    # the event's people + wishlists, for members and for the admin's all-wishlists view
+    ev = admin.post(f"/api/families/{fam['id']}/events",
+                    json={"name": "Xmas", "event_date": future_date()}).get_json()["event"]
+    join_everyone(users, ev)
+    for client, path in ((bob, "wishlists/clan"), (admin, "wishlists/clan"), (admin, "wishlists")):
+        entries = client.get(f"/api/events/{ev['id']}/{path}").get_json()
+        assert len(entries) == 3 and all(not (private & set(e["user"])) for e in entries)
+
+
+def test_sign_in_codes_are_never_written_to_the_log(app, users, monkeypatch, caplog):
+    import logging
+    from app.services import sms_service
+    sent = []
+    monkeypatch.setitem(app.config, "TWILIO_ACCOUNT_SID", "AC1")
+    monkeypatch.setitem(app.config, "TWILIO_AUTH_TOKEN", "tok")
+    monkeypatch.setitem(app.config, "TWILIO_FROM_NUMBER", "+15550000000")
+
+    class FakeClient:
+        def __init__(self, *a):
+            self.messages = self
+
+        def create(self, **kw):
+            sent.append(kw["body"])
+
+    monkeypatch.setattr(sms_service, "Client", FakeClient)
+    users[BOB_USER].patch("/api/auth/security", json={"phone": "(555) 010-1234"})
+    with caplog.at_level(logging.DEBUG):
+        r = app.test_client().post("/api/auth/send-code", json={"phone": "5550101234"})
+    assert r.status_code == 200 and len(sent) == 1
+    code = re.search(r"code is (\d{6})", sent[0]).group(1)
+    assert code not in caplog.text
+
+
+def test_wrong_passwords_are_rate_limited_per_network_but_successes_are_not(app, users):
+    from app.api.auth import LOGIN_FAILURES_PER_WINDOW
+    c = app.test_client()
+    for _ in range(LOGIN_FAILURES_PER_WINDOW + 5):     # a family signing in together is fine
+        assert c.post("/api/auth/login-password",
+                      json={"username": BOB_USER, "password": PASSWORD}).status_code == 200
+    for _ in range(LOGIN_FAILURES_PER_WINDOW):
+        assert c.post("/api/auth/login-password",
+                      json={"username": BOB_USER, "password": "guess"}).status_code == 401
+    r = c.post("/api/auth/login-password", json={"username": BOB_USER, "password": PASSWORD})
+    assert r.status_code == 429                         # even the right password, until it cools off
+    assert c.post("/api/auth/login-password",
+                  json={"username": BOB_USER, "password": PASSWORD},
+                  environ_base={"REMOTE_ADDR": "203.0.113.50"}).status_code == 200
+
+
+def test_buying_says_which_state_so_a_double_tap_cannot_undo_it(users):
+    ev = _drawn_event(users)
+    bob, cara, admin = users[BOB_USER], users[CARA_USER], users[ADMIN_USER]
+    item = bob.post(f"/api/events/{ev['id']}/wishlists", json={"item_name": "Scarf"}).get_json()["item"]
+    buy = f"/api/wishlists/{item['id']}/purchase"
+
+    def bought():
+        clan = admin.get(f"/api/events/{ev['id']}/wishlists/clan").get_json()
+        return next(i for e in clan for i in e["items"] if i["id"] == item["id"])["is_purchased"]
+
+    assert cara.post(buy, json={"purchased": True}).status_code == 200
+    assert cara.post(buy, json={"purchased": True}).status_code == 200   # second tap: still bought
+    assert bought() is True
+    r = admin.post(buy, json={"purchased": True})                        # someone else got there first
+    assert r.status_code == 409 and "already bought" in r.get_json()["error"]
+    assert admin.post(buy, json={"purchased": False}).status_code == 403  # and can't undo Cara's
+    assert cara.post(buy, json={"purchased": False}).status_code == 200
+    assert cara.post(buy, json={"purchased": False}).status_code == 200  # second tap: still not bought
+    assert bought() is False
+
+
+def test_money_and_gift_limit_must_be_sensible_numbers(users):
+    fam, admin, bob = users["_family"], users[ADMIN_USER], users[BOB_USER]
+    url = f"/api/families/{fam['id']}/events"
+    for bad in ({"wishlist_limit": "abc"}, {"wishlist_limit": 0}, {"wishlist_limit": 999},
+                {"budget_amount": "lots"}, {"budget_amount": -5}, {"budget_amount": "NaN"}):
+        r = admin.post(url, json={"name": "Xmas", "event_date": future_date(), **bad})
+        assert r.status_code == 400, bad
+    ev = admin.post(url, json={"name": "Xmas", "event_date": future_date(),
+                               "budget_amount": "25.5", "wishlist_limit": "7"}).get_json()["event"]
+    assert (ev["budget_amount"], ev["wishlist_limit"]) == (25.5, 7)
+    assert admin.patch(f"/api/events/{ev['id']}", json={"wishlist_limit": -1}).status_code == 400
+    assert admin.patch(f"/api/events/{ev['id']}", json={"budget_amount": "x"}).status_code == 400
+    r = admin.patch(f"/api/events/{ev['id']}", json={"budget_amount": "", "wishlist_limit": 3})
+    assert (r.get_json()["event"]["budget_amount"], r.get_json()["event"]["wishlist_limit"]) == (None, 3)
+
+    join_everyone(users, ev)
+    gifts = f"/api/events/{ev['id']}/wishlists"
+    assert bob.post(gifts, json={"item_name": "Book", "price_estimate": "cheap"}).status_code == 400
+    item = bob.post(gifts, json={"item_name": "Book", "price_estimate": "12.99"}).get_json()["item"]
+    assert item["price_estimate"] == 12.99
+    assert bob.patch(f"/api/wishlists/{item['id']}", json={"price_estimate": "-3"}).status_code == 400
+
+
+def test_deleting_a_gift_removes_its_photo(app, users, tmp_path):
+    app.static_folder = str(tmp_path)
+    ev = users[ADMIN_USER].post(f"/api/families/{users['_family']['id']}/events",
+                                json={"name": "Xmas", "event_date": future_date()}).get_json()["event"]
+    join_everyone(users, ev)
+    bob = users[BOB_USER]
+    item = bob.post(f"/api/events/{ev['id']}/wishlists",
+                    data={"item_name": "Lamp", "photo": make_image("lamp.png")},
+                    content_type="multipart/form-data").get_json()["item"]
+    photo = tmp_path / item["photo_url"].removeprefix("/static/")
+    assert photo.exists()
+    assert bob.delete(f"/api/wishlists/{item['id']}").status_code == 200
+    assert not photo.exists()

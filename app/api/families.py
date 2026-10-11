@@ -127,9 +127,11 @@ def list_members(family_id):
     if err:
         return err
     members = FamilyMember.query.filter_by(family_id=family_id).all()
+    # Phone, email and username are for the clan admin's Members page only.
+    is_admin = m.role == "admin"
     return jsonify([{
         "membership_id": mem.id,
-        "user": mem.user.to_dict(),
+        "user": mem.user.to_dict() if is_admin else mem.user.clan_dict(),
         "role": mem.role,
         "household_id": mem.household_id,
         "household_name": mem.household.name if mem.household else None,

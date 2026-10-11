@@ -292,8 +292,8 @@ function clanWishCard(item, index, readOnly = false) {
   if (item.is_purchased === undefined) footer = "";
   else if (readOnly) footer = item.is_purchased
     ? `<span class="tag-bought">${item.bought_by_me ? "✓ Bought by you" : "✓ Already bought"}</span>` : "";
-  else if (!item.is_purchased) footer = `<button class="btn btn-green" data-buy="${item.id}">I Bought This</button>`;
-  else if (item.bought_by_me) footer = `<span class="tag-bought">✓ Bought by you</span><button class="btn btn-quiet" data-buy="${item.id}">Unbought</button>`;
+  else if (!item.is_purchased) footer = `<button class="btn btn-green" data-buy="${item.id}" data-purchased="1">I Bought This</button>`;
+  else if (item.bought_by_me) footer = `<span class="tag-bought">✓ Bought by you</span><button class="btn btn-quiet" data-buy="${item.id}" data-purchased="0">Unbought</button>`;
   else footer = `<span class="tag-bought">✓ Already bought</span>`;
   return `<article class="wish-card ${item.is_purchased ? "bought" : ""}">
     ${wishCardBody(item, index + 1)}
@@ -306,8 +306,16 @@ function clanWishGrid(items, readOnly = false) {
 // Wires the "I Bought This" / "Unbought" buttons anywhere on the page.
 function wireBuyButtons() {
   $app.querySelectorAll("[data-buy]").forEach(b => b.onclick = async () => {
-    try { await api.post(`/wishlists/${b.dataset.buy}/purchase`); navigate(); }
-    catch (e) { showError(e); }
+    // Says which state it wants (not "toggle"), so a double-tap can't buy then un-buy.
+    b.disabled = true;
+    try {
+      await api.post(`/wishlists/${b.dataset.buy}/purchase`, { purchased: b.dataset.purchased === "1" });
+      navigate();
+    } catch (e) {
+      b.disabled = false;
+      if (e.status === 409) await navigate();  // someone else just bought it - show that
+      showError(e);
+    }
   });
 }
 

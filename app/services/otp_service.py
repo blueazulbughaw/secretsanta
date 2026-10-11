@@ -49,14 +49,29 @@ def enforce_ip_rate_limit(ip: str, limit: int = 10, window_minutes: int = 15):
     someone enumerating every phone number in the family by brute force. In-memory, so it
     resets if the app process restarts and is tracked separately per worker process under
     a multi-process deployment - a real but acceptable limitation for this app's scale."""
-    now = datetime.utcnow()
-    window_start = now - timedelta(minutes=window_minutes)
-    hits = [t for t in _ip_hits.get(ip, []) if t >= window_start]
-    if len(hits) >= limit:
-        _ip_hits[ip] = hits
+    check_ip_rate_limit(ip, "code", limit, window_minutes)
+    record_ip_hit(ip, "code")
+
+
+def _recent_hits(key, window_minutes):
+    window_start = datetime.utcnow() - timedelta(minutes=window_minutes)
+    hits = [t for t in _ip_hits.get(key, []) if t >= window_start]
+    if hits:
+        _ip_hits[key] = hits
+    else:
+        _ip_hits.pop(key, None)  # don't keep idle IPs around forever
+    return hits
+
+
+def check_ip_rate_limit(ip: str, bucket: str, limit: int, window_minutes: int = 15):
+    """Raises ValueError once `ip` has `limit` recorded hits in `bucket` within the window.
+    Doesn't record anything itself - see record_ip_hit()."""
+    if len(_recent_hits((bucket, ip), window_minutes)) >= limit:
         raise ValueError("Too many requests from this network. Please wait a few minutes and try again.")
-    hits.append(now)
-    _ip_hits[ip] = hits
+
+
+def record_ip_hit(ip: str, bucket: str):
+    _ip_hits.setdefault((bucket, ip), []).append(datetime.utcnow())
 
 
 def verify_code(phone: str, code: str) -> bool:

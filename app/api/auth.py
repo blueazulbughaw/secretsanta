@@ -142,6 +142,9 @@ def verify_otp():
     return _finish_login(user)
 
 
+LOGIN_FAILURES_PER_WINDOW = 20  # wrong passwords per IP per 15 minutes
+
+
 @bp.post("/auth/login-password")
 def login_password():
     data = request.json or {}
@@ -150,8 +153,17 @@ def login_password():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     password = data.get("password", "")
+    # Usernames are easy to guess (made from display names), so cap how many wrong
+    # passwords one network can try. Only failures count: a family signing in from
+    # one home network shouldn't lock itself out.
+    ip = request.remote_addr or "unknown"
+    try:
+        otp_service.check_ip_rate_limit(ip, "login", LOGIN_FAILURES_PER_WINDOW)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 429
     user = User.query.filter_by(username=username).first()
     if not user or not verify_password(password, user.password_hash):
+        otp_service.record_ip_hit(ip, "login")
         return jsonify({"error": "Wrong username or password."}), 401
     return _finish_login(user)
 

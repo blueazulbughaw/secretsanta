@@ -7,7 +7,7 @@ from ..models import Event, WishlistItem, Assignment, User, EventParticipant, Fa
 from ..middleware.auth import require_auth, require_family_member, require_family_admin, archived_error, require_event_access
 from ..services.notification_service import notify
 from ..services.photo_service import save_photo, remove_photo
-from ..utils import normalize_link_url
+from ..utils import normalize_link_url, parse_amount
 
 bp = Blueprint("wishlists", __name__)
 
@@ -57,6 +57,7 @@ def add_item(event_id):
 
     try:
         link_url = normalize_link_url(data.get("link_url")) or None
+        price = parse_amount(data.get("price_estimate"), "price")
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
@@ -76,7 +77,7 @@ def add_item(event_id):
         event_id=ev.id, user_id=g.user.id, item_name=name[:200],
         description=(data.get("description") or "").strip() or None,
         link_url=link_url,
-        price_estimate=data.get("price_estimate"),
+        price_estimate=price,
         priority=last + 1,
         photo_path=photo_path,
     )
@@ -133,12 +134,14 @@ def edit_item(item_id):
     data = request.form if request.form else (request.get_json(silent=True) or {})
     if "item_name" in data and not (data.get("item_name") or "").strip():
         return jsonify({"error": "Please tell us what the gift is."}), 400
-    link_url = item.link_url
-    if "link_url" in data:
-        try:
+    link_url, price = item.link_url, item.price_estimate
+    try:
+        if "link_url" in data:
             link_url = normalize_link_url(data.get("link_url")) or None
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
+        if "price_estimate" in data:
+            price = parse_amount(data.get("price_estimate"), "price")
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     old_photo = None
     photo = request.files.get("photo")
     if photo and photo.filename:
@@ -152,8 +155,7 @@ def edit_item(item_id):
     item.link_url = link_url
     if "description" in data:
         item.description = (data.get("description") or "").strip() or None
-    if "price_estimate" in data:
-        item.price_estimate = data["price_estimate"]
+    item.price_estimate = price
     db.session.commit()
     remove_photo(old_photo)  # replaced - drop the old file so uploads don't pile up
     return jsonify({"ok": True, "item": item.to_dict()})
@@ -170,8 +172,10 @@ def delete_item(item_id):
         return err
     if item.is_purchased:
         return jsonify({"error": "This gift has already been claimed and can't be removed anymore."}), 403
+    photo = item.photo_path
     db.session.delete(item)
     db.session.commit()
+    remove_photo(photo)
     return jsonify({"ok": True})
 
 
@@ -188,11 +192,19 @@ def mark_purchased(item_id):
         return err
     if item.user_id == g.user.id:
         return jsonify({"error": "You can't mark your own wishlist."}), 403
+    # `purchased` says which state the caller wants, so a repeat (double-tap, two tabs)
+    # is a no-op rather than flipping it back. No body = toggle, for older cached pages.
+    data = request.get_json(silent=True) or {}
+    want = bool(data["purchased"]) if "purchased" in data else not item.is_purchased
+    if want == item.is_purchased and (not want or item.purchased_by == g.user.id):
+        return jsonify({"ok": True, "is_purchased": item.is_purchased})
     if item.is_purchased and item.purchased_by != g.user.id:
+        if want:
+            return jsonify({"error": "Someone else already bought this one."}), 409
         return jsonify({"error": "Only the person who bought this can undo it."}), 403
-    item.is_purchased = not item.is_purchased
-    item.purchased_by = g.user.id if item.is_purchased else None
-    item.purchased_at = datetime.utcnow() if item.is_purchased else None
+    item.is_purchased = want
+    item.purchased_by = g.user.id if want else None
+    item.purchased_at = datetime.utcnow() if want else None
     db.session.commit()
     return jsonify({"ok": True, "is_purchased": item.is_purchased})
 
@@ -215,7 +227,7 @@ def clan_wishlists(event_id):
     for p in parts:
         items = (WishlistItem.query.filter_by(event_id=ev.id, user_id=p.user_id)
                  .order_by(WishlistItem.priority, WishlistItem.id).all())
-        out.append({"user": p.user.to_dict(), "household_name": households.get(p.user_id, ""),
+        out.append({"user": p.user.clan_dict(), "household_name": households.get(p.user_id, ""),
                     "items": [_item_dict(i, p.user_id != g.user.id) for i in items]})
     return jsonify(out)
 
@@ -237,6 +249,6 @@ def all_wishlists(event_id):
     for p in parts:
         items = (WishlistItem.query.filter_by(event_id=ev.id, user_id=p.user_id)
                  .order_by(WishlistItem.priority, WishlistItem.id).all())
-        out.append({"user": p.user.to_dict(), "household_name": households.get(p.user_id, ""),
+        out.append({"user": p.user.clan_dict(), "household_name": households.get(p.user_id, ""),
                     "items": [_item_dict(i, p.user_id != g.user.id) for i in items]})
     return jsonify(out)

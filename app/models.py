@@ -39,6 +39,12 @@ class User(db.Model):
             "favorite_color": self.favorite_color or "",
         }
 
+    def clan_dict(self):
+        """The full profile card the clan sees (public_dict + "what not to give me"),
+        still with no username, phone or email. to_dict() is for the user
+        themselves and clan admins only."""
+        return {**self.public_dict(), "avoid_gifts": self.avoid_gifts or ""}
+
     def to_dict(self):
         return {
             "id": self.id,
