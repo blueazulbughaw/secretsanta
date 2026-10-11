@@ -4,14 +4,19 @@ from functools import wraps
 import jwt
 from flask import request, jsonify, g, current_app, make_response
 
+from ..extensions import db
 from ..models import User, FamilyMember, EventParticipant
 
 COOKIE_NAME = "gc_token"
 
 
-def issue_token(user_id):
+def issue_token(user):
+    """A signed session for `user`. It carries their session_version, so bumping that
+    (new password, admin reset, "sign out of other devices", removal from the clan)
+    ends every session issued before."""
     payload = {
-        "sub": str(user_id),
+        "sub": str(user.id),
+        "sv": user.session_version or 0,
         "exp": datetime.utcnow() + timedelta(days=current_app.config["JWT_DAYS"]),
         "iat": datetime.utcnow(),
     }
@@ -42,7 +47,13 @@ def _current_user():
         payload = jwt.decode(token, current_app.config["JWT_SECRET"], algorithms=["HS256"])
     except jwt.PyJWTError:
         return None
-    return User.query.get(int(payload["sub"]))
+    try:
+        user = db.session.get(User, int(payload["sub"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not user or payload.get("sv", 0) != (user.session_version or 0):
+        return None
+    return user
 
 
 def is_signed_in():

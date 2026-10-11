@@ -2,9 +2,12 @@ from flask import Blueprint, request, jsonify
 
 from ..extensions import db
 from ..models import Household, FamilyMember
+from ..utils import clean_text, json_body
 from ..middleware.auth import require_auth, require_family_member, require_family_admin
 
 bp = Blueprint("households", __name__)
+
+HOUSEHOLD_NAME_MAX = 120
 
 
 @bp.get("/families/<int:family_id>/households")
@@ -23,12 +26,13 @@ def create_household(family_id):
     _, err = require_family_admin(family_id)
     if err:
         return err
-    name = ((request.json or {}).get("name") or "").strip()
+    name = clean_text(json_body().get("name"), HOUSEHOLD_NAME_MAX, "Household name")
     if not name:
         return jsonify({"error": "Please give the household a name."}), 400
-    if Household.query.filter_by(family_id=family_id, name=name).first():
+    if Household.query.filter(Household.family_id == family_id,
+                              db.func.lower(Household.name) == name.lower()).first():
         return jsonify({"error": "That household name is already used."}), 400
-    h = Household(family_id=family_id, name=name[:120])
+    h = Household(family_id=family_id, name=name)
     db.session.add(h)
     db.session.commit()
     return jsonify({"ok": True, "household": {"id": h.id, "name": h.name}}), 201
@@ -41,13 +45,14 @@ def update_household(household_id):
     _, err = require_family_admin(h.family_id)
     if err:
         return err
-    name = ((request.json or {}).get("name") or "").strip()
+    name = clean_text(json_body().get("name"), HOUSEHOLD_NAME_MAX, "Household name")
     if not name:
         return jsonify({"error": "Please give the household a name."}), 400
-    existing = Household.query.filter_by(family_id=h.family_id, name=name).first()
+    existing = Household.query.filter(Household.family_id == h.family_id,
+                                      db.func.lower(Household.name) == name.lower()).first()
     if existing and existing.id != h.id:
         return jsonify({"error": "That household name is already used."}), 400
-    h.name = name[:120]
+    h.name = name
     db.session.commit()
     return jsonify({"ok": True, "household": {"id": h.id, "name": h.name}})
 

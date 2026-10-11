@@ -1,10 +1,11 @@
-from flask import Flask, render_template, make_response
+from flask import Flask, render_template, make_response, jsonify, request, abort
 from .extensions import db, mail, migrate
 
 
 def create_app(config_object=None):
     app = Flask(__name__)
     app.config.from_object(config_object or "app.config.Config")
+    _refuse_default_secrets(app)
 
     db.init_app(app)
     mail.init_app(app)
@@ -71,8 +72,30 @@ def create_app(config_object=None):
 
     @app.route("/<path:_any>")
     def index(_any=None):
-        # Single-page app shell; JS router handles pages.
+        # Single-page app shell; JS router handles pages. An unknown /api/... address is
+        # a real 404 (as JSON - see http_error), not a page.
+        if _any and _any.startswith("api/"):
+            abort(404)
         return render_template("index.html")
+
+    from werkzeug.exceptions import HTTPException
+    from .utils import InputError
+
+    @app.errorhandler(InputError)
+    def bad_input(e):
+        return jsonify({"error": str(e)}), 400
+
+    @app.errorhandler(HTTPException)
+    def http_error(e):
+        # API callers always get JSON with a plain-language message, never an HTML page.
+        if not request.path.startswith("/api/"):
+            return e
+        messages = {404: "We couldn't find that. It may have been removed.",
+                    405: "That action isn't allowed here.",
+                    413: "That upload is too big. Photos must be smaller than 8MB.",
+                    415: "Something was wrong with that request. Please refresh and try again.",
+                    400: "Something was wrong with that request. Please refresh and try again."}
+        return jsonify({"error": messages.get(e.code, "Something went wrong. Please try again.")}), e.code
 
     @app.after_request
     def security_headers(resp):
@@ -84,3 +107,17 @@ def create_app(config_object=None):
         return resp
 
     return app
+
+
+_DEFAULT_SECRETS = {"SECRET_KEY": "dev-secret-change-me", "JWT_SECRET": "dev-jwt-change-me",
+                    "OTP_PEPPER": "dev-pepper-change-me"}
+
+
+def _refuse_default_secrets(app):
+    """Outside debug/testing, never run with the placeholder secrets from config.py: with
+    the published JWT_SECRET anyone could forge a session for any account."""
+    if app.debug or app.testing:
+        return
+    missing = [k for k, v in _DEFAULT_SECRETS.items() if not app.config.get(k) or app.config[k] == v]
+    if missing:
+        raise RuntimeError("Set these environment variables before starting the app: " + ", ".join(missing))

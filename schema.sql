@@ -28,9 +28,10 @@ CREATE TABLE users (
   photo_path    VARCHAR(255) NULL,           -- profile photo, relative to app/static/
   about_me      TEXT         NULL,           -- profile: shown to the clan on My Clan
   likes         TEXT         NULL,
-  favorite_color VARCHAR(40) NULL,
+  favorite_color VARCHAR(80) NULL,              -- up to 8 picked colors: "#rrggbb,#rrggbb"
   avoid_gifts   TEXT         NULL,           -- "what not to give me"
   is_active     TINYINT(1)   NOT NULL DEFAULT 1,
+  session_version INT        NOT NULL DEFAULT 0,  -- bumped to sign out every device
   last_login_at DATETIME     NULL,
   created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP

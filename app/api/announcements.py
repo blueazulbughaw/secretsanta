@@ -1,11 +1,14 @@
 from flask import Blueprint, request, jsonify, g
 
 from ..extensions import db
-from ..models import Announcement, FamilyMember
+from ..models import Announcement, FamilyMember, Event
+from ..utils import clean_text, json_body, parse_bool, parse_id, InputError
 from ..middleware.auth import require_auth, require_family_member, require_family_admin
 from ..services.notification_service import notify
 
 bp = Blueprint("announcements", __name__)
+
+TITLE_MAX, BODY_MAX = 200, 5000
 
 
 @bp.get("/families/<int:family_id>/announcements")
@@ -34,14 +37,17 @@ def post_announcement(family_id):
     _, err = require_family_admin(family_id)
     if err:
         return err
-    data = request.json or {}
-    title = (data.get("title") or "").strip()
-    body = (data.get("body") or "").strip()
+    data = json_body()
+    title = clean_text(data.get("title"), TITLE_MAX, "The title")
+    body = clean_text(data.get("body"), BODY_MAX, "The message", multiline=True)
     if not title or not body:
         return jsonify({"error": "Please add a title and a message."}), 400
-    is_published = bool(data.get("is_published", True))
-    a = Announcement(family_id=family_id, event_id=data.get("event_id"),
-                     author_id=g.user.id, title=title[:200], body=body,
+    is_published = parse_bool(data.get("is_published", True), "Show on Clan Dashboard")
+    event_id = parse_id(data.get("event_id"), "That event")
+    if event_id is not None and not Event.query.filter_by(id=event_id, family_id=family_id).first():
+        raise InputError("That event isn't in this clan.")
+    a = Announcement(family_id=family_id, event_id=event_id,
+                     author_id=g.user.id, title=title, body=body,
                      is_published=is_published)
     db.session.add(a)
     db.session.commit()
@@ -60,19 +66,19 @@ def edit_announcement(ann_id):
     _, err = require_family_admin(a.family_id)
     if err:
         return err
-    data = request.json or {}
+    data = json_body()
     if "title" in data:
-        title = (data.get("title") or "").strip()
+        title = clean_text(data.get("title"), TITLE_MAX, "The title")
         if not title:
             return jsonify({"error": "Please add a title."}), 400
-        a.title = title[:200]
+        a.title = title
     if "body" in data:
-        body = (data.get("body") or "").strip()
+        body = clean_text(data.get("body"), BODY_MAX, "The message", multiline=True)
         if not body:
             return jsonify({"error": "Please add a message."}), 400
         a.body = body
     if "is_published" in data:
-        a.is_published = bool(data["is_published"])
+        a.is_published = parse_bool(data["is_published"], "Show on Clan Dashboard")
     db.session.commit()
     return jsonify({"ok": True})
 

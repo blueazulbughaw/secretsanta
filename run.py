@@ -1,5 +1,11 @@
 """Local development entry point: python run.py"""
-from app import create_app
+import os
+
+# Dev mode from the start, so create_app() allows config.py's placeholder secrets here
+# (they're refused everywhere else - see _refuse_default_secrets in app/__init__.py).
+os.environ.setdefault("FLASK_DEBUG", "1")
+
+from app import create_app  # noqa: E402
 from app.extensions import db
 
 app = create_app()

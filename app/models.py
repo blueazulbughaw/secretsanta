@@ -20,11 +20,22 @@ class User(db.Model):
     photo_path = db.Column(db.String(255))  # profile photo, relative to static/
     about_me = db.Column(db.Text)
     likes = db.Column(db.Text)
-    favorite_color = db.Column(db.String(40))
+    favorite_color = db.Column(db.String(80))  # "#rrggbb,#rrggbb" - see favorite_colors
     avoid_gifts = db.Column(db.Text)  # "what not to give me"
     is_active = db.Column(db.Boolean, nullable=False, default=True)
+    # Bumped to end every existing session (see issue_token in middleware/auth.py)
+    session_version = db.Column(db.Integer, nullable=False, default=0, server_default="0")
     last_login_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    @property
+    def favorite_colors(self):
+        """Up to MAX_FAVORITE_COLORS "#rrggbb" colors, picked with a color picker."""
+        return [c for c in (self.favorite_color or "").split(",") if c]
+
+    @favorite_colors.setter
+    def favorite_colors(self, colors):
+        self.favorite_color = ",".join(colors) or None
 
     def public_dict(self):
         """What the rest of the clan may see: no username, phone or email."""
@@ -36,7 +47,7 @@ class User(db.Model):
             "photo_url": f"/static/{self.photo_path}" if self.photo_path else None,
             "about_me": self.about_me or "",
             "likes": self.likes or "",
-            "favorite_color": self.favorite_color or "",
+            "favorite_colors": self.favorite_colors,
         }
 
     def clan_dict(self):
@@ -59,7 +70,7 @@ class User(db.Model):
             "photo_url": f"/static/{self.photo_path}" if self.photo_path else None,
             "about_me": self.about_me or "",
             "likes": self.likes or "",
-            "favorite_color": self.favorite_color or "",
+            "favorite_colors": self.favorite_colors,
             "avoid_gifts": self.avoid_gifts or "",
         }
 

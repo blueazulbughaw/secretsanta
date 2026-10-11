@@ -6,8 +6,11 @@ from ..extensions import db
 from ..models import Event, Message, Assignment, EventParticipant, User
 from ..middleware.auth import require_auth, require_family_member, archived_error, require_event_access
 from ..services.notification_service import notify
+from ..utils import clean_text, json_body
 
 bp = Blueprint("messages", __name__)
+
+MESSAGE_MAX = 2000
 
 
 def _threads(event_id, user_id):
@@ -73,9 +76,9 @@ def send_message(event_id):
     err = archived_error(ev)
     if err:
         return err
-    data = request.json or {}
+    data = json_body()
     to = data.get("to")
-    body = (data.get("body") or "").strip()
+    body = clean_text(data.get("body"), MESSAGE_MAX, "A message", multiline=True)
     if to not in ("giver", "giftee") or not body:
         return jsonify({"error": "Please write a message first."}), 400
     giftee_id, giver_id = _threads(ev.id, g.user.id)
@@ -83,7 +86,7 @@ def send_message(event_id):
     if not recipient:
         return jsonify({"error": "Names haven't been drawn yet."}), 400
     m = Message(event_id=ev.id, sender_id=g.user.id,
-                recipient_id=recipient, body=body[:2000])
+                recipient_id=recipient, body=body)
     db.session.add(m)
     db.session.commit()
     # Notification never reveals identity

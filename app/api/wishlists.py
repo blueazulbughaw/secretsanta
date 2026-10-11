@@ -7,9 +7,24 @@ from ..models import Event, WishlistItem, Assignment, User, EventParticipant, Fa
 from ..middleware.auth import require_auth, require_family_member, require_family_admin, archived_error, require_event_access
 from ..services.notification_service import notify
 from ..services.photo_service import save_photo, remove_photo
-from ..utils import normalize_link_url, parse_amount
+from ..utils import normalize_link_url, parse_amount, clean_text, json_body, parse_bool, InputError
 
 bp = Blueprint("wishlists", __name__)
+
+
+ITEM_NAME_MAX, DESCRIPTION_MAX = 200, 1000
+
+
+def _form_or_json():
+    """Gift forms come as multipart (with a photo) or plain JSON."""
+    return request.form if request.form else json_body()
+
+
+def _item_name(data):
+    name = clean_text(data.get("item_name"), ITEM_NAME_MAX, "The gift's name")
+    if not name:
+        raise InputError("Please tell us what the gift is.")
+    return name
 
 
 def _item_dict(item, include_purchase):
@@ -50,16 +65,11 @@ def add_item(event_id):
     if count >= ev.wishlist_limit:
         return jsonify({"error": f"Your list is full ({ev.wishlist_limit} gifts). "
                                  "Remove one to add another."}), 400
-    data = request.form if request.form else (request.get_json(silent=True) or {})
-    name = (data.get("item_name") or "").strip()
-    if not name:
-        return jsonify({"error": "Please tell us what the gift is."}), 400
-
-    try:
-        link_url = normalize_link_url(data.get("link_url")) or None
-        price = parse_amount(data.get("price_estimate"), "price")
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+    data = _form_or_json()
+    name = _item_name(data)
+    description = clean_text(data.get("description"), DESCRIPTION_MAX, "The description", multiline=True)
+    link_url = normalize_link_url(data.get("link_url")) or None
+    price = parse_amount(data.get("price_estimate"), "price")
 
     photo_path = None
     photo = request.files.get("photo")
@@ -74,8 +84,8 @@ def add_item(event_id):
     last = (db.session.query(db.func.max(WishlistItem.priority))
             .filter_by(event_id=ev.id, user_id=g.user.id).scalar() or 0)
     item = WishlistItem(
-        event_id=ev.id, user_id=g.user.id, item_name=name[:200],
-        description=(data.get("description") or "").strip() or None,
+        event_id=ev.id, user_id=g.user.id, item_name=name,
+        description=description or None,
         link_url=link_url,
         price_estimate=price,
         priority=last + 1,
@@ -111,8 +121,9 @@ def reorder_wishlist(event_id):
     if err:
         return err
     items = {i.id: i for i in WishlistItem.query.filter_by(event_id=ev.id, user_id=g.user.id).all()}
-    ids = (request.get_json(silent=True) or {}).get("item_ids")
-    if not isinstance(ids, list) or len(ids) != len(set(ids)) or set(ids) != set(items):
+    ids = json_body().get("item_ids")
+    if (not isinstance(ids, list) or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids)
+            or len(ids) != len(set(ids)) or set(ids) != set(items)):
         return jsonify({"error": "That list doesn't match your gifts. Please refresh and try again."}), 400
     for position, item_id in enumerate(ids, start=1):
         items[item_id].priority = position
@@ -131,17 +142,14 @@ def edit_item(item_id):
         return err
     if item.is_purchased:
         return jsonify({"error": "This gift has already been claimed and can't be changed anymore."}), 403
-    data = request.form if request.form else (request.get_json(silent=True) or {})
-    if "item_name" in data and not (data.get("item_name") or "").strip():
-        return jsonify({"error": "Please tell us what the gift is."}), 400
-    link_url, price = item.link_url, item.price_estimate
-    try:
-        if "link_url" in data:
-            link_url = normalize_link_url(data.get("link_url")) or None
-        if "price_estimate" in data:
-            price = parse_amount(data.get("price_estimate"), "price")
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+    data = _form_or_json()
+    name = _item_name(data) if "item_name" in data else item.item_name
+    description = item.description
+    if "description" in data:
+        description = clean_text(data.get("description"), DESCRIPTION_MAX, "The description",
+                                 multiline=True) or None
+    link_url = normalize_link_url(data.get("link_url")) or None if "link_url" in data else item.link_url
+    price = parse_amount(data.get("price_estimate"), "price") if "price_estimate" in data else item.price_estimate
     old_photo = None
     photo = request.files.get("photo")
     if photo and photo.filename:
@@ -150,12 +158,7 @@ def edit_item(item_id):
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
         old_photo, item.photo_path = item.photo_path, new_photo
-    if data.get("item_name"):
-        item.item_name = data["item_name"].strip()[:200]
-    item.link_url = link_url
-    if "description" in data:
-        item.description = (data.get("description") or "").strip() or None
-    item.price_estimate = price
+    item.item_name, item.description, item.link_url, item.price_estimate = name, description, link_url, price
     db.session.commit()
     remove_photo(old_photo)  # replaced - drop the old file so uploads don't pile up
     return jsonify({"ok": True, "item": item.to_dict()})
@@ -194,8 +197,8 @@ def mark_purchased(item_id):
         return jsonify({"error": "You can't mark your own wishlist."}), 403
     # `purchased` says which state the caller wants, so a repeat (double-tap, two tabs)
     # is a no-op rather than flipping it back. No body = toggle, for older cached pages.
-    data = request.get_json(silent=True) or {}
-    want = bool(data["purchased"]) if "purchased" in data else not item.is_purchased
+    data = json_body()
+    want = parse_bool(data["purchased"], "Bought") if "purchased" in data else not item.is_purchased
     if want == item.is_purchased and (not want or item.purchased_by == g.user.id):
         return jsonify({"ok": True, "is_purchased": item.is_purchased})
     if item.is_purchased and item.purchased_by != g.user.id:

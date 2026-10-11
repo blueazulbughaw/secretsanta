@@ -4,12 +4,32 @@ import string
 from flask import Blueprint, request, jsonify, g
 
 from ..extensions import db
-from ..models import Family, FamilyMember, Household, User
+from ..models import Family, FamilyMember, Household, User, Event, EventParticipant
 from ..middleware.auth import require_auth, require_family_member, require_family_admin
 from ..services import otp_service
-from ..utils import normalize_phone, normalize_username, hash_password, slugify_username_base
+from ..utils import (normalize_phone, normalize_username, hash_password, slugify_username_base,
+                     clean_text, normalize_email, parse_id, json_body, InputError)
 
 bp = Blueprint("families", __name__)
+
+
+CLAN_NAME_MAX = 120
+DISPLAY_NAME_MAX = 120
+
+
+def _clean_join_code(raw):
+    code = clean_text(raw, 20, "Clan code").replace(" ", "").upper()
+    if not code.isalnum() or len(code) != 8:
+        raise InputError("A clan code is 8 letters and numbers. Please check it and try again.")
+    return code
+
+
+def _household_id(raw, family_id):
+    """A household choice for this clan: None for no household, else its id."""
+    hid = parse_id(raw, "That household")
+    if hid is not None and not Household.query.filter_by(id=hid, family_id=family_id).first():
+        raise InputError("That household doesn't exist in this clan.")
+    return hid
 
 
 def _make_join_code():
@@ -33,7 +53,11 @@ def lookup_join_code(code):
         otp_service.enforce_ip_rate_limit(request.remote_addr or "unknown")
     except ValueError as e:
         return jsonify({"error": str(e)}), 429
-    fam = Family.query.filter_by(join_code=code.strip().upper()).first()
+    try:
+        code = _clean_join_code(code)
+    except InputError:
+        code = ""
+    fam = Family.query.filter_by(join_code=code).first() if code else None
     if not fam:
         return jsonify({"error": "That clan code isn't valid. Please check it and try again."}), 404
     return jsonify({"name": fam.name})
@@ -45,10 +69,10 @@ def create_family():
     has_family = FamilyMember.query.filter_by(user_id=g.user.id).first() is not None
     if has_family and not g.user.is_app_admin:
         return jsonify({"error": "Ask your clan admin for a join code instead."}), 403
-    name = ((request.json or {}).get("name") or "").strip()
+    name = clean_text(json_body().get("name"), CLAN_NAME_MAX, "Clan name")
     if not name:
         return jsonify({"error": "Please give your family group a name."}), 400
-    fam = Family(name=name[:120], join_code=_make_join_code(), created_by=g.user.id)
+    fam = Family(name=name, join_code=_make_join_code(), created_by=g.user.id)
     db.session.add(fam)
     db.session.flush()
     db.session.add(FamilyMember(family_id=fam.id, user_id=g.user.id, role="admin"))
@@ -60,7 +84,7 @@ def create_family():
 @bp.post("/families/join")
 @require_auth
 def join_family():
-    code = ((request.json or {}).get("join_code") or "").strip().upper()
+    code = _clean_join_code(json_body().get("join_code"))
     fam = Family.query.filter_by(join_code=code).first()
     if not fam:
         return jsonify({"error": "We couldn't find a family with that code."}), 404
@@ -94,12 +118,7 @@ def update_my_household(family_id):
     m, err = require_family_member(family_id)
     if err:
         return err
-    hid = (request.json or {}).get("household_id")
-    if hid is not None:
-        h = Household.query.filter_by(id=hid, family_id=family_id).first()
-        if not h:
-            return jsonify({"error": "That household doesn't exist in this clan."}), 400
-    m.household_id = hid
+    m.household_id = _household_id(json_body().get("household_id"), family_id)
     db.session.commit()
     return jsonify({"ok": True, "household_id": m.household_id,
                     "household_name": m.household.name if m.household else None})
@@ -112,10 +131,10 @@ def rename_family(family_id):
     if err:
         return err
     fam = Family.query.get_or_404(family_id)
-    name = ((request.json or {}).get("name") or "").strip()
+    name = clean_text(json_body().get("name"), CLAN_NAME_MAX, "Clan name")
     if not name:
         return jsonify({"error": "Please give your clan a name."}), 400
-    fam.name = name[:120]
+    fam.name = name
     db.session.commit()
     return jsonify({"ok": True, "family": {"id": fam.id, "name": fam.name}})
 
@@ -144,30 +163,24 @@ def add_member(family_id):
     _, err = require_family_admin(family_id)
     if err:
         return err
-    data = request.json or {}
-    full_name = (data.get("full_name") or "").strip()[:120]
+    data = json_body()
+    full_name = clean_text(data.get("full_name"), DISPLAY_NAME_MAX, "Display name")
     if not full_name:
         return jsonify({"error": "Please enter their name."}), 400
 
-    email = (data.get("email") or "").strip()
-    if email and User.query.filter_by(email=email).first():
+    email = normalize_email(data.get("email"))
+    if email and User.query.filter(db.func.lower(User.email) == email).first():
         return jsonify({"error": "That email is already in use."}), 409
 
     phone = None
     if data.get("phone"):
-        try:
-            phone = normalize_phone(data.get("phone", ""), data.get("phone_country", "US"))
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
+        phone = normalize_phone(data.get("phone"), data.get("phone_country", "US"))
         if User.query.filter_by(phone=phone).first():
             return jsonify({"error": "That phone number is already in use."}), 409
 
-    wanted = (data.get("username") or "").strip()
+    wanted = clean_text(data.get("username"), 60, "Username")
     if wanted:
-        try:
-            username = normalize_username(wanted)
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
+        username = normalize_username(wanted)
         if User.query.filter_by(username=username).first():
             return jsonify({"error": "That username is already taken."}), 409
         if username == full_name:
@@ -181,9 +194,7 @@ def add_member(family_id):
             n += 1
             username = f"{base}{n}"
 
-    household_id = data.get("household_id") or None
-    if household_id is not None and not Household.query.filter_by(id=household_id, family_id=family_id).first():
-        return jsonify({"error": "That household doesn't exist in this clan."}), 400
+    household_id = _household_id(data.get("household_id"), family_id)
     role = data.get("role") or "member"
     if role not in ("admin", "member"):
         return jsonify({"error": "Role must be admin or member."}), 400
@@ -209,7 +220,7 @@ def update_member(family_id, membership_id):
     if err:
         return err
     mem = FamilyMember.query.filter_by(id=membership_id, family_id=family_id).first_or_404()
-    data = request.json or {}
+    data = json_body()
     if "role" in data:
         if data["role"] not in ("admin", "member"):
             return jsonify({"error": "Role must be admin or member."}), 400
@@ -220,22 +231,14 @@ def update_member(family_id, membership_id):
                 return jsonify({"error": "A family needs at least one clan admin."}), 400
         mem.role = data["role"]
     if "household_id" in data:
-        hid = data["household_id"]
-        if hid is not None:
-            h = Household.query.filter_by(id=hid, family_id=family_id).first()
-            if not h:
-                return jsonify({"error": "That household doesn't exist in this family."}), 400
-        mem.household_id = hid
+        mem.household_id = _household_id(data["household_id"], family_id)
     new_name, new_username = mem.user.full_name, mem.user.username
     if "full_name" in data:
-        new_name = (data.get("full_name") or "").strip()[:120]
+        new_name = clean_text(data.get("full_name"), DISPLAY_NAME_MAX, "Display name")
         if not new_name:
             return jsonify({"error": "Name can't be empty."}), 400
     if "username" in data:
-        try:
-            new_username = normalize_username(data.get("username") or "")
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
+        new_username = normalize_username(data.get("username"))
         if new_username != mem.user.username and User.query.filter_by(username=new_username).first():
             return jsonify({"error": "That username is already taken."}), 409
     # A display name can't just be the username - checked whenever either one changes, so an
@@ -244,19 +247,16 @@ def update_member(family_id, membership_id):
         return jsonify({"error": "A display name should be different from the username."}), 400
     mem.user.full_name, mem.user.username = new_name, new_username
     if "email" in data:
-        email = (data.get("email") or "").strip()
+        email = normalize_email(data.get("email"))
         if email:
-            existing = User.query.filter_by(email=email).first()
+            existing = User.query.filter(db.func.lower(User.email) == email).first()
             if existing and existing.id != mem.user_id:
                 return jsonify({"error": "That email is already in use."}), 409
         mem.user.email = email or None
     if "phone" in data:
         raw = data.get("phone") or ""
         if raw:
-            try:
-                phone = normalize_phone(raw, data.get("phone_country", "US"))
-            except ValueError as e:
-                return jsonify({"error": str(e)}), 400
+            phone = normalize_phone(raw, data.get("phone_country", "US"))
             existing = User.query.filter_by(phone=phone).first()
             if existing and existing.id != mem.user_id:
                 return jsonify({"error": "That phone number is already in use."}), 409
@@ -277,6 +277,7 @@ def reset_member_password(family_id, membership_id):
     temp_password = secrets.token_urlsafe(6)
     mem.user.password_hash = hash_password(temp_password)
     mem.user.must_change_password = True
+    mem.user.session_version = (mem.user.session_version or 0) + 1  # sign out their devices
     db.session.commit()
     return jsonify({"ok": True, "temp_password": temp_password})
 
@@ -290,6 +291,25 @@ def remove_member(family_id, membership_id):
     mem = FamilyMember.query.filter_by(id=membership_id, family_id=family_id).first_or_404()
     if mem.user_id == g.user.id:
         return jsonify({"error": "You can't remove yourself. Ask another clan admin."}), 400
+    # Someone in a draw that's still going can't just vanish: their giftee would be left
+    # with no Secret Santa, and their Santa with nobody to give to.
+    joining = (EventParticipant.query.join(Event, Event.id == EventParticipant.event_id)
+               .filter(Event.family_id == family_id, Event.status != "completed",
+                       EventParticipant.user_id == mem.user_id,
+                       EventParticipant.is_participating.is_(True)).all())
+    drawn = [Event.query.get(p.event_id) for p in joining]
+    drawn = [ev for ev in drawn if ev.status == "matched"]
+    if drawn:
+        name = mem.user.display_name or mem.user.full_name
+        return jsonify({"error": f"{name} is in the name draw for {', '.join(ev.name for ev in drawn)}. "
+                                 "Start over (re-draw names) without them, or archive the event, "
+                                 "before removing them."}), 400
+    for p in joining:  # events that haven't drawn names yet: just take them off the list
+        p.is_participating = False
+        ev = Event.query.get(p.event_id)
+        if ev.game_master_id == mem.user_id:
+            ev.game_master_id = None
+    mem.user.session_version = (mem.user.session_version or 0) + 1  # sign them out
     db.session.delete(mem)
     db.session.commit()
     return jsonify({"ok": True})

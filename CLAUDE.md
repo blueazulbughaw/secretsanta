@@ -92,7 +92,8 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   (`/admin`) is a stack of centred cards: clan name, then name-only lists of events,
   members and households, each with its Manage... button underneath, then Post Announcement,
   and the registration code card LAST.
-- Links (wishlist `link_url`) are validated and stored as absolute http(s) URLs
+- Links (wishlist `link_url`) are validated and stored as absolute http(s) URLs to a real
+  host name - no other schemes, user:password@, IP addresses, localhost or bare words
   (`normalize_link_url`; mirrored by `normalizeUrl` in app.js). Never put a raw
   user-typed URL in an href.
 - Photos: real images only (Pillow), 8MB upload cap, gift photos shrunk to 1200px,
@@ -125,7 +126,10 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   one place: for clan admins it ends with an Admin card (Draw Names / Start Over (Re-Draw
   Names), Archive Event, View Everyone's Wishlists, Delete Event). Event cards on
   Manage My Clan > Events open it (`/admin/events/:id` just redirects). Who's coming shows a
-  household beside each name.
+  household beside each name. Start Over also deletes the event's messages (kept, a
+  reversed pair would reveal an old Secret Santa). A member who's in a drawn, unarchived
+  event can't be removed from the clan until that draw is redone or archived; from
+  not-yet-drawn events they're simply dropped.
 - Any event can be deleted by the clan admin, old or archived, taking everything
   with it (draw, wishlists + photos, messages, dishes, its announcements) - that's how test
   data is cleaned up.
@@ -146,9 +150,25 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   editable after the draw) and a "Dishes to bring" card. Dish sign-up opens only once names
   are drawn (status matched) and closes when the event is done; each attendee has ONE entry
   holding up to 10 dishes, which they can edit or remove (PUT/DELETE /events/:id/dishes/mine).
-- Profile: photo, about me, likes, favorite color, "what not to give me" live on
+- Profile: photo, about me, likes, favorite colors, "what not to give me" live on
   `users` (PATCH /auth/me + /auth/me/photo) and are shown to the clan as an ID-style
   card on `/events/:id/clan/:userId` (photo beside details, wishlist cards below).
   The event's Clan & Wishlists page (`/events/:id/clan`) is a name-sorted grid of photo + name tiles of the people joining THAT event.
+  Favorite colors are up to 8 "#rrggbb" values picked with the browser's color picker
+  (`favorite_colors` in the API, stored comma-joined in `users.favorite_color`) and shown as
+  circles - never free text. Members only ever get `User.clan_dict()` for other people (no
+  phone, email or username); `to_dict()` is for the user themselves and clan admins.
+- Input validation: every endpoint reads its body with `json_body()` and cleans each field
+  with the helpers in app/utils.py (`clean_text` with the field's max length, `normalize_email`,
+  `parse_bool`, `parse_id`, `parse_amount`, `parse_colors`, `normalize_link_url`). They raise
+  `InputError`, which create_app turns into a plain-language 400 - too-long text is refused,
+  not silently cut. Page fields carry the same `maxlength`. Bad input must never be a 500
+  (test_every_write_endpoint_rejects_bad_input_cleanly).
+- Sessions: the cookie's JWT carries `users.session_version`; bumping it signs that person
+  out everywhere (new password - which re-issues the current cookie - admin password reset,
+  removal from the clan, "Sign Out Other Devices" on Profile & Security). IP rate limits
+  (`otp_service.check_ip_rate_limit`) are counted in the `rate_limit_hits` table because
+  production runs several app processes; the app refuses to start outside debug/testing
+  with config.py's placeholder secrets.
 - Run pytest before declaring any task done.
 - Deploy target: Namecheap cPanel Python app (passenger_wsgi.py entry).

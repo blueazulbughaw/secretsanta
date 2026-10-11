@@ -100,22 +100,27 @@ function esc(s) {
 // Turns what someone typed into a full http(s) link ("amazon.com/x" becomes
 // "https://amazon.com/x"). Returns "" for nothing, or null when it isn't a valid
 // web link. Mirrors normalize_link_url on the server.
+// Mirrors normalize_link_url() in app/utils.py: only plain http(s) links to a real-looking
+// host name; no other schemes, user:password@, bare words, IP addresses or localhost.
+const URL_HOST_RE = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{1,59})$/i;
 function normalizeUrl(raw) {
   let url = (raw || "").trim();
   if (!url) return "";
-  if (url.length > 500 || /\s/.test(url)) return null;
+  if (url.length > 500 || /[\s<>"'`\\{}|^\x00-\x1f\x7f]/.test(url)) return null;
   if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) {
     if (/^[a-z][a-z0-9+.-]*:(?!\d)/i.test(url)) return null;   // mailto:, javascript: ...
     url = "https://" + url.replace(/^\/+/, "");
   }
   let u;
   try { u = new URL(url); } catch (_) { return null; }
-  if (!/^https?:$/.test(u.protocol) || !/^([a-z0-9-]+\.)+[a-z]{2,}$/i.test(u.hostname)) return null;
+  if (!/^https?:$/.test(u.protocol) || u.username || u.password || url.split("/")[2].includes("@")
+      || u.hostname.length > 253 || !URL_HOST_RE.test(u.hostname)) return null;
   return url;
 }
 const LINK_HELP = "Please enter a valid web link, like https://www.example.com/item";
 
 const MAX_PHOTO_MB = 8;
+const MAX_FAVORITE_COLORS = 8;  // matches MAX_FAVORITE_COLORS in app/utils.py
 function photoTooBig(file) { return !!file && file.size > MAX_PHOTO_MB * 1024 * 1024; }
 const PHOTO_TOO_BIG = `Photos must be smaller than ${MAX_PHOTO_MB}MB.`;
 
@@ -563,7 +568,7 @@ function passwordFieldHTML(id, label, { autocomplete = "new-password", confirm =
   const field = (fieldId, fieldLabel, fieldAutocomplete) => `
     <label for="${fieldId}">${esc(fieldLabel)}</label>
     <div class="password-field">
-      <input id="${fieldId}" type="password" autocomplete="${fieldAutocomplete}">
+      <input id="${fieldId}" type="password" maxlength="128" autocomplete="${fieldAutocomplete}">
       <button type="button" class="password-toggle" data-pw-toggle="${fieldId}" aria-label="Show password">👁</button>
     </div>`;
   return field(id, label, autocomplete) + (confirm ? field(id + "Confirm", "Confirm Password", autocomplete) : "");
@@ -595,7 +600,7 @@ function pageLogin() {
       <p class="muted">Family events made simple.</p>
     </div>
     <label for="username">Username</label>
-    <input id="username" autocomplete="username">
+    <input id="username" maxlength="60" autocomplete="username" autocapitalize="none" spellcheck="false">
     ${passwordFieldHTML("password", "Password", { autocomplete: "current-password" })}
     <div id="msg"></div>
     <button class="btn btn-primary" id="loginBtn">Sign In</button>
@@ -835,7 +840,7 @@ function pagePhoneEntry() {
     <label for="phone">Mobile phone number</label>
     <div class="phone-field">
       ${countrySelectHTML("phoneCountry")}
-      <input id="phone" type="tel" inputmode="tel" autocomplete="tel">
+      <input id="phone" type="tel" inputmode="tel" maxlength="30" autocomplete="tel">
     </div>
     <div class="check-row" style="align-items:flex-start;margin-top:1rem">
       <input type="checkbox" id="smsConsent" style="margin-top:.3rem">
@@ -905,7 +910,7 @@ function pageRegisterStart() {
       ` : `<p class="muted">Pick a username to get started.</p>`}
     </div>
     <label for="newUsername">Create Username</label>
-    <input id="newUsername" autocomplete="username">
+    <input id="newUsername" maxlength="60" autocomplete="username" autocapitalize="none" spellcheck="false">
     <div id="msg"></div>
     <button class="btn btn-primary" id="continueBtn">Continue</button>
     <button class="btn btn-quiet" id="loginInsteadBtn">I already have an account</button>
@@ -934,7 +939,7 @@ function pageRegister(username) {
     <h2 class="center">Create your account</h2>
     <p class="muted center">Username: <strong>${esc(username)}</strong></p>
     <label for="regName">Display Name</label>
-    <input id="regName" autocomplete="name">
+    <input id="regName" maxlength="120" autocomplete="name">
     <p class="muted" style="margin:.3rem 0 0;font-size:.8rem">This is the name your clan sees. It has to be different from your username, and only your clan admin can change it later.</p>
     ${passwordFieldHTML("regPassword", "Create Password", { confirm: true })}
     <div id="msg"></div>
@@ -1001,7 +1006,7 @@ function pageName() {
     <h2>What's your name?</h2>
     <p class="muted">This is how your family will see you.</p>
     <label for="name">Display Name</label>
-    <input id="name" autocomplete="name">
+    <input id="name" maxlength="120" autocomplete="name">
     <div id="msg"></div>
     <button class="btn btn-primary" id="saveBtn">Continue</button>
   `);
@@ -1063,14 +1068,14 @@ async function pageSecuritySetup(forced) {
       <p style="margin:0">${esc(ME.user.username)}</p>
       ${canEditName ? `
       <label for="displayName">Display Name</label>
-      <input id="displayName" value="${esc(ME.user.full_name)}">` : `
+      <input id="displayName" maxlength="120" value="${esc(ME.user.full_name)}">` : `
       <label>Display Name</label>
       <p style="margin:0 0 .2rem"><strong>${esc(ME.user.full_name)}</strong></p>
       <p class="muted" style="margin:0">Only your clan admin can change your display name.</p>`}
       <label for="profilePhone">Mobile phone number</label>
       <div class="phone-field">
         ${countrySelectHTML("profilePhoneCountry", originalPhoneCountry)}
-        <input id="profilePhone" type="tel" inputmode="tel" autocomplete="tel" value="${esc(originalPhoneNational)}">
+        <input id="profilePhone" type="tel" inputmode="tel" maxlength="30" autocomplete="tel" value="${esc(originalPhoneNational)}">
       </div>
       <p class="muted" style="margin:.3rem 0 0;font-size:.8rem">Lets you sign in with a texted code instead of a password, and is how announcements can reach you by text.</p>
       ${FAMILY ? `
@@ -1080,8 +1085,8 @@ async function pageSecuritySetup(forced) {
       <textarea id="aboutMe" rows="3" maxlength="1000">${esc(ME.user.about_me)}</textarea>
       <label for="likes">My likes</label>
       <textarea id="likes" rows="3" maxlength="1000">${esc(ME.user.likes)}</textarea>
-      <label for="favColor">My favorite color <span class="muted">(optional)</span></label>
-      <input id="favColor" maxlength="40" value="${esc(ME.user.favorite_color)}">
+      <label id="favColorsLabel">My favorite colors <span class="muted">(optional, up to ${MAX_FAVORITE_COLORS})</span></label>
+      <div class="color-picker" id="favColors" role="group" aria-labelledby="favColorsLabel"></div>
       <label for="avoidGifts">What not to give me</label>
       <textarea id="avoidGifts" rows="3" maxlength="1000">${esc(ME.user.avoid_gifts)}</textarea>
       <div id="nameMsg"></div>
@@ -1100,6 +1105,11 @@ async function pageSecuritySetup(forced) {
     ${passwordFieldHTML("newPassword", hasPw ? "New password" : "Password", { confirm: true })}
     <div id="pwMsg"></div>
     <button class="btn ${forced ? 'btn-primary' : 'btn-secondary'}" id="savePwBtn">${hasPw ? "Reset Password" : "Save Password"}</button>
+    ${forced ? "" : `
+    <h3 style="margin:1.2rem 0 .2rem">Signed in somewhere else?</h3>
+    <p class="muted" style="margin:0">Lost a phone, or used someone else's computer? This signs you out everywhere except here. Changing your password does this too.</p>
+    <div id="othersMsg"></div>
+    <button class="btn btn-quiet" id="signOutOthersBtn">Sign Out Other Devices</button>`}
     </section>
   `;
   render("Profile & Security", `
@@ -1122,6 +1132,50 @@ async function pageSecuritySetup(forced) {
     document.getElementById("removePhotoBtn").hidden = !ME.user.photo_url;
   };
   refreshPhotoUi();
+
+  // Favorite colors: tap a circle to change it, ✕ to remove it, "+ Add a Color" for
+  // another. Each circle hides a real <input type="color">, so it's the browser's own
+  // picker. Saved with the rest of the profile.
+  let favColors = [...(ME.user.favorite_colors || [])];
+  const drawColors = () => {
+    const box = document.getElementById("favColors");
+    box.innerHTML = favColors.map((c, i) => `
+      <span class="color-chip">
+        <label class="color-dot" style="background:${safeColor(c)}" title="Change this color">
+          <input type="color" value="${safeColor(c)}" data-i="${i}" aria-label="Change favorite color ${i + 1}">
+        </label>
+        <button type="button" class="color-remove" data-rm="${i}" aria-label="Remove favorite color ${i + 1}">✕</button>
+      </span>`).join("") +
+      (favColors.length < MAX_FAVORITE_COLORS ? `
+      <label class="btn btn-quiet color-add">+ Add a Color
+        <input type="color" value="#2e7d4f" aria-label="Add a favorite color">
+      </label>` : "");
+    box.querySelectorAll("input[data-i]").forEach(inp => {
+      inp.oninput = () => { inp.parentElement.style.background = inp.value; };
+      inp.onchange = () => { favColors[Number(inp.dataset.i)] = inp.value.toLowerCase(); drawColors(); };
+    });
+    box.querySelectorAll("[data-rm]").forEach(b => b.onclick = () => {
+      favColors.splice(Number(b.dataset.rm), 1);
+      drawColors();
+    });
+    const add = box.querySelector(".color-add input");
+    if (add) add.onchange = () => {
+      const c = add.value.toLowerCase();
+      if (!favColors.includes(c)) favColors.push(c);
+      drawColors();
+    };
+  };
+  drawColors();
+
+  const othersBtn = document.getElementById("signOutOthersBtn");
+  if (othersBtn) othersBtn.onclick = async () => {
+    const msg = document.getElementById("othersMsg");
+    try {
+      await api.post("/auth/sign-out-others");
+      msg.innerHTML = alertBox("Done - you're signed out everywhere except here.", true);
+    } catch (e) { msg.innerHTML = alertBox(e.message); }
+  };
+
   document.getElementById("photoInput").onchange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -1155,7 +1209,7 @@ async function pageSecuritySetup(forced) {
       const val = (id) => document.getElementById(id).value;
       const body = {
         about_me: val("aboutMe"), likes: val("likes"),
-        favorite_color: val("favColor"), avoid_gifts: val("avoidGifts"),
+        favorite_colors: favColors, avoid_gifts: val("avoidGifts"),
       };
       if (canEditName) body.full_name = val("displayName");
       const r = await api.patch("/auth/me", body);
@@ -1227,7 +1281,7 @@ function pageNoFamily() {
     <hr style="margin:2rem 0">
     <p class="muted center">Or start your own clan:</p>
     <label for="fname">Clan name</label>
-    <input id="fname">
+    <input id="fname" maxlength="120">
     <button class="btn btn-secondary" id="createBtn">Start My Clan</button>` : ""}
   `);
   document.getElementById("joinBtn").onclick = async () => {
@@ -1555,7 +1609,7 @@ route(/^\/events\/(\d+)$/, async (id) => {
   };
   const rerollBtn = document.getElementById("rerollBtn");
   if (rerollBtn) rerollBtn.onclick = async () => {
-    if (!confirm("This erases everyone's matches so you can draw again. Continue?")) return;
+    if (!confirm("This erases everyone's matches, and the Secret Santa messages for this event, so you can draw again. Continue?")) return;
     try { await api.del(`/events/${id}/assignments`); navigate(); }
     catch (e) { showError(e); }
   };
@@ -1623,11 +1677,11 @@ function renderWishForm(eventId, d, item) {
   render(editing ? "Edit Gift Idea" : "Add a Gift Idea", `
     <div id="msg"></div>
     <label for="iname">What would you love?</label>
-    <input id="iname" value="${esc(editing ? item.item_name : "")}">
+    <input id="iname" maxlength="200" value="${esc(editing ? item.item_name : "")}">
     <label for="idesc">Anything else they should know? <span class="muted">(optional)</span></label>
     <textarea id="idesc" rows="4" maxlength="1000">${esc(editing ? item.description || "" : "")}</textarea>
     <label for="ilink">Link to it online <span class="muted">(optional)</span></label>
-    <input id="ilink" type="text" inputmode="url" autocapitalize="none" autocomplete="off" spellcheck="false" value="${esc(editing ? item.link_url || "" : "")}">
+    <input id="ilink" type="text" inputmode="url" maxlength="500" autocapitalize="none" autocomplete="off" spellcheck="false" value="${esc(editing ? item.link_url || "" : "")}">
     <label for="iphoto">${editing && item.photo_url ? "Replace photo" : "Photo"} <span class="muted">(optional, up to ${MAX_PHOTO_MB}MB)</span></label>
     ${editing && item.photo_url ? `<div style="margin-bottom:.4rem">${wishThumbCell(item)}</div>` : ""}
     <input id="iphoto" type="file" accept="image/*">
@@ -1695,18 +1749,19 @@ route(/^\/events\/(\d+)\/giftee$/, async (id) => {
 
 // The person's profile shown like an ID: photo on the side, details beside it
 // (stacked on a phone). Empty fields are skipped.
-function colorSwatchHtml(color) {
-  return color && window.CSS && CSS.supports("color", color)
-    ? `<span class="color-swatch" style="background:${esc(color)}" aria-hidden="true"></span>` : "";
+// Favorite colors as circles. Only real "#rrggbb" values ever reach a style attribute.
+function colorDotsHtml(colors) {
+  const ok = (colors || []).filter(c => /^#[0-9a-fA-F]{6}$/.test(c));
+  return ok.length ? `<span class="color-dots">${ok.map(c =>
+    `<span class="color-dot" style="background:${c}" role="img" aria-label="Color ${c}" title="${c}"></span>`).join("")}</span>` : "";
 }
 function idCardHtml(user, household = "") {
   const name = user.display_name || user.full_name;
-  const swatch = colorSwatchHtml(user.favorite_color);
   const rows = [
     ["Household", household ? esc(household) : ""],
     ["About me", user.about_me ? esc(user.about_me) : ""],
     ["Likes", user.likes ? esc(user.likes) : ""],
-    ["Favorite color", user.favorite_color ? `${swatch}${esc(user.favorite_color)}` : ""],
+    ["Favorite colors", colorDotsHtml(user.favorite_colors)],
     ["Please don't give me", user.avoid_gifts ? esc(user.avoid_gifts) : "", "id-avoid"],
   ].filter(r => r[1]);
   return `
@@ -1918,7 +1973,7 @@ route(/^\/admin$/, async () => {
     <section class="card form-card">
       <h2>Clan name</h2>
       <label for="clanName">Name</label>
-      <input id="clanName" value="${esc(fam.name)}">
+      <input id="clanName" maxlength="120" value="${esc(fam.name)}">
       <div id="nameMsg"></div>
       <button class="btn btn-secondary" id="saveClanName">Save Clan Name</button>
     </section>
@@ -1965,10 +2020,10 @@ route(/^\/admin\/members$/, async () => {
 
   function memberRow(m) {
     const tr = h(`<tr>
-      <td data-label="Display Name"><input data-name value="${esc(m.user.full_name)}" title="${esc(m.user.full_name)}"></td>
-      <td data-label="Username"><input data-username value="${esc(m.user.username)}" title="${esc(m.user.username)}" autocapitalize="none" autocomplete="off" spellcheck="false"></td>
-      <td data-label="Phone"><input data-phone value="${esc(m.user.phone || "")}" title="${esc(m.user.phone || "")}"></td>
-      <td data-label="Email"><input data-email value="${esc(m.user.email || "")}" title="${esc(m.user.email || "")}"></td>
+      <td data-label="Display Name"><input data-name maxlength="120" value="${esc(m.user.full_name)}" title="${esc(m.user.full_name)}"></td>
+      <td data-label="Username"><input data-username maxlength="60" value="${esc(m.user.username)}" title="${esc(m.user.username)}" autocapitalize="none" autocomplete="off" spellcheck="false"></td>
+      <td data-label="Phone"><input data-phone type="tel" inputmode="tel" maxlength="30" value="${esc(m.user.phone || "")}" title="${esc(m.user.phone || "")}"></td>
+      <td data-label="Email"><input data-email type="email" maxlength="255" value="${esc(m.user.email || "")}" title="${esc(m.user.email || "")}"></td>
       <td data-label="Household"><select data-house>${houseOpts(m.household_id)}</select></td>
       <td data-label="Admin"><input type="checkbox" data-role ${m.role === "admin" ? "checked" : ""} aria-label="Clan admin"></td>
       <td class="table-actions">
@@ -2012,7 +2067,7 @@ route(/^\/admin\/members$/, async () => {
       } catch (err) { e.target.checked = !e.target.checked; showError(err); }
     };
     tr.querySelector("[data-reset]").onclick = async () => {
-      if (!confirm("Reset this person's password? Their old password will stop working.")) return;
+      if (!confirm("Reset this person's password? Their old password will stop working and they'll be signed out on every device.")) return;
       try {
         const r = await api.post(`/families/${FAMILY.id}/members/${membershipId}/reset-password`);
         msg().innerHTML = alertBox(
@@ -2035,12 +2090,12 @@ route(/^\/admin\/members$/, async () => {
     <section class="card inline-form">
       <h2>Add a member</h2>
       <div class="inline-form-row">
-        <div><label for="newName">Display Name</label><input id="newName"></div>
-        <div><label for="newUsername">Username</label><input id="newUsername" autocapitalize="none" autocomplete="off" spellcheck="false"></div>
+        <div><label for="newName">Display Name</label><input id="newName" maxlength="120"></div>
+        <div><label for="newUsername">Username</label><input id="newUsername" maxlength="60" autocapitalize="none" autocomplete="off" spellcheck="false"></div>
         <div><label for="newPhone">Phone (optional)</label>
-          <div class="phone-field">${countrySelectHTML("newPhoneCountry")}<input id="newPhone" type="tel" inputmode="tel"></div>
+          <div class="phone-field">${countrySelectHTML("newPhoneCountry")}<input id="newPhone" type="tel" inputmode="tel" maxlength="30"></div>
         </div>
-        <div><label for="newEmail">Email (optional)</label><input id="newEmail" type="email"></div>
+        <div><label for="newEmail">Email (optional)</label><input id="newEmail" type="email" maxlength="255"></div>
         <div><label for="newHouse">Household</label><select id="newHouse">${houseOpts(null)}</select></div>
         <label class="inline-check"><input type="checkbox" id="newAdmin"> Clan admin</label>
         <button class="btn btn-primary" id="addMemberBtn">Add Member</button>
@@ -2099,7 +2154,7 @@ route(/^\/admin\/groups$/, async () => {
 
   function groupRow(hh) {
     const tr = h(`<tr>
-      <td data-label="Household Name"><input data-name value="${esc(hh.name)}"></td>
+      <td data-label="Household Name"><input data-name maxlength="120" value="${esc(hh.name)}"></td>
       <td class="table-actions">
         <button class="btn btn-secondary" data-save>Save</button>
         <button class="btn btn-quiet" data-del>Delete</button>
@@ -2128,7 +2183,7 @@ route(/^\/admin\/groups$/, async () => {
     <section class="card inline-form">
       <h2>Add a household</h2>
       <div class="inline-form-row">
-        <div><label for="hname">Household name</label><input id="hname"></div>
+        <div><label for="hname">Household name</label><input id="hname" maxlength="120"></div>
         <button class="btn btn-primary" id="addHouse">Add Household</button>
       </div>
     </section>
@@ -2264,7 +2319,7 @@ async function renderEventForm(ev) {
   render(editing ? "Edit Event" : "Create an Event", `
     <div id="msg"></div>
     <label for="ename">Name</label>
-    <input id="ename" value="${esc(editing ? ev.name : "")}">
+    <input id="ename" maxlength="120" value="${esc(editing ? ev.name : "")}">
     <label for="edate">Date of the event</label>
     <input id="edate" type="date" value="${esc(editing ? ev.event_date : "")}">
     <label for="etime">Time <span class="muted">(optional)</span></label>
@@ -2276,7 +2331,7 @@ async function renderEventForm(ev) {
     <label for="egm">Game master <span class="muted">(optional, one of the people joining)</span></label>
     <select id="egm"></select>
     <label for="ebudget">Gift amount <span class="muted">(optional)</span></label>
-    <input id="ebudget" type="number" inputmode="decimal" value="${esc(editing && ev.budget_amount ? ev.budget_amount : "")}">
+    <input id="ebudget" type="number" inputmode="decimal" min="0" step="0.01" value="${esc(editing && ev.budget_amount ? ev.budget_amount : "")}">
 
     <h2 style="margin-top:1.5rem">Good to know</h2>
     <p class="muted">Everyone in the clan sees these on the event page.</p>
@@ -2419,8 +2474,8 @@ route(/^\/admin\/announce$/, async () => {
 
   function annRow(a) {
     const tr = h(`<tr>
-      <td data-label="Title"><input data-title value="${esc(a.title)}"></td>
-      <td data-label="Message"><textarea data-body rows="2">${esc(a.body)}</textarea></td>
+      <td data-label="Title"><input data-title maxlength="200" value="${esc(a.title)}"></td>
+      <td data-label="Message"><textarea data-body rows="2" maxlength="5000">${esc(a.body)}</textarea></td>
       <td data-label="Show on Dashboard"><input type="checkbox" data-published ${a.is_published ? "checked" : ""} aria-label="Show on Clan Dashboard"></td>
       <td class="table-actions">
         <button class="btn btn-secondary" data-save>Save</button>
@@ -2451,8 +2506,8 @@ route(/^\/admin\/announce$/, async () => {
     <div id="msg"></div>
     <section class="card form-card">
     <h2>Post a new announcement</h2>
-    <label>Title</label><input id="atitle">
-    <label>Message</label><textarea id="abody" rows="4"></textarea>
+    <label>Title</label><input id="atitle" maxlength="200">
+    <label>Message</label><textarea id="abody" rows="4" maxlength="5000"></textarea>
     <div class="check-row"><input type="checkbox" id="apub" checked><label for="apub" style="margin:0">Show on Clan Dashboard</label></div>
     <button class="btn btn-primary" id="postBtn">Post to My Clan</button>
     </section>

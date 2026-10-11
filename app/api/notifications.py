@@ -3,6 +3,7 @@ from flask import Blueprint, request, jsonify, g
 from ..extensions import db
 from ..models import Notification, PushSubscription
 from ..middleware.auth import require_auth
+from ..utils import json_body
 
 bp = Blueprint("notifications", __name__)
 
@@ -41,10 +42,11 @@ def read_all():
 @require_auth
 def push_subscribe():
     """Future-ready: stores the browser's push subscription. Sending comes later."""
-    data = request.json or {}
-    endpoint = (data.get("endpoint") or "").strip()
-    keys = data.get("keys") or {}
-    if not endpoint or not keys.get("p256dh") or not keys.get("auth"):
+    data = json_body()
+    endpoint = data.get("endpoint") if isinstance(data.get("endpoint"), str) else ""
+    keys = data.get("keys") if isinstance(data.get("keys"), dict) else {}
+    if (not endpoint.startswith("https://") or len(endpoint) > 500
+            or not all(isinstance(keys.get(k), str) and 0 < len(keys[k]) <= 255 for k in ("p256dh", "auth"))):
         return jsonify({"error": "Invalid subscription."}), 400
     existing = PushSubscription.query.filter_by(endpoint=endpoint).first()
     if not existing:

@@ -3,7 +3,7 @@ from datetime import datetime
 from flask import Blueprint, jsonify, g
 
 from ..extensions import db
-from ..models import Event, Assignment, EventParticipant, User
+from ..models import Event, Assignment, EventParticipant, User, Message
 from ..middleware.auth import require_auth, require_family_member, require_family_admin, require_event_access
 from ..services.matching_service import generate_assignments, MatchingError
 
@@ -60,6 +60,10 @@ def reroll(event_id):
     if ev.status == "completed":
         return jsonify({"error": "This event is finished and can't be re-drawn."}), 400
     Assignment.query.filter_by(event_id=ev.id).delete()
+    # Messages belong to the old pairs. Kept, a re-draw that happens to pair two people
+    # the other way round would show each the other's old thread - giving away who their
+    # Secret Santa was.
+    Message.query.filter_by(event_id=ev.id).delete()
     ev.status = "open"
     ev.matched_at = None
     db.session.commit()

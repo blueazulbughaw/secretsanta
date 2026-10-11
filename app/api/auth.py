@@ -8,17 +8,15 @@ from ..services import otp_service, sms_service
 from ..services.photo_service import save_photo, remove_photo
 from ..middleware.auth import (issue_token, set_auth_cookie, clear_auth_cookie,
                                require_auth, _current_user)
-from ..utils import normalize_phone, normalize_username, hash_password, verify_password
+from ..utils import (normalize_phone, normalize_username, hash_password, verify_password,
+                     check_new_password, clean_text, normalize_email, parse_colors, json_body)
 
 bp = Blueprint("auth", __name__)
 
 
 @bp.post("/auth/login-start")
 def login_start():
-    try:
-        username = normalize_username((request.json or {}).get("username", ""))
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+    username = normalize_username(json_body().get("username"))
     user = User.query.filter_by(username=username).first()
     if not user:
         return jsonify({"ok": True, "exists": False})
@@ -49,11 +47,9 @@ def send_code():
     protection it costs. The IP rate limit below is the one case that still answers
     generically - whether a requester is being throttled is a separate, lower-stakes kind
     of information than whose phone numbers are in the system."""
-    data = request.json or {}
-    try:
-        phone = normalize_phone(data.get("phone", ""), data.get("phone_country", "US"))
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400  # about their input's format, not account existence
+    data = json_body()
+    # A bad format is about their input, not account existence.
+    phone = normalize_phone(data.get("phone"), data.get("phone_country", "US"))
     try:
         otp_service.enforce_ip_rate_limit(request.remote_addr or "unknown")
     except ValueError:
@@ -73,40 +69,32 @@ def send_code():
 
 @bp.post("/auth/register")
 def register():
-    data = request.json or {}
-    try:
-        username = normalize_username(data.get("username", ""))
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+    data = json_body()
+    username = normalize_username(data.get("username"))
     if User.query.filter_by(username=username).first():
         return jsonify({"error": "That username is already taken."}), 409
 
     # The display name is what the clan sees, and only a clan admin can change it later,
     # so it has to be chosen here and can't just be the username.
-    full_name = (data.get("full_name") or "").strip()[:120]
+    full_name = clean_text(data.get("full_name"), DISPLAY_NAME_MAX, "Display name")
     if not full_name:
         return jsonify({"error": "Please enter your display name."}), 400
     if full_name == username:
         return jsonify({"error": "Your display name should be different from your username."}), 400
 
-    password = data.get("password") or ""
-    if len(password) < 8:
-        return jsonify({"error": "Password must be at least 8 characters."}), 400
+    password = check_new_password(data.get("password"))
 
-    email = (data.get("email") or "").strip()
-    if email and User.query.filter_by(email=email).first():
+    email = normalize_email(data.get("email"))
+    if email and User.query.filter(db.func.lower(User.email) == email).first():
         return jsonify({"error": "That email is already in use."}), 409
 
     phone = None
     if data.get("phone"):
-        try:
-            phone = normalize_phone(data.get("phone", ""), data.get("phone_country", "US"))
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
+        phone = normalize_phone(data.get("phone"), data.get("phone_country", "US"))
         if User.query.filter_by(phone=phone).first():
             return jsonify({"error": "That phone number is already in use."}), 409
 
-    clan_name = (data.get("clan_name") or "").strip()[:120]
+    clan_name = clean_text(data.get("clan_name"), 120, "Clan name")
 
     user = User(username=username, email=email or None, phone=phone,
                 password_hash=hash_password(password), full_name=full_name)
@@ -130,12 +118,10 @@ def register():
 @bp.post("/auth/verify-otp")
 def verify_otp():
     """Pairs with /auth/send-code: phone-based, not username-based."""
-    data = request.json or {}
-    try:
-        phone = normalize_phone(data.get("phone", ""), data.get("phone_country", "US"))
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    code = data.get("code", "").strip()
+    data = json_body()
+    phone = normalize_phone(data.get("phone"), data.get("phone_country", "US"))
+    code = data.get("code") if isinstance(data.get("code"), str) else ""
+    code = code.strip()
     user = User.query.filter_by(phone=phone).first()
     if not user or not otp_service.verify_code(phone, code):
         return jsonify({"error": "That code didn't work. Please check it and try again."}), 401
@@ -147,12 +133,9 @@ LOGIN_FAILURES_PER_WINDOW = 20  # wrong passwords per IP per 15 minutes
 
 @bp.post("/auth/login-password")
 def login_password():
-    data = request.json or {}
-    try:
-        username = normalize_username(data.get("username", ""))
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    password = data.get("password", "")
+    data = json_body()
+    username = normalize_username(data.get("username"))
+    password = data.get("password")
     # Usernames are easy to guess (made from display names), so cap how many wrong
     # passwords one network can try. Only failures count: a family signing in from
     # one home network shouldn't lock itself out.
@@ -172,7 +155,7 @@ def _finish_login(user, **extra):
     user.last_login_at = datetime.utcnow()
     db.session.commit()
     resp = make_response(jsonify({"ok": True, "user": user.to_dict(), **extra}))
-    return set_auth_cookie(resp, issue_token(user.id))
+    return set_auth_cookie(resp, issue_token(user))
 
 
 @bp.get("/auth/me")
@@ -199,8 +182,10 @@ def me():
                     "must_change_password": user.must_change_password})
 
 
-# Free-text profile fields the clan sees on My Clan, and their max lengths
-PROFILE_FIELD_LIMITS = {"about_me": 1000, "likes": 1000, "favorite_color": 40, "avoid_gifts": 1000}
+DISPLAY_NAME_MAX = 120
+# Free-text profile fields the clan sees on someone's profile card: max length, label
+PROFILE_FIELDS = {"about_me": (1000, "About me"), "likes": (1000, "Likes"),
+                  "avoid_gifts": (1000, "What not to give me")}
 
 
 def _display_name_error(new_name):
@@ -219,23 +204,25 @@ def _display_name_error(new_name):
 @bp.patch("/auth/me")
 @require_auth
 def update_me():
-    data = request.json or {}
-    name = (data.get("full_name") or "").strip()[:120]
+    data = json_body()
+    name = clean_text(data.get("full_name"), DISPLAY_NAME_MAX, "Display name")
     if name and name != g.user.full_name:
         err = _display_name_error(name)
         if err:
             return err
         g.user.full_name = name
     if "display_name" in data:
-        shown = (data.get("display_name") or "").strip()[:60] or None
+        shown = clean_text(data.get("display_name"), 60, "Display name") or None
         if shown != g.user.display_name:
             err = _display_name_error(shown)
             if err:
                 return err
             g.user.display_name = shown
-    for field, limit in PROFILE_FIELD_LIMITS.items():
+    for field, (limit, label) in PROFILE_FIELDS.items():
         if field in data:
-            setattr(g.user, field, str(data.get(field) or "").strip()[:limit] or None)
+            setattr(g.user, field, clean_text(data.get(field), limit, label, multiline=True) or None)
+    if "favorite_colors" in data:
+        g.user.favorite_colors = parse_colors(data.get("favorite_colors"))
     db.session.commit()
     return jsonify({"ok": True, "user": g.user.to_dict()})
 
@@ -268,11 +255,10 @@ def remove_my_photo():
 @bp.patch("/auth/security")
 @require_auth
 def update_security():
-    data = request.json or {}
+    data = json_body()
+    signed_out_others = False
     if "password" in data:
-        password = data.get("password") or ""
-        if len(password) < 8:
-            return jsonify({"error": "Password must be at least 8 characters."}), 400
+        password = check_new_password(data.get("password"))
         # Deliberately doesn't ask for the current password: this app's real users
         # routinely forget it (that's the actual problem the texted sign-in code solves
         # too), and reaching this endpoint at all already requires a valid session - that
@@ -281,20 +267,31 @@ def update_security():
             return jsonify({"error": "Please choose a different password than the one you were given."}), 400
         g.user.password_hash = hash_password(password)
         g.user.must_change_password = False
+        # A new password signs out every other device (this one gets a fresh cookie below).
+        g.user.session_version = (g.user.session_version or 0) + 1
+        signed_out_others = True
     if "phone" in data:
-        try:
-            phone = normalize_phone(data.get("phone", ""), data.get("phone_country", "US"))
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
+        phone = normalize_phone(data.get("phone"), data.get("phone_country", "US"))
         existing = User.query.filter_by(phone=phone).first()
         if existing and existing.id != g.user.id:
             return jsonify({"error": "That phone number is already in use."}), 409
         g.user.phone = phone
     db.session.commit()
-    return jsonify({"ok": True, "user": g.user.to_dict()})
+    resp = make_response(jsonify({"ok": True, "user": g.user.to_dict()}))
+    return set_auth_cookie(resp, issue_token(g.user)) if signed_out_others else resp
+
+
+@bp.post("/auth/sign-out-others")
+@require_auth
+def sign_out_others():
+    """Ends every other session on this account (a lost phone, a shared computer),
+    keeping this one signed in."""
+    g.user.session_version = (g.user.session_version or 0) + 1
+    db.session.commit()
+    return set_auth_cookie(make_response(jsonify({"ok": True})), issue_token(g.user))
 
 
 @bp.post("/auth/logout")
-@require_auth
 def logout():
+    # No @require_auth: signing out has to work even with an expired or revoked cookie.
     return clear_auth_cookie(make_response(jsonify({"ok": True})))

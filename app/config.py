@@ -15,6 +15,8 @@ class Config:
         "DATABASE_URL", "sqlite:///giftcircle_dev.db"
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # Whole-request cap: photos are limited to 8MB (photo_service), with room so a 9MB photo still gets that friendly message.
+    MAX_CONTENT_LENGTH = 12 * 1024 * 1024
 
     MAIL_SERVER = os.getenv("MAIL_SERVER", "")
     MAIL_PORT = int(os.getenv("MAIL_PORT", "465"))

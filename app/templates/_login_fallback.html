@@ -15,10 +15,10 @@
   <p class="muted">Family events made simple.</p>
 </div>
 <label for="username">Username</label>
-<input id="username" autocomplete="username">
+<input id="username" maxlength="60" autocomplete="username" autocapitalize="none" spellcheck="false">
 <label for="password">Password</label>
 <div class="password-field">
-  <input id="password" type="password" autocomplete="current-password">
+  <input id="password" type="password" maxlength="128" autocomplete="current-password">
   <button type="button" class="password-toggle" id="togglePw" aria-label="Show password">👁</button>
 </div>
 <div id="msg"></div>
@@ -91,7 +91,7 @@
     <option value="GB" title="United Kingdom (+44)">🇬🇧 +44</option>
     <option value="VN" title="Vietnam (+84)">🇻🇳 +84</option>
   </select>
-  <input id="fallback-phone" type="tel" inputmode="tel" autocomplete="tel">
+  <input id="fallback-phone" type="tel" inputmode="tel" maxlength="30" autocomplete="tel">
 </div>
 <div class="check-row" style="align-items:flex-start;margin-top:1rem">
   <input type="checkbox" id="fallback-smsConsent" style="margin-top:.3rem">

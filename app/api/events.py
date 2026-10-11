@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, date, time
 
 from flask import Blueprint, request, jsonify, g
@@ -6,48 +7,62 @@ from ..extensions import db
 from ..models import (Event, EventParticipant, FamilyMember, Assignment, WishlistItem,
                       Message, Announcement, EventDish)
 from ..services.photo_service import remove_photo
-from ..utils import parse_amount
+from ..utils import parse_amount, clean_text, parse_bool, parse_id, json_body, InputError
 from ..middleware.auth import (require_auth, require_family_member, require_family_admin, archived_error,
                                require_event_access)
 
 bp = Blueprint("events", __name__)
 
-# Free-text details the clan admin fills in for everyone (max lengths). These
+# Free-text details the clan admin fills in for everyone: max length, label. These
 # stay editable after names are drawn; the matching rules below do not.
-DETAIL_TEXT_LIMITS = {"location": 255, "theme": 120, "rules": 2000,
-                      "what_to_bring": 2000, "other_info": 2000}
-
-
-def _apply_details(ev, data):
-    """Copies the event-details fields present in `data` onto `ev`. Returns an
-    error message for a bad time, else None."""
-    if "event_time" in data:
-        raw = str(data.get("event_time") or "").strip()
-        if not raw:
-            ev.event_time = None
-        else:
-            try:
-                ev.event_time = time.fromisoformat(raw)
-            except ValueError:
-                return "Please choose a valid time for the event."
-    for field, limit in DETAIL_TEXT_LIMITS.items():
-        if field in data:
-            setattr(ev, field, str(data.get(field) or "").strip()[:limit] or None)
-    return None
-
-
+DETAIL_FIELDS = {"location": (255, "Where"), "theme": (120, "Theme"), "rules": (2000, "Rules"),
+                 "what_to_bring": (2000, "What to bring"), "other_info": (2000, "Other info")}
+EVENT_NAME_MAX = 120
 WISHLIST_LIMIT_RANGE = (1, 20)  # matches the event form's min/max
+
+
+def _parse_date(raw):
+    try:
+        d = date.fromisoformat(raw if isinstance(raw, str) else "")
+    except ValueError:
+        raise InputError("Please choose a date for the event.")
+    if not 2000 <= d.year <= 2100:
+        raise InputError("Please choose a date for the event.")
+    return d
+
+
+def _parse_currency(raw):
+    cur = clean_text(raw, 3, "Currency").upper() or "USD"
+    if not re.fullmatch(r"[A-Z]{3}", cur):
+        raise InputError("Currency has to be a 3-letter code, like USD.")
+    return cur
 
 
 def _parse_wishlist_limit(raw):
     lo, hi = WISHLIST_LIMIT_RANGE
+    if isinstance(raw, float) and raw.is_integer():
+        raw = int(raw)  # JSON 5.0
     try:
-        limit = int(raw)
-    except (TypeError, ValueError):
+        limit = parse_id(raw, "The gift limit")
+    except InputError:
         limit = None
     if limit is None or not lo <= limit <= hi:
-        raise ValueError(f"The gift limit has to be a number from {lo} to {hi}.")
+        raise InputError(f"The gift limit has to be a number from {lo} to {hi}.")
     return limit
+
+
+def _apply_details(ev, data):
+    """Copies the event-details fields present in `data` onto `ev` (raises InputError)."""
+    if "event_time" in data:
+        raw = clean_text(data.get("event_time"), 8, "Time")
+        try:
+            ev.event_time = time.fromisoformat(raw) if raw else None
+        except ValueError:
+            raise InputError("Please choose a valid time for the event.")
+    for field, (limit, label) in DETAIL_FIELDS.items():
+        if field in data:
+            multiline = limit > 255
+            setattr(ev, field, clean_text(data.get(field), limit, label, multiline=multiline) or None)
 
 
 def _event_and_membership(event_id):
@@ -62,32 +77,22 @@ def create_event(family_id):
     _, err = require_family_admin(family_id)
     if err:
         return err
-    data = request.json or {}
-    name = (data.get("name") or "").strip()
-    try:
-        event_date = date.fromisoformat(data.get("event_date", ""))
-    except ValueError:
-        return jsonify({"error": "Please choose a date for the event."}), 400
+    data = json_body()
+    name = clean_text(data.get("name"), EVENT_NAME_MAX, "Event name")
+    event_date = _parse_date(data.get("event_date"))
     if not name:
         return jsonify({"error": "Please give the event a name."}), 400
-    try:
-        budget = parse_amount(data.get("budget_amount"), "gift amount")
-        raw_limit = data.get("wishlist_limit")
-        limit = 5 if raw_limit in (None, "") else _parse_wishlist_limit(raw_limit)
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+    raw_limit = data.get("wishlist_limit")
     ev = Event(
-        family_id=family_id, name=name[:120], event_date=event_date,
-        budget_amount=budget,
-        budget_currency=(data.get("budget_currency") or "USD")[:3].upper(),
-        wishlist_limit=limit,
-        use_codenames=bool(data.get("use_codenames")),
-        allow_same_household=bool(data.get("allow_same_household")),
+        family_id=family_id, name=name, event_date=event_date,
+        budget_amount=parse_amount(data.get("budget_amount"), "gift amount"),
+        budget_currency=_parse_currency(data.get("budget_currency")),
+        wishlist_limit=5 if raw_limit in (None, "") else _parse_wishlist_limit(raw_limit),
+        use_codenames=parse_bool(data.get("use_codenames"), "Codenames"),
+        allow_same_household=parse_bool(data.get("allow_same_household"), "Same-household matches"),
         status="open", created_by=g.user.id,
     )
-    bad_time = _apply_details(ev, data)
-    if bad_time:
-        return jsonify({"error": bad_time}), 400
+    _apply_details(ev, data)
     db.session.add(ev)
     db.session.commit()
     return jsonify({"ok": True, "event": ev.to_dict()}), 201
@@ -138,42 +143,36 @@ def update_event(event_id):
     err = archived_error(ev)
     if err:
         return err
-    data = request.json or {}
+    data = json_body()
     # Once names are drawn the matching rules are locked; when/where/what to
     # bring and the rest of the details can still change.
     rule_fields = ("wishlist_limit", "use_codenames", "allow_same_household")
     if ev.status == "matched" and any(f in data for f in rule_fields):
         return jsonify({"error": "Names are already drawn. Re-draw to change rules."}), 400
-    if str(data.get("name") or "").strip():
-        ev.name = str(data["name"]).strip()[:120]
-    if data.get("event_date"):
-        try:
-            ev.event_date = date.fromisoformat(str(data["event_date"]))
-        except ValueError:
-            return jsonify({"error": "Please choose a date for the event."}), 400
-    try:
-        if "budget_amount" in data:
-            ev.budget_amount = parse_amount(data["budget_amount"], "gift amount")
-        if "wishlist_limit" in data:
-            ev.wishlist_limit = _parse_wishlist_limit(data["wishlist_limit"])
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    for field in ("use_codenames", "allow_same_household"):
-        if field in data:
-            setattr(ev, field, bool(data[field]))
-    bad_time = _apply_details(ev, data)
-    if bad_time:
-        return jsonify({"error": bad_time}), 400
+    if "name" in data:
+        name = clean_text(data.get("name"), EVENT_NAME_MAX, "Event name")
+        if not name:
+            return jsonify({"error": "Please give the event a name."}), 400
+        ev.name = name
+    if "event_date" in data:
+        ev.event_date = _parse_date(data.get("event_date"))
+    if "budget_amount" in data:
+        ev.budget_amount = parse_amount(data["budget_amount"], "gift amount")
+    if "budget_currency" in data:
+        ev.budget_currency = _parse_currency(data["budget_currency"])
+    if "wishlist_limit" in data:
+        ev.wishlist_limit = _parse_wishlist_limit(data["wishlist_limit"])
+    if "use_codenames" in data:
+        ev.use_codenames = parse_bool(data["use_codenames"], "Codenames")
+    if "allow_same_household" in data:
+        ev.allow_same_household = parse_bool(data["allow_same_household"], "Same-household matches")
+    _apply_details(ev, data)
     if "game_master_id" in data:
         # The game master is picked from the people joining, and can change after the draw.
-        raw = data["game_master_id"]
-        if raw in (None, ""):
+        gm = parse_id(data["game_master_id"], "That game master")
+        if gm is None:
             ev.game_master_id = None
         else:
-            try:
-                gm = int(raw)
-            except (TypeError, ValueError):
-                return jsonify({"error": "Please choose the game master from the list."}), 400
             if not EventParticipant.query.filter_by(event_id=ev.id, user_id=gm,
                                                     is_participating=True).first():
                 return jsonify({"error": "The game master has to be someone who's joining "
@@ -267,7 +266,10 @@ def set_participants(event_id):
         return err
     if ev.status == "matched":
         return jsonify({"error": "Names are already drawn. Re-draw to change who's in."}), 400
-    user_ids = set((request.json or {}).get("user_ids", []))
+    raw_ids = json_body().get("user_ids", [])
+    if not isinstance(raw_ids, list):
+        raise InputError("Please choose who's joining from the list.")
+    user_ids = {parse_id(u, "That person") for u in raw_ids} - {None}
     valid_ids = {m.user_id for m in FamilyMember.query.filter_by(family_id=ev.family_id).all()}
     bad = user_ids - valid_ids
     if bad:

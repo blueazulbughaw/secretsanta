@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify, g
 
 from ..extensions import db
 from ..models import Event, EventDish, EventParticipant, User
+from ..utils import clean_text, json_body
 from ..middleware.auth import require_auth, require_family_member, archived_error, require_event_access
 
 bp = Blueprint("dishes", __name__)
@@ -58,12 +59,12 @@ def set_my_dishes(event_id):
     err = _my_signup_error(ev)
     if err:
         return err
-    raw = (request.get_json(silent=True) or {}).get("dishes")
-    if not isinstance(raw, list):
+    raw = json_body().get("dishes")
+    if not isinstance(raw, list) or len(raw) > 50:
         return jsonify({"error": "Please list the dishes you're bringing."}), 400
     names, seen = [], set()
     for item in raw:
-        name = str(item or "").strip()[:MAX_DISH_NAME]
+        name = clean_text(item, MAX_DISH_NAME, "A dish name")
         if name and name.lower() not in seen:
             seen.add(name.lower())
             names.append(name)

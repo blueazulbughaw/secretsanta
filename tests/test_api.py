@@ -620,28 +620,48 @@ def test_profile_details_saved_and_visible_to_clan(users):
     bob, admin = users[BOB_USER], users[ADMIN_USER]
     fam = users["_family"]["id"]
     blank = bob.get("/api/auth/me").get_json()["user"]
-    assert (blank["about_me"], blank["likes"], blank["favorite_color"], blank["avoid_gifts"]) == ("", "", "", "")
+    assert (blank["about_me"], blank["likes"], blank["favorite_colors"], blank["avoid_gifts"]) == ("", "", [], "")
 
     r = bob.patch("/api/auth/me", json={"about_me": "  Loves hiking ", "likes": "Coffee, books",
-                                        "favorite_color": "Sage green", "avoid_gifts": "Candles"})
+                                        "favorite_colors": ["#9CAF88", "#008080"], "avoid_gifts": "Candles"})
     assert r.status_code == 200
     u = r.get_json()["user"]
-    assert (u["about_me"], u["likes"], u["favorite_color"], u["avoid_gifts"]) == \
-        ("Loves hiking", "Coffee, books", "Sage green", "Candles")
+    assert (u["about_me"], u["likes"], u["favorite_colors"], u["avoid_gifts"]) == \
+        ("Loves hiking", "Coffee, books", ["#9caf88", "#008080"], "Candles")
 
     # partial update leaves the other fields alone; empty string clears one
     bob.patch("/api/auth/me", json={"likes": ""})
     u = bob.get("/api/auth/me").get_json()["user"]
-    assert u["likes"] == "" and u["about_me"] == "Loves hiking"
+    assert u["likes"] == "" and u["about_me"] == "Loves hiking" and u["favorite_colors"] == ["#9caf88", "#008080"]
 
-    # too-long values are trimmed to their limits
-    u = bob.patch("/api/auth/me", json={"favorite_color": "x" * 100}).get_json()["user"]
-    assert len(u["favorite_color"]) == 40
+    # too-long values are refused with a message, not silently cut off
+    r = bob.patch("/api/auth/me", json={"likes": "x" * 1001})
+    assert r.status_code == 400 and "at most 1000" in r.get_json()["error"]
 
     # the rest of the family sees them
     members = admin.get(f"/api/families/{fam}/members").get_json()
     bob_row = next(m["user"] for m in members if m["user"]["username"] == BOB_USER)
     assert bob_row["about_me"] == "Loves hiking" and bob_row["avoid_gifts"] == "Candles"
+    assert bob_row["favorite_colors"] == ["#9caf88", "#008080"]
+
+
+def test_favorite_colors_are_picked_colors_only(users):
+    bob = users[BOB_USER]
+
+    def save(colors):
+        return bob.patch("/api/auth/me", json={"favorite_colors": colors})
+
+    r = save(["#FF0000", "#ff0000", "#00ff00"])                # duplicates dropped, lowercased
+    assert r.get_json()["user"]["favorite_colors"] == ["#ff0000", "#00ff00"]
+    for bad in (["red"], ["#fff"], ["#12345g"], ["#ff0000;background:url(x)"], "#ff0000", [5]):
+        assert save(bad).status_code == 400, bad
+    assert save([f"#0000{i:02x}" for i in range(9)]).status_code == 400   # at most 8
+    assert len(save([f"#0000{i:02x}" for i in range(8)]).get_json()["user"]["favorite_colors"]) == 8
+    assert save([]).get_json()["user"]["favorite_colors"] == []
+    # the old free-text field is ignored rather than stored
+    assert save(["#123456"]).status_code == 200
+    bob.patch("/api/auth/me", json={"favorite_color": "Teal"})
+    assert bob.get("/api/auth/me").get_json()["user"]["favorite_colors"] == ["#123456"]
 
 
 def test_event_details_editable_after_draw_and_shown_to_members(users):
@@ -691,7 +711,7 @@ def test_attendees_visible_to_the_people_joining_without_private_contact_info(ap
     admin.put(f"/api/events/{ev['id']}/participants",
               json={"user_ids": [uid[CARA_USER], uid[ADMIN_USER], uid[BOB_USER]]})
     bob.patch("/api/auth/security", json={"phone": "(555) 010-1234"})
-    admin.patch("/api/auth/me", json={"likes": "Tea", "favorite_color": "Green"})
+    admin.patch("/api/auth/me", json={"likes": "Tea", "favorite_colors": ["#2e7d4f"]})
 
     # household names come with them (blank until someone is in one), sorted by name
     h = admin.post(f"/api/families/{fam['id']}/households", json={"name": "Cruz House"}).get_json()["household"]
@@ -700,7 +720,7 @@ def test_attendees_visible_to_the_people_joining_without_private_contact_info(ap
     people = bob.get(f"/api/events/{ev['id']}/attendees").get_json()
     assert [(p["display_name"], p["household_name"]) for p in people] == \
         [("Ana", "Cruz House"), ("Bob", ""), ("Cara", "")]
-    assert (people[0]["likes"], people[0]["favorite_color"]) == ("Tea", "Green")
+    assert (people[0]["likes"], people[0]["favorite_colors"]) == ("Tea", ["#2e7d4f"])
     assert all(not ({"phone", "email", "username", "avoid_gifts"} & set(p)) for p in people)
 
     # outsiders can't
@@ -1552,3 +1572,231 @@ def test_deleting_a_gift_removes_its_photo(app, users, tmp_path):
     assert photo.exists()
     assert bob.delete(f"/api/wishlists/{item['id']}").status_code == 200
     assert not photo.exists()
+
+
+# ---------------------------------------------------------------------------
+# Sessions can be ended (#4), secrets (#5), re-draw (#6), removing members (#7)
+
+def _second_device(app, username):
+    c = app.test_client()
+    assert c.post("/api/auth/login-password", json={"username": username, "password": PASSWORD}).status_code == 200
+    return c
+
+
+def _signed_in(client):
+    return client.get("/api/auth/me").get_json()["authenticated"]
+
+
+def test_new_password_signs_out_other_devices_but_not_this_one(app, users):
+    bob = users[BOB_USER]
+    phone = _second_device(app, BOB_USER)
+    assert _signed_in(phone)
+    assert bob.patch("/api/auth/security", json={"password": "a-new-password"}).status_code == 200
+    assert _signed_in(bob) and not _signed_in(phone)
+    assert phone.get("/api/notifications").status_code == 401
+
+
+def test_sign_out_other_devices(app, users):
+    bob = users[BOB_USER]
+    laptop = _second_device(app, BOB_USER)
+    assert bob.post("/api/auth/sign-out-others").status_code == 200
+    assert _signed_in(bob) and not _signed_in(laptop)
+    # changing a phone number alone doesn't sign anyone out
+    laptop = _second_device(app, BOB_USER)
+    bob.patch("/api/auth/security", json={"phone": "(555) 010-4444"})
+    assert _signed_in(laptop)
+
+
+def test_admin_password_reset_and_removal_sign_the_member_out(app, users):
+    fam, admin = users["_family"], users[ADMIN_USER]
+    rows = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    mid = {r["user"]["username"]: r["membership_id"] for r in rows}
+    assert admin.post(f"/api/families/{fam['id']}/members/{mid[BOB_USER]}/reset-password").status_code == 200
+    assert not _signed_in(users[BOB_USER])
+    assert admin.delete(f"/api/families/{fam['id']}/members/{mid[CARA_USER]}").status_code == 200
+    assert not _signed_in(users[CARA_USER])
+
+
+def test_logout_works_even_with_a_dead_session(app, users):
+    bob = users[BOB_USER]
+    stale = _second_device(app, BOB_USER)
+    bob.post("/api/auth/sign-out-others")              # `stale` is now revoked
+    assert stale.post("/api/auth/logout").status_code == 200
+
+
+def test_app_refuses_to_start_with_placeholder_secrets():
+    class Prod(TestConfig):
+        TESTING = False
+        DEBUG = False
+        JWT_SECRET = "dev-jwt-change-me"
+    with pytest.raises(RuntimeError, match="JWT_SECRET"):
+        create_app(Prod)
+
+
+def test_redraw_clears_the_old_draws_messages(app, users):
+    ev = _drawn_event(users)
+    for name in (ADMIN_USER, BOB_USER, CARA_USER):
+        assert users[name].post(f"/api/events/{ev['id']}/messages",
+                                json={"to": "giftee", "body": f"from {name}"}).status_code == 201
+    admin = users[ADMIN_USER]
+    assert admin.delete(f"/api/events/{ev['id']}/assignments").status_code == 200
+    assert admin.post(f"/api/events/{ev['id']}/assignments/generate").status_code == 200
+    for name in (ADMIN_USER, BOB_USER, CARA_USER):
+        threads = users[name].get(f"/api/events/{ev['id']}/messages").get_json()
+        assert threads["giftee"]["messages"] == [] and threads["giver"]["messages"] == []
+
+
+def test_member_in_a_drawn_event_cant_be_removed_until_the_draw_is_redone(app, users):
+    from app.models import EventParticipant
+    fam, admin = users["_family"], users[ADMIN_USER]
+    drawn = _drawn_event(users)
+    upcoming = admin.post(f"/api/families/{fam['id']}/events",
+                          json={"name": "Brunch", "event_date": future_date(60)}).get_json()["event"]
+    join_everyone(users, upcoming)
+    rows = admin.get(f"/api/families/{fam['id']}/members").get_json()
+    bob = next(r for r in rows if r["user"]["username"] == BOB_USER)
+    admin.patch(f"/api/events/{upcoming['id']}", json={"game_master_id": bob["user"]["id"]})
+
+    r = admin.delete(f"/api/families/{fam['id']}/members/{bob['membership_id']}")
+    assert r.status_code == 400 and "Potluck" in r.get_json()["error"]
+    assert _signed_in(users[BOB_USER])                                   # nothing changed
+
+    admin.delete(f"/api/events/{drawn['id']}/assignments")                # start over...
+    assert admin.delete(f"/api/families/{fam['id']}/members/{bob['membership_id']}").status_code == 200
+    # ...and the not-yet-drawn event just loses them (and its game master)
+    assert not EventParticipant.query.filter_by(event_id=upcoming["id"], user_id=bob["user"]["id"],
+                                                is_participating=True).first()
+    assert admin.get(f"/api/events/{upcoming['id']}").get_json()["game_master_id"] is None
+
+
+# ---------------------------------------------------------------------------
+# Field validation: wrong types, oversized text, bad emails etc. are a plain 400 -
+# never a crash (the test client re-raises any server error, failing the test).
+
+JUNK = [None, 12345, True, [], {}, ["x"], "x" * 6000, "\x00\x01"]
+
+
+def _never_crashes(client, method, path, good_body):
+    call = getattr(client, method)
+    for body in ([1, 2], "just a string", 42):
+        r = call(path, json=body)
+        assert r.status_code < 500 and "error" in r.get_json(), (path, body)
+    for key in good_body:
+        for junk in JUNK:
+            r = call(path, json={**good_body, key: junk})
+            assert r.status_code < 500, (path, key, junk)
+            assert r.is_json, (path, key, junk)
+
+
+def test_every_write_endpoint_rejects_bad_input_cleanly(app, users):
+    fam, admin, bob = users["_family"], users[ADMIN_USER], users[BOB_USER]
+    fid = fam["id"]
+    ev = _drawn_event(users)
+    eid = ev["id"]
+    open_ev = admin.post(f"/api/families/{fid}/events",
+                         json={"name": "Open", "event_date": future_date(40)}).get_json()["event"]
+    item = bob.post(f"/api/events/{eid}/wishlists", json={"item_name": "Lamp"}).get_json()["item"]
+    rows = admin.get(f"/api/families/{fid}/members").get_json()
+    cara_mid = next(r["membership_id"] for r in rows if r["user"]["username"] == CARA_USER)
+    hh = admin.get(f"/api/families/{fid}/households").get_json()[0]
+    ann = admin.post(f"/api/families/{fid}/announcements", json={"title": "Hi", "body": "There"}).get_json()
+
+    anon = app.test_client()
+    cases = [
+        (anon, "post", "/api/auth/login-start", {"username": "bob"}),
+        (anon, "post", "/api/auth/login-password", {"username": "bob", "password": "x"}),
+        (anon, "post", "/api/auth/register", {"username": "newbie", "password": PASSWORD, "full_name": "New",
+                                               "email": "n@x.com", "phone": "5550109999", "clan_name": ""}),
+        (anon, "post", "/api/auth/verify-otp", {"phone": "5550101234", "code": "123456"}),
+        (bob, "patch", "/api/auth/me", {"about_me": "a", "likes": "b", "avoid_gifts": "c",
+                                         "favorite_colors": ["#ffffff"], "full_name": "Bob"}),
+        (bob, "patch", "/api/auth/security", {"phone": "5550101234", "phone_country": "US"}),
+        (bob, "patch", f"/api/families/{fid}/my-household", {"household_id": hh["id"]}),
+        (bob, "post", "/api/families/join", {"join_code": fam["join_code"]}),
+        (admin, "patch", f"/api/families/{fid}", {"name": "Fam"}),
+        (admin, "post", f"/api/families/{fid}/members", {"full_name": "Dee", "username": "dee", "email": "d@x.com",
+                                                          "phone": "5550108888", "household_id": hh["id"],
+                                                          "role": "member"}),
+        (admin, "patch", f"/api/families/{fid}/members/{cara_mid}", {"full_name": "Cara", "username": "cara",
+                                                                      "email": "c@x.com", "phone": "",
+                                                                      "household_id": hh["id"], "role": "member"}),
+        (admin, "post", f"/api/families/{fid}/households", {"name": "New House"}),
+        (admin, "patch", f"/api/households/{hh['id']}", {"name": "Renamed"}),
+        (admin, "post", f"/api/families/{fid}/events", {"name": "E", "event_date": future_date(), "event_time": "18:00",
+                                                         "budget_amount": "20", "budget_currency": "USD",
+                                                         "wishlist_limit": 5, "use_codenames": False,
+                                                         "allow_same_household": False, "location": "Home",
+                                                         "theme": "Ugly sweaters", "rules": "Be nice",
+                                                         "what_to_bring": "Food", "other_info": "None"}),
+        (admin, "patch", f"/api/events/{open_ev['id']}", {"name": "E", "event_date": future_date(), "wishlist_limit": 4,
+                                                          "use_codenames": True, "budget_amount": "5",
+                                                          "budget_currency": "EUR", "event_time": "",
+                                                          "game_master_id": None, "location": "Park"}),
+        (admin, "put", f"/api/events/{open_ev['id']}/participants", {"user_ids": []}),
+        (bob, "post", f"/api/events/{eid}/wishlists", {"item_name": "Mug", "description": "Big",
+                                                       "link_url": "amazon.com/mug", "price_estimate": "9"}),
+        (bob, "patch", f"/api/wishlists/{item['id']}", {"item_name": "Lamp", "description": "",
+                                                        "link_url": "", "price_estimate": ""}),
+        (bob, "put", f"/api/events/{eid}/wishlists/order", {"item_ids": [item["id"]]}),
+        (users[CARA_USER], "post", f"/api/wishlists/{item['id']}/purchase", {"purchased": True}),
+        (bob, "post", f"/api/events/{eid}/messages", {"to": "giftee", "body": "hello"}),
+        (bob, "put", f"/api/events/{eid}/dishes/mine", {"dishes": ["Pie"]}),
+        (admin, "post", f"/api/families/{fid}/announcements", {"title": "T", "body": "B", "is_published": False,
+                                                               "event_id": eid}),
+        (admin, "patch", f"/api/announcements/{ann['id']}", {"title": "T", "body": "B", "is_published": True}),
+        (bob, "post", "/api/push/subscribe", {"endpoint": "https://push.example.com/x",
+                                              "keys": {"p256dh": "k", "auth": "a"}}),
+    ]
+    for client, method, path, good in cases:
+        _never_crashes(client, method, path, good)
+
+
+def test_specific_field_rules(app, users):
+    fam, admin, bob = users["_family"], users[ADMIN_USER], users[BOB_USER]
+    fid = fam["id"]
+
+    def err(r):
+        assert r.status_code == 400, r.get_json()
+        return r.get_json()["error"]
+
+    # text that's too long is refused (with the field named), not silently cut
+    assert "at most 120" in err(admin.patch(f"/api/families/{fid}", json={"name": "x" * 121}))
+    assert "at most 2000" in err(admin.post(f"/api/families/{fid}/events",
+                                            json={"name": "E", "event_date": future_date(), "rules": "x" * 2001}))
+    # emails must look like emails, and are stored lowercased
+    assert "valid email" in err(admin.post(f"/api/families/{fid}/members", json={"full_name": "Dee", "email": "dee"}))
+    r = admin.post(f"/api/families/{fid}/members", json={"full_name": "Dee", "email": "Dee@Example.com"})
+    assert r.get_json()["user"]["email"] == "dee@example.com"
+    r = admin.post(f"/api/families/{fid}/members", json={"full_name": "Dee Two", "email": "DEE@example.com"})
+    assert r.status_code == 409                                      # same address, different case
+    # yes/no settings: "false" means false
+    ev = admin.post(f"/api/families/{fid}/events", json={"name": "E", "event_date": future_date(),
+                                                         "use_codenames": "false"}).get_json()["event"]
+    assert ev["use_codenames"] is False
+    assert "on or off" in err(admin.patch(f"/api/events/{ev['id']}", json={"use_codenames": "maybe"}))
+    # currency is a 3-letter code; dates and times are real ones
+    assert "3-letter" in err(admin.patch(f"/api/events/{ev['id']}", json={"budget_currency": "U$"}))
+    assert "date" in err(admin.patch(f"/api/events/{ev['id']}", json={"event_date": "2026-02-30"}))
+    assert "time" in err(admin.patch(f"/api/events/{ev['id']}", json={"event_time": "25:00"}))
+    assert "name" in err(admin.patch(f"/api/events/{ev['id']}", json={"name": "   "}))
+    # an announcement can only point at an event in the same clan
+    other = app.test_client()
+    other.post("/api/auth/register", json={"username": "zed", "password": PASSWORD, "full_name": "Zed",
+                                           "clan_name": "Other Fam"})
+    other_fid = other.get("/api/auth/me").get_json()["families"][0]["id"]
+    assert "isn't in this clan" in err(other.post(f"/api/families/{other_fid}/announcements",
+                                                  json={"title": "T", "body": "B", "event_id": ev["id"]}))
+    # gift links: only real web links
+    join_everyone(users, ev)
+    for bad in ("my favorite sweater", "javascript:alert(1)", "http://localhost/x", "https://user:pw@ex.com"):
+        assert "valid web link" in err(bob.post(f"/api/events/{ev['id']}/wishlists",
+                                                json={"item_name": "Mug", "link_url": bad}))
+    # household names are unique regardless of capitals
+    admin.post(f"/api/families/{fid}/households", json={"name": "Reyes"})
+    assert admin.post(f"/api/families/{fid}/households", json={"name": "REYES"}).status_code == 400
+    # passwords have a sensible maximum, and a clan code is 8 letters/numbers
+    assert "at most 128" in err(bob.patch("/api/auth/security", json={"password": "x" * 129}))
+    assert "8 letters" in err(bob.post("/api/families/join", json={"join_code": "abc"}))
+    # API errors are always JSON, even for routes that don't exist
+    r = bob.get("/api/does-not-exist")
+    assert r.status_code == 404 and r.is_json
