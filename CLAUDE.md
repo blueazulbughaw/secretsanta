@@ -128,7 +128,11 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
 - App admin (`users.is_app_admin`, set in the database - not a clan role): sidebar "All
   Clans" (`/app-admin`, GET /app-admin/clans) lists every clan with its members, usernames,
   households and clan admins, plus "Start a new clan". Read-only; never anything about a
-  draw. There is no master-key /ss-admin login (removed on purpose).
+  draw. The app admin is its own account (`ss_admin`, in no clan) that signs in ONLY at
+  /ss-admin (POST /auth/admin-login); the family sign-in and text-code sign-in refuse app
+  admin accounts, and both answer the wrong kind of account with the same "Wrong username or
+  password" (`_password_login` in api/auth.py). With no clan, its sidebar is just All Clans
+  + Profile & Security. (Unrelated to the old master-key /ss-admin, removed on purpose.)
 - Wording: always say "event". Never "gift exchange" (user-facing text, errors, docs).
 - There is no separate admin page for a single event. The event page (`/events/:id`) is the
   one place: for clan admins it ends with an Admin card (Draw Names / Start Over (Re-Draw

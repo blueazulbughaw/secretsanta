@@ -123,7 +123,7 @@ def verify_otp():
     code = data.get("code") if isinstance(data.get("code"), str) else ""
     code = code.strip()
     user = User.query.filter_by(phone=phone).first()
-    if not user or not otp_service.verify_code(phone, code):
+    if not user or user.is_app_admin or not otp_service.verify_code(phone, code):
         return jsonify({"error": "That code didn't work. Please check it and try again."}), 401
     return _finish_login(user)
 
@@ -131,8 +131,12 @@ def verify_otp():
 LOGIN_FAILURES_PER_WINDOW = 20  # wrong passwords per IP per 15 minutes
 
 
-@bp.post("/auth/login-password")
-def login_password():
+def _password_login(app_admin):
+    """Shared by the family sign-in and the app admin's own sign-in (/ss-admin). Each one
+    only accepts its own kind of account - an app admin can't sign in on the family
+    screen, nor a family member on the admin one - and a wrong kind of account gets the
+    same "wrong username or password" as a wrong password, so neither screen reveals
+    which accounts are app admins."""
     data = json_body()
     username = normalize_username(data.get("username"))
     password = data.get("password")
@@ -145,10 +149,21 @@ def login_password():
     except ValueError as e:
         return jsonify({"error": str(e)}), 429
     user = User.query.filter_by(username=username).first()
-    if not user or not verify_password(password, user.password_hash):
+    if (not user or bool(user.is_app_admin) != app_admin
+            or not verify_password(password, user.password_hash)):
         otp_service.record_ip_hit(ip, "login")
         return jsonify({"error": "Wrong username or password."}), 401
     return _finish_login(user)
+
+
+@bp.post("/auth/login-password")
+def login_password():
+    return _password_login(app_admin=False)
+
+
+@bp.post("/auth/admin-login")
+def admin_login():
+    return _password_login(app_admin=True)
 
 
 def _finish_login(user, **extra):

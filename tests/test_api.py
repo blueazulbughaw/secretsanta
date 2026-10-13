@@ -1839,3 +1839,24 @@ def test_a_person_can_join_a_second_clan_and_see_both(app, users):
     # Each clan's data is still only reachable as a member of it
     for f in fams:
         assert bob.get(f"/api/families/{f['id']}/events").status_code == 200
+
+
+def test_app_admin_signs_in_only_on_its_own_screen(app, users):
+    from app.models import User
+    from app.utils import hash_password
+    db.session.add(User(username="ss_admin", full_name="App Admin", is_app_admin=True,
+                        password_hash=hash_password(PASSWORD)))
+    db.session.commit()
+    c = app.test_client()
+    assert c.get("/ss-admin").status_code == 200  # the app shell, which shows the admin sign-in
+    # The family sign-in refuses the app admin account, same message as a wrong password
+    r = c.post("/api/auth/login-password", json={"username": "ss_admin", "password": PASSWORD})
+    assert r.status_code == 401 and r.get_json()["error"] == "Wrong username or password."
+    # ...and the admin sign-in refuses a family account
+    r = c.post("/api/auth/admin-login", json={"username": BOB_USER, "password": PASSWORD})
+    assert r.status_code == 401 and r.get_json()["error"] == "Wrong username or password."
+    assert c.post("/api/auth/admin-login", json={"username": "ss_admin", "password": "nope-nope-nope"}).status_code == 401
+    assert c.post("/api/auth/admin-login", json={"username": "ss_admin", "password": PASSWORD}).status_code == 200
+    me = c.get("/api/auth/me").get_json()
+    assert me["user"]["is_app_admin"] and me["families"] == []
+    assert len(c.get("/api/app-admin/clans").get_json()) == 1

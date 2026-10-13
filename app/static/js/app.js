@@ -22,6 +22,7 @@ let FAMILY = null;      // active family {id, name, role}
 let PENDING_JOIN_CODE = null;
 let PENDING_JOIN_CLAN_NAME = null;   // set once confirmOrFixJoinCode/pageJoinClan has looked up PENDING_JOIN_CODE
 let IS_REGISTER_ENTRY = false;
+let IS_ADMIN_ENTRY = false;    // opened /ss-admin, the app admin's own sign-in
 let _otpAbortController = null;  // see startOtpAutofill() below
 
 (function captureEntryIntent() {
@@ -40,6 +41,9 @@ let _otpAbortController = null;  // see startOtpAutofill() below
   }
   if (hashPath === "/register" || plainPath === "/register") {
     IS_REGISTER_ENTRY = true;
+  }
+  if (hashPath === "/ss-admin" || plainPath === "/ss-admin") {
+    IS_ADMIN_ENTRY = true;
   }
 })();
 
@@ -185,11 +189,13 @@ function navItemHtml(item, activePath) {
   return `<a href="#${href}" class="nav-link ${activePath === href ? "active" : ""}">${esc(item.label)}</a>`;
 }
 function renderSidebar(activePath) {
-  if (!FAMILY) return;
-  const items = NAV.filter(i => (!i.adminOnly || FAMILY.role === "admin")
-      && (!i.appAdminOnly || ME.user.is_app_admin))
+  if (!FAMILY && !ME.user.is_app_admin) return;
+  const items = NAV.filter(i => FAMILY
+      ? (!i.adminOnly || FAMILY.role === "admin") && (!i.appAdminOnly || ME.user.is_app_admin)
+      : i.appAdminOnly || i.key === "security")
     .map(i => navItemHtml(i, activePath)).join("");
-  const brand = ME.families.length > 1
+  const brand = !FAMILY ? `<div class="sidebar-brand">App Admin</div>`
+    : ME.families.length > 1
     ? `<div class="sidebar-brand clan-switch">
          <label for="clanSwitch">Clan</label>
          <select id="clanSwitch">${ME.families.map(f =>
@@ -523,7 +529,9 @@ async function navigate() {
   // gatekeeper and crashes on the first ME.user access. Guard here once instead of in
   // every route, and land back on the sign-in screen instead of a crash.
   if (!ME || !ME.authenticated) { pageLogin(); return; }
-  const path = location.hash.replace(/^#/, "") || "/";
+  let path = location.hash.replace(/^#/, "") || "/";
+  // An app admin who isn't in any clan only has All Clans and Profile & Security
+  if (!FAMILY && path !== "/security") path = "/app-admin";
   renderSidebar(path.replace(/^\/events\/\d+\/wishlist(\/.*)?$/, "/wishlist")
     .replace(/^\/events\/\d+\/messages(\/.*)?$/, "/messages")
     .replace(/^\/events\/\d+(\/.*)?$/, "/events")
@@ -563,7 +571,8 @@ async function boot() {
     // step pageJoinClan()'s manual entry uses, instead of a plain sign-in screen with no
     // visible way to use it - also catches a stale/bad code in a link, same as a typo'd
     // one typed by hand.
-    if (IS_REGISTER_ENTRY) pageRegisterStart();
+    if (IS_ADMIN_ENTRY) pageAdminLogin();
+    else if (IS_REGISTER_ENTRY) pageRegisterStart();
     else if (PENDING_JOIN_CODE) confirmOrFixJoinCode(PENDING_JOIN_CODE);
     else pageLogin();
     return;
@@ -576,7 +585,12 @@ async function boot() {
   if (!ME.user.full_name) return pageName();
   if (ME.must_change_password) return pageForcedPasswordChange();
   if (ME.needs_security_setup) return pageSecuritySetup(true);
-  if (ME.families.length === 0) return pageNoFamily();
+  // The app admin account doesn't need a clan: it lands on All Clans instead
+  if (ME.families.length === 0 && !ME.user.is_app_admin) return pageNoFamily();
+  if (ME.families.length === 0 || IS_ADMIN_ENTRY) {
+    IS_ADMIN_ENTRY = false;
+    if (ME.user.is_app_admin) history.replaceState(null, "", "/#/app-admin");
+  }
   restoreSidebarState();
   // Render the real page into #app FIRST, then switch the layout into "authenticated" mode
   // (reveal the sidebar, add .authed). Doing it in the other order - as this used to - flips
@@ -624,6 +638,32 @@ function passwordMismatchError(id) {
 }
 
 // ---------- auth pages ----------
+// The app admin's own sign-in, at /ss-admin. Only an app admin account works here, and
+// it only works here (the family sign-in refuses it) - see _password_login in api/auth.py.
+function pageAdminLogin() {
+  render("", `
+    <div class="center" style="margin-top:2rem">
+      <h2>App Admin Sign-In</h2>
+      <p class="muted">For the Secret Santa app admin only.</p>
+    </div>
+    <label for="username">Username</label>
+    <input id="username" maxlength="60" autocomplete="username" autocapitalize="none" spellcheck="false">
+    ${passwordFieldHTML("password", "Password", { autocomplete: "current-password" })}
+    <div id="msg"></div>
+    <button class="btn btn-primary" id="loginBtn">Sign In</button>
+  `);
+  wirePasswordToggles();
+  document.getElementById("loginBtn").onclick = async () => {
+    try {
+      await api.post("/auth/admin-login", {
+        username: document.getElementById("username").value.trim(),
+        password: document.getElementById("password").value,
+      });
+      boot();
+    } catch (e) { showError(e); }
+  };
+}
+
 function pageLogin() {
   render("", `
     <div class="center" style="margin-top:2rem">
@@ -2013,7 +2053,7 @@ route(/^\/app-admin$/, async () => {
         ${c.members.length
           ? `<div class="list-head">Household</div><ul class="name-list">${rows}</ul>`
           : `<p class="muted">No members.</p>`}
-        ${mine && c.id !== FAMILY.id ? `<button class="btn btn-secondary" data-open-clan="${c.id}">Switch to This Clan</button>` : ""}
+        ${mine && c.id !== FAMILY?.id ? `<button class="btn btn-secondary" data-open-clan="${c.id}">Switch to This Clan</button>` : ""}
       </section>`;
   };
   render("All Clans", `
