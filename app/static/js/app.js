@@ -2034,13 +2034,17 @@ route(/^\/notifications$/, async () => {
 
 // ---------- app admin ----------
 // Every clan on the site, for the app admin (User.is_app_admin) only: who's in each and
-// who runs it, and deleting test clans and accounts. An app admin can only open a clan
+// who runs it, when it was created, and deleting test clans and accounts. (New clans are
+// started by their own clan admin at sign-up, not from here.) An app admin can only open a clan
 // they're in themselves.
 route(/^\/app-admin$/, async () => {
   if (!ME.user.is_app_admin) return go("/");
   const { clans, no_clan } = await api.get("/app-admin/clans");
   const people = new Set([...clans.flatMap(c => c.members.map(m => m.user_id)), ...no_clan.map(p => p.user_id)]).size;
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  // created_at is UTC from the server (no zone on it), shown as a date in the viewer's time zone
+  const created = (iso) => iso
+    ? new Date(iso + "Z").toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "unknown";
   const personRow = (m, showHousehold) => `
     <li><span>${esc(m.display_name)} <span class="muted">(${esc(m.username)})</span>${m.role === "admin" ? ` <span class="pill">Clan admin</span>` : ""}${m.is_active ? "" : ` <span class="muted">— inactive</span>`}</span>
     <span class="row-actions">${showHousehold ? `<span class="list-note">${esc(m.household_name || "—")}</span>` : ""}
@@ -2051,7 +2055,7 @@ route(/^\/app-admin$/, async () => {
     return `
       <section class="card form-card">
         <h2>${esc(c.name)}</h2>
-        <p class="muted" style="margin-top:0">Code ${esc(c.join_code)} · ${plural(c.members.length, "member", "members")} · ${plural(c.event_count, "event", "events")}</p>
+        <p class="muted" style="margin-top:0">Created ${esc(created(c.created_at))} · Code ${esc(c.join_code)} · ${plural(c.members.length, "member", "members")} · ${plural(c.event_count, "event", "events")}</p>
         <p><strong>Clan admins:</strong> ${admins.length ? esc(admins.join(", ")) : "none"}</p>
         ${c.members.length
           ? `<div class="list-head">Household</div><ul class="name-list">${c.members.map(m => personRow(m, true)).join("")}</ul>`
@@ -2062,13 +2066,6 @@ route(/^\/app-admin$/, async () => {
   };
   render("All Clans", `
     <div id="msg"></div>
-    <section class="card form-card">
-      <h2>Start a new clan</h2>
-      <p class="muted">You'll be its clan admin, and can share its code from Manage My Clan.</p>
-      <label for="newClanName">Clan name</label>
-      <input id="newClanName" maxlength="120">
-      <button class="btn btn-primary" id="newClanBtn">Start Clan</button>
-    </section>
     <section class="card form-card">
       <p style="margin:0">${plural(clans.length, "clan", "clans")}, ${plural(people, "person", "people")} in all.</p>
     </section>
@@ -2088,14 +2085,6 @@ route(/^\/app-admin$/, async () => {
       <button class="btn btn-secondary" id="savePwBtn">Change Password</button>
     </section>`}
   `, { wide: true });
-  document.getElementById("newClanBtn").onclick = async () => {
-    try {
-      const r = await api.post("/families", { name: document.getElementById("newClanName").value });
-      rememberClan(r.family.id);
-      history.replaceState(null, "", "#/admin");
-      boot();
-    } catch (e) { showError(e); }
-  };
   $app.querySelectorAll("[data-open-clan]").forEach(b => b.onclick = () => switchClan(b.dataset.openClan));
   $app.querySelectorAll("[data-del-clan]").forEach(b => b.onclick = async () => {
     if (!confirm(`Delete the clan "${b.dataset.name}"? This permanently erases it and everything in it (events, name draws, wishlists, messages, dishes, announcements, households). The people's accounts stay. It can't be undone.`)) return;
