@@ -1168,6 +1168,41 @@ async function shareJoinLink(clanName, code) {
       text: `Join ${clanName} on Secret Santa: tap the link, or use clan code ${code}.` });
   } catch (e) { if (e.name !== "AbortError") copy(); }
 }
+// The QR code picture, tapped to share it (wireJoinQr). The phone's own long-press "Share
+// image" would attach this page's address (/#/admin) instead of the registration link, so
+// the long-press menu is off and the link goes in the message text. Where a device can't
+// share pictures (most computers), it's saved to Downloads instead.
+function joinQrHtml(familyId, clanName, code) {
+  return `<button type="button" class="qr-btn" id="joinQrBtn" aria-label="Share the QR code">
+      <img id="joinQr" class="join-qr" src="${joinQrSrc(familyId, code)}" alt="QR code for joining ${esc(clanName)}" width="220" height="220">
+    </button>
+    <p class="muted" style="font-size:.85rem;margin-top:0">Tap the QR code to share it. Scanning it with a phone camera opens the sign-up page.</p>`;
+}
+function wireJoinQr(clanName, getCode) {
+  const img = document.getElementById("joinQr");
+  img.addEventListener("contextmenu", (e) => e.preventDefault());
+  document.getElementById("joinQrBtn").onclick = async () => {
+    const say = (text, ok = true) => { document.getElementById("copyMsg").innerHTML = alertBox(text, ok); };
+    const code = getCode();
+    try {
+      const blob = await (await fetch(img.src)).blob();
+      const file = new File([blob], `${clanName} clan code.png`, { type: "image/png" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: `Join ${clanName}`,
+            text: `Join ${clanName} on Secret Santa: ${joinUrl(code)} (clan code ${code})` });
+        } catch (e) { if (e.name !== "AbortError") throw e; }
+        return;
+      }
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = file.name;
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      say("QR code saved to your Downloads.");
+    } catch (e) { say("Couldn't share the QR code. Please try again.", false); }
+  };
+}
 
 function pageClanCreated(family) {
   render("", `
@@ -1176,12 +1211,13 @@ function pageClanCreated(family) {
     <p class="muted center">You're its clan admin. Share this code, link or QR code so family can join:</p>
     <div class="card center">
       <div class="reveal-name" style="font-size:1.8rem">${esc(family.join_code)}</div>
-      <img class="join-qr" src="${joinQrSrc(family.id, family.join_code)}" alt="QR code for joining ${esc(family.name)}" width="220" height="220">
-      <button class="btn btn-quiet" id="shareLinkBtn" style="margin-top:.5rem">Share Registration Link</button>
+      ${joinQrHtml(family.id, family.name, family.join_code)}
+      <button class="btn btn-quiet" id="shareLinkBtn">Share Registration Link</button>
       <div id="copyMsg"></div>
     </div>
     <button class="btn btn-primary" id="continueBtn">Continue to Dashboard</button>
   `);
+  wireJoinQr(family.name, () => family.join_code);
   document.getElementById("shareLinkBtn").onclick = () => shareJoinLink(family.name, family.join_code);
   document.getElementById("continueBtn").onclick = () => boot();
 }
@@ -2333,8 +2369,8 @@ route(/^\/admin$/, async () => {
     <div class="card form-card center">
       <p class="muted">Share this code so family can join:</p>
       <div class="reveal-name" style="font-size:1.8rem" id="joinCodeShown">${esc(fam.join_code)}</div>
-      <img id="joinQr" class="join-qr" src="${joinQrSrc(FAMILY.id, fam.join_code)}" alt="QR code for joining ${esc(fam.name)}" width="220" height="220">
-      <p class="muted" style="font-size:.85rem">Scan it with a phone camera to open the sign-up page. You approve everyone who joins.</p>
+      ${joinQrHtml(FAMILY.id, fam.name, fam.join_code)}
+      <p class="muted" style="font-size:.85rem;margin-top:0">You approve everyone who joins.</p>
       <button class="btn btn-primary" id="shareLinkBtn">Share Registration Link</button>
       <button class="btn btn-quiet" id="newCodeBtn">Make a New Code</button>
       <div id="copyMsg"></div>
@@ -2357,6 +2393,7 @@ route(/^\/admin$/, async () => {
       document.getElementById("copyMsg").innerHTML = alertBox("New code made. The old one no longer works.", true);
     } catch (e) { document.getElementById("copyMsg").innerHTML = alertBox(e.message); }
   };
+  wireJoinQr(FAMILY.name, () => joinCode);
   document.getElementById("shareLinkBtn").onclick = () => shareJoinLink(FAMILY.name, joinCode);
 });
 

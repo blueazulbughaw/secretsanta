@@ -645,3 +645,8 @@ body.dragging-cards, body.dragging-cards * { cursor: grabbing !important; }
 /* Manage My Clan: the registration link as a QR code */
 .join-qr { display: block; width: 220px; max-width: 100%; height: auto; margin: .6rem auto .2rem;
   border: 1px solid var(--line); border-radius: var(--radius); background: #fff; image-rendering: pixelated; }
+/* The QR code is a button: tapping it shares it (wireJoinQr in app.js). The phone's own
+   long-press menu is off - its "Share image" would attach this page's address instead. */
+.qr-btn { display: block; margin: 0 auto; padding: 0; border: 0; background: none; cursor: pointer; }
+.qr-btn .join-qr { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; pointer-events: none; }
+.qr-btn:focus-visible { outline: 3px solid var(--red); outline-offset: 4px; border-radius: var(--radius); }
