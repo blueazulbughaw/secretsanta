@@ -586,7 +586,9 @@ async function boot() {
   if (ME.must_change_password) return pageForcedPasswordChange();
   if (ME.needs_security_setup) return pageSecuritySetup(true);
   // The app admin account doesn't need a clan: it lands on All Clans instead
-  if (ME.families.length === 0 && !ME.user.is_app_admin) return pageNoFamily();
+  if (ME.families.length === 0 && !ME.user.is_app_admin) {
+    return ME.pending_families.length ? pageWaitingForApproval() : pageNoFamily();
+  }
   if (ME.families.length === 0 || IS_ADMIN_ENTRY) {
     IS_ADMIN_ENTRY = false;
     if (ME.user.is_app_admin) history.replaceState(null, "", "/#/app-admin");
@@ -1188,23 +1190,37 @@ async function pageSecuritySetup(forced) {
   const joinCard = forced ? "" : `
     <section class="card form-card">
       <h2>Join another clan</h2>
-      <p class="muted">Got a code from another clan? You'll stay in ${esc(FAMILY?.name || "your clan")} too, and can switch between them in the menu.</p>
-      <label for="joinCode">Clan code</label>
-      <input id="joinCode" class="code-input" maxlength="8" style="text-transform:uppercase" autocomplete="off">
-      <div id="joinMsg"></div>
-      <button class="btn btn-secondary" id="joinClanBtn">Join Clan</button>
+      <p class="muted">Got a code from another clan? You'll stay in ${esc(FAMILY?.name || "your clan")} too. Their clan admin lets you in, then you can switch between them in the menu.</p>
+      <div id="joinStep">
+        <label for="joinCode">Clan code</label>
+        <input id="joinCode" class="code-input" maxlength="8" style="text-transform:uppercase" autocomplete="off">
+        <div id="joinMsg"></div>
+        <button class="btn btn-secondary" id="joinClanBtn">Find Clan</button>
+      </div>
     </section>`;
   render("Profile & Security", `
     ${forced ? passwordCard + profileCard : profileCard + passwordCard}
     ${joinCard}
   `);
+  // Same as signing up with a code: show which clan the code is for before asking to join
   const joinBtn = document.getElementById("joinClanBtn");
   if (joinBtn) joinBtn.onclick = async () => {
+    const code = document.getElementById("joinCode").value.trim();
     try {
-      const r = await api.post("/families/join", { join_code: document.getElementById("joinCode").value });
-      rememberClan(r.family.id);
-      history.replaceState(null, "", "#/");
-      boot();
+      const found = await api.get(`/families/lookup-code/${encodeURIComponent(code)}`);
+      const step = document.getElementById("joinStep");
+      step.innerHTML = `
+        <p>This code is for <strong>${esc(found.name)}</strong>. Is that the right clan?</p>
+        <div id="joinMsg"></div>
+        <button class="btn btn-secondary" id="confirmJoinBtn">Yes, Ask to Join</button>
+        <button class="btn btn-quiet" id="wrongClanBtn">That's Not Right</button>`;
+      document.getElementById("wrongClanBtn").onclick = () => navigate();
+      document.getElementById("confirmJoinBtn").onclick = async () => {
+        try {
+          const r = await api.post("/families/join", { join_code: code });
+          step.innerHTML = alertBox(r.message, true);
+        } catch (e) { document.getElementById("joinMsg").innerHTML = alertBox(e.message); }
+      };
     } catch (e) { document.getElementById("joinMsg").innerHTML = alertBox(e.message); }
   };
   wirePasswordToggles();
@@ -1358,6 +1374,28 @@ async function pageSecuritySetup(forced) {
 }
 
 route(/^\/security$/, () => pageSecuritySetup(false));
+
+// Asked to join a clan with its code, and a clan admin hasn't let them in yet
+function pageWaitingForApproval() {
+  const names = ME.pending_families.map(f => f.name);
+  render("Secret Santa", `
+    <div class="center" style="margin-top:1rem">
+      <div style="font-size:3rem" aria-hidden="true">⏳</div>
+      <h2>Waiting for your clan admin</h2>
+      <p>You've asked to join <strong>${esc(names.join(", "))}</strong>.</p>
+      <p class="muted">Once your clan admin lets you in, you'll see everything here. Check back soon.</p>
+    </div>
+    <button class="btn btn-primary" id="checkAgainBtn">Check Again</button>
+    <button class="btn btn-quiet" id="otherCodeBtn">Use a Different Clan Code</button>
+    <button class="btn btn-quiet" id="waitSignOutBtn">Sign Out</button>
+  `);
+  document.getElementById("checkAgainBtn").onclick = () => boot();
+  document.getElementById("otherCodeBtn").onclick = () => pageNoFamily();
+  document.getElementById("waitSignOutBtn").onclick = async () => {
+    await api.post("/auth/logout");
+    location.reload();
+  };
+}
 
 function pageNoFamily() {
   const hasPending = !!PENDING_JOIN_CODE;
@@ -2061,6 +2099,7 @@ route(/^\/app-admin$/, async () => {
         ${c.members.length
           ? `<div class="list-head">Household</div><ul class="name-list">${c.members.map(m => personRow(m, true)).join("")}</ul>`
           : `<p class="muted">No members.</p>`}
+        ${c.waiting.length ? `<p class="muted">Waiting for approval: ${esc(c.waiting.map(w => `${w.display_name} (${w.username})`).join(", "))}</p>` : ""}
         ${mine && c.id !== FAMILY?.id ? `<button class="btn btn-secondary" data-open-clan="${c.id}">Switch to This Clan</button>` : ""}
         <button class="btn btn-quiet" data-del-clan="${c.id}" data-name="${esc(c.name)}">Delete Clan</button>
       </section>`;
@@ -2139,15 +2178,22 @@ function nameListCard(title, names, empty, path, buttonLabel, columnHeader = "")
 }
 
 route(/^\/admin$/, async () => {
-  const [fam, events, members, households] = await Promise.all([
+  const [fam, events, members, households, waiting] = await Promise.all([
     api.get(`/families/${FAMILY.id}`),
     api.get(`/families/${FAMILY.id}/events`),
     api.get(`/families/${FAMILY.id}/members`),
     api.get(`/families/${FAMILY.id}/households`),
+    api.get(`/families/${FAMILY.id}/join-requests`),
   ]);
-  const regUrl = `${location.origin}/#/join/${fam.join_code}`;
+  let regUrl = `${location.origin}/#/join/${fam.join_code}`;
   const byName = (x, y) => x.localeCompare(y);
   render("Manage My Clan", `
+    ${waiting.length ? `
+    <section class="card form-card" style="border-left:4px solid var(--yellow)">
+      <h2>Waiting for you</h2>
+      <p>${waiting.length === 1 ? `${esc(waiting[0].user.display_name)} wants` : `${waiting.length} people want`} to join the clan.</p>
+      <button class="btn btn-primary" onclick="go('/admin/members')">Review on Members Page</button>
+    </section>` : ""}
     <section class="card form-card">
       <h2>Clan name</h2>
       <label for="clanName">Name</label>
@@ -2168,8 +2214,10 @@ route(/^\/admin$/, async () => {
 
     <div class="card form-card center">
       <p class="muted">Share this code so family can join:</p>
-      <div class="reveal-name" style="font-size:1.8rem">${esc(fam.join_code)}</div>
+      <div class="reveal-name" style="font-size:1.8rem" id="joinCodeShown">${esc(fam.join_code)}</div>
+      <p class="muted" style="font-size:.85rem">You approve everyone who joins with it.</p>
       <button class="btn btn-quiet" id="copyLinkBtn" style="margin-top:.5rem">Copy Registration Link</button>
+      <button class="btn btn-quiet" id="newCodeBtn">Make a New Code</button>
       <div id="copyMsg"></div>
     </div>
   `, { wide: true });
@@ -2179,6 +2227,15 @@ route(/^\/admin$/, async () => {
       FAMILY.name = r.family.name;
       document.getElementById("nameMsg").innerHTML = alertBox("Clan name saved!", true);
     } catch (e) { showError(e); }
+  };
+  document.getElementById("newCodeBtn").onclick = async () => {
+    if (!confirm("Make a new clan code? The old code and registration link stop working. Everyone already in the clan stays in.")) return;
+    try {
+      const r = await api.post(`/families/${FAMILY.id}/join-code`);
+      document.getElementById("joinCodeShown").textContent = r.join_code;
+      regUrl = `${location.origin}/#/join/${r.join_code}`;
+      document.getElementById("copyMsg").innerHTML = alertBox("New code made. The old one no longer works.", true);
+    } catch (e) { document.getElementById("copyMsg").innerHTML = alertBox(e.message); }
   };
   document.getElementById("copyLinkBtn").onclick = async () => {
     try {
@@ -2262,9 +2319,23 @@ route(/^\/admin\/members$/, async () => {
     };
   }
 
-  const members = await api.get(`/families/${FAMILY.id}/members`);
+  const [members, waiting] = await Promise.all([
+    api.get(`/families/${FAMILY.id}/members`),
+    api.get(`/families/${FAMILY.id}/join-requests`),
+  ]);
   render("Members", `
     <div id="msg"></div>
+    ${waiting.length ? `
+    <section class="card" style="border-left:4px solid var(--yellow)">
+      <h2>Waiting for approval</h2>
+      <p class="muted" style="margin-top:0">They used the clan code. They can't see anything in the clan until you let them in.</p>
+      <ul class="name-list">${waiting.map(w => `
+        <li><span>${esc(w.user.display_name)} <span class="muted">(${esc(w.user.username)})</span></span>
+        <span class="row-actions">
+          <button class="btn btn-primary btn-row" data-approve="${w.id}">Let In</button>
+          <button class="btn btn-quiet btn-row" data-decline="${w.id}" data-name="${esc(w.user.display_name)}">Decline</button>
+        </span></li>`).join("")}</ul>
+    </section>` : ""}
     <section class="card inline-form">
       <h2>Add a member</h2>
       <div class="inline-form-row">
@@ -2298,6 +2369,15 @@ route(/^\/admin\/members$/, async () => {
 
   `, { wide: true });
   const tbody = $app.querySelector("#membersTable tbody");
+  $app.querySelectorAll("[data-approve]").forEach(b => b.onclick = async () => {
+    try { await api.post(`/families/${FAMILY.id}/join-requests/${b.dataset.approve}/approve`); navigate(); }
+    catch (e) { showError(e); }
+  });
+  $app.querySelectorAll("[data-decline]").forEach(b => b.onclick = async () => {
+    if (!confirm(`Decline ${b.dataset.name}? They won't be let in, and can ask again with the clan code.`)) return;
+    try { await api.post(`/families/${FAMILY.id}/join-requests/${b.dataset.decline}/decline`); navigate(); }
+    catch (e) { showError(e); }
+  });
   members.forEach(m => tbody.append(memberRow(m)));
 
   document.getElementById("addMemberBtn").onclick = async () => {

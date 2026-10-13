@@ -121,8 +121,16 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   has its own My Wishlist, Message My Secret Santa and View Event Details (a giftee is
   messaged from their profile), and the event page has My Wishlist / View My Messages / View
   Clan & Wishlists. Only the admin's Manage My Clan lists every member.
+- Joining with a clan code needs a clan admin's approval: POST /families/join only makes a
+  `join_requests` row (kept OUT of family_members on purpose, so every membership check keeps
+  meaning "really in") and notifies the clan admins. Until approved the person sees only a
+  "Waiting for your clan admin" page (/auth/me `pending_families`) and nothing of the clan.
+  Clan admins answer on the Members page ("Waiting for approval": Let In / Decline; Manage My
+  Clan shows a "Waiting for you" card too). Declining just deletes the request; they can ask
+  again. People a clan admin adds on the Members page, and whoever starts a clan, are in at
+  once. "Make a New Code" (POST /families/:id/join-code) retires a leaked code.
 - More than one clan: a person can be in several clans (Profile & Security > "Join another
-  clan" posts the code to /families/join). The app shows one clan at a time: the sidebar
+  clan": shows the code's clan name first, then asks to join - same approval). The app shows one clan at a time: the sidebar
   brand becomes a "Clan" switcher once they're in 2+, and the choice is remembered per
   device (`pickFamily`/`switchClan` in app.js, localStorage `activeClanId`).
 - App admin (`users.is_app_admin`, set in the database - not a clan role): sidebar "All

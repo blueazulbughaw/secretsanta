@@ -134,6 +134,22 @@ class FamilyMember(db.Model):
     household = db.relationship("Household")
 
 
+class JoinRequest(db.Model):
+    """Someone who entered a clan's code and is waiting for a clan admin to let them in.
+    Kept apart from family_members on purpose: until approved they aren't a member, so
+    every membership check in the app keeps working with nothing to filter out."""
+    __tablename__ = "join_requests"
+    id = db.Column(BigIntPK, primary_key=True)
+    family_id = db.Column(db.BigInteger, db.ForeignKey("families.id", ondelete="CASCADE"),
+                          nullable=False, index=True)
+    user_id = db.Column(db.BigInteger, db.ForeignKey("users.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint("family_id", "user_id", name="uq_join_request"),)
+
+    user = db.relationship("User")
+
+
 class Event(db.Model):
     __tablename__ = "events"
     id = db.Column(BigIntPK, primary_key=True)

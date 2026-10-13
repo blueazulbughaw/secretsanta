@@ -3,7 +3,7 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify, make_response, g
 
 from ..extensions import db
-from ..models import User, FamilyMember, Family
+from ..models import User, FamilyMember, Family, JoinRequest
 from ..services import otp_service, sms_service
 from ..services.photo_service import save_photo, remove_photo
 from ..middleware.auth import (issue_token, set_auth_cookie, clear_auth_cookie,
@@ -191,7 +191,11 @@ def me():
                      "household_id": m.household_id,
                      "household_name": m.household.name if m.household else None,
                      "join_code": f.join_code if m.role == "admin" else None})
+    # Clans they've asked to join, still waiting for a clan admin (not members yet)
+    pending = [{"id": r.family_id, "name": Family.query.get(r.family_id).name}
+               for r in JoinRequest.query.filter_by(user_id=user.id).all()]
     return jsonify({"authenticated": True, "user": user.to_dict(), "families": fams,
+                    "pending_families": pending,
                     "can_create_family": user.is_app_admin,
                     "needs_security_setup": not user.password_hash and not user.phone,
                     "must_change_password": user.must_change_password})

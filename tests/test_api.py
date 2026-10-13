@@ -74,10 +74,17 @@ def users(app):
         r = c.post("/api/auth/register",
                     json={"username": username, "password": PASSWORD, "full_name": name})
         assert r.status_code == 200
-        c.post("/api/families/join", json={"join_code": fam["join_code"]})
+        join_and_approve(c, admin_client, fam)
         clients[username] = c
     clients["_family"] = fam
     return clients
+
+
+def join_and_approve(client, admin, fam):
+    """Join with the clan code, then the clan admin lets them in (joining waits for that)."""
+    client.post("/api/families/join", json={"join_code": fam["join_code"]})
+    for req in admin.get(f"/api/families/{fam['id']}/join-requests").get_json():
+        admin.post(f"/api/families/{fam['id']}/join-requests/{req['id']}/approve")
 
 
 def setup_family(users):
@@ -1156,14 +1163,16 @@ def test_announcement_notification_title(users):
     fam, admin, bob = users["_family"], users[ADMIN_USER], users[BOB_USER]
     admin.post(f"/api/families/{fam['id']}/announcements",
                json={"title": "Party time", "body": "Potluck at 6pm, bring a dish!"})
-    first = bob.get("/api/notifications").get_json()["items"][0]
+    announced = lambda: [n for n in bob.get("/api/notifications").get_json()["items"]
+                         if n["type"] == "announcement"]
+    first = announced()[0]
     assert first["title"] == "New Announcement posted by Admin"
     assert first["body"] == "Party time: Potluck at 6pm, bring a dish!"
     assert first["link_path"] == "/announcements"
     # a draft (not shown on the dashboard) tells nobody
     admin.post(f"/api/families/{fam['id']}/announcements",
                json={"title": "Draft", "body": "later", "is_published": False})
-    assert len(bob.get("/api/notifications").get_json()["items"]) == 1
+    assert len(announced()) == 1
 
 
 def test_new_gift_notification_opens_the_owners_profile(users):
@@ -1199,7 +1208,7 @@ def test_each_gift_exchange_has_its_own_giver_giftee_pairs(app, users):
     for name in ("dan", "eve", "fay"):
         c = app.test_client()
         c.post("/api/auth/register", json={"username": name, "password": PASSWORD, "full_name": name.title()})
-        c.post("/api/families/join", json={"join_code": fam["join_code"]})
+        join_and_approve(c, admin, fam)
         clients[name] = c
     members = admin.get(f"/api/families/{fam['id']}/members").get_json()
     for m in members:
@@ -1829,10 +1838,10 @@ def test_app_admin_sees_every_clan_with_members_and_clan_admins(app, users):
 def test_a_person_can_join_a_second_clan_and_see_both(app, users):
     bob = users[BOB_USER]
     other = app.test_client()
-    code = other.post("/api/auth/register", json={
+    other_fam = other.post("/api/auth/register", json={
         "username": "dee", "password": PASSWORD, "full_name": "Dee", "clan_name": "Other Fam",
-    }).get_json()["family"]["join_code"]
-    assert bob.post("/api/families/join", json={"join_code": code}).status_code == 201
+    }).get_json()["family"]
+    join_and_approve(bob, other, other_fam)
     fams = bob.get("/api/auth/me").get_json()["families"]
     assert sorted(f["name"] for f in fams) == ["Other Fam", "Test Fam"]
     assert all(f["role"] == "member" for f in fams)
@@ -1928,3 +1937,48 @@ def test_app_admin_deletes_an_account_but_not_one_that_would_break_something(app
     assert cara.get("/api/auth/me").get_json() == {"authenticated": False}
     names = [m["username"] for m in ss.get("/api/app-admin/clans").get_json()["clans"][0]["members"]]
     assert CARA_USER not in names
+
+
+def test_joining_with_a_code_waits_for_the_clan_admin(app, users):
+    fam, admin = users["_family"], users[ADMIN_USER]
+    newbie = app.test_client()
+    newbie.post("/api/auth/register", json={"username": "newbie", "password": PASSWORD, "full_name": "Newt"})
+    r = newbie.post("/api/families/join", json={"join_code": fam["join_code"]})
+    assert r.status_code == 201 and r.get_json()["pending"] is True
+    # Asking again doesn't make a second request
+    assert newbie.post("/api/families/join", json={"join_code": fam["join_code"]}).get_json()["pending"]
+    me = newbie.get("/api/auth/me").get_json()
+    assert me["families"] == [] and me["pending_families"] == [{"id": fam["id"], "name": "Test Fam"}]
+    # Not a member yet: sees nothing of the clan
+    for path in ("members", "announcements", "households", "events"):
+        assert newbie.get(f"/api/families/{fam['id']}/{path}").status_code == 403
+    # The clan admin is told, and only clan admins can see or answer the request
+    notes = admin.get("/api/notifications").get_json()["items"]
+    assert any(n["title"] == "Newt wants to join Test Fam" and n["link_path"] == "/admin/members" for n in notes)
+    assert users[BOB_USER].get(f"/api/families/{fam['id']}/join-requests").status_code == 403
+    reqs = admin.get(f"/api/families/{fam['id']}/join-requests").get_json()
+    assert [r["user"]["display_name"] for r in reqs] == ["Newt"]
+    assert users[BOB_USER].post(f"/api/families/{fam['id']}/join-requests/{reqs[0]['id']}/approve").status_code == 403
+
+    # Declined: gone, and they can ask again
+    assert admin.post(f"/api/families/{fam['id']}/join-requests/{reqs[0]['id']}/decline").status_code == 200
+    assert newbie.get("/api/auth/me").get_json()["pending_families"] == []
+    newbie.post("/api/families/join", json={"join_code": fam["join_code"]})
+    req = admin.get(f"/api/families/{fam['id']}/join-requests").get_json()[0]
+    assert admin.post(f"/api/families/{fam['id']}/join-requests/{req['id']}/approve").status_code == 200
+    me = newbie.get("/api/auth/me").get_json()
+    assert [f["name"] for f in me["families"]] == ["Test Fam"] and me["pending_families"] == []
+    assert newbie.get(f"/api/families/{fam['id']}/members").status_code == 200
+
+
+def test_clan_admin_can_make_a_new_clan_code(app, users):
+    fam, admin = users["_family"], users[ADMIN_USER]
+    assert users[BOB_USER].post(f"/api/families/{fam['id']}/join-code").status_code == 403
+    r = admin.post(f"/api/families/{fam['id']}/join-code")
+    new_code = r.get_json()["join_code"]
+    assert r.status_code == 200 and new_code != fam["join_code"]
+    c = app.test_client()
+    c.post("/api/auth/register", json={"username": "late", "password": PASSWORD, "full_name": "Late"})
+    assert c.post("/api/families/join", json={"join_code": fam["join_code"]}).status_code == 404
+    assert c.post("/api/families/join", json={"join_code": new_code}).status_code == 201
+    assert users[BOB_USER].get(f"/api/families/{fam['id']}/members").status_code == 200  # still in

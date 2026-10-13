@@ -4,9 +4,10 @@ import string
 from flask import Blueprint, request, jsonify, g
 
 from ..extensions import db
-from ..models import Family, FamilyMember, Household, User, Event, EventParticipant
+from ..models import Family, FamilyMember, Household, User, Event, EventParticipant, JoinRequest
 from ..middleware.auth import require_auth, require_family_member, require_family_admin
 from ..services import otp_service
+from ..services.notification_service import notify
 from ..utils import (normalize_phone, normalize_username, hash_password, slugify_username_base,
                      clean_text, normalize_email, parse_id, json_body, InputError)
 
@@ -88,13 +89,82 @@ def join_family():
     fam = Family.query.filter_by(join_code=code).first()
     if not fam:
         return jsonify({"error": "We couldn't find a family with that code."}), 404
-    existing = FamilyMember.query.filter_by(family_id=fam.id, user_id=g.user.id).first()
-    if existing:
-        return jsonify({"ok": True, "family": {"id": fam.id, "name": fam.name},
-                        "message": "You're already in this family."})
-    db.session.add(FamilyMember(family_id=fam.id, user_id=g.user.id, role="member"))
+    info = {"id": fam.id, "name": fam.name}
+    if FamilyMember.query.filter_by(family_id=fam.id, user_id=g.user.id).first():
+        return jsonify({"ok": True, "family": info, "pending": False,
+                        "message": "You're already in this clan."})
+    # A code alone doesn't let anyone in: a clan admin approves them first, so a code that
+    # got passed around (or someone who picked the wrong clan) can't see the family.
+    waiting = {"ok": True, "family": info, "pending": True,
+               "message": f"You've asked to join {fam.name}. Your clan admin will let you in."}
+    if JoinRequest.query.filter_by(family_id=fam.id, user_id=g.user.id).first():
+        return jsonify(waiting)
+    db.session.add(JoinRequest(family_id=fam.id, user_id=g.user.id))
     db.session.commit()
-    return jsonify({"ok": True, "family": {"id": fam.id, "name": fam.name}}), 201
+    who = g.user.display_name or g.user.full_name or g.user.username
+    for admin in FamilyMember.query.filter_by(family_id=fam.id, role="admin").all():
+        notify(admin.user_id, "join_request", f"{who} wants to join {fam.name}",
+               "Approve or decline them on the Members page.", "/admin/members")
+    return jsonify(waiting), 201
+
+
+@bp.get("/families/<int:family_id>/join-requests")
+@require_auth
+def list_join_requests(family_id):
+    _, err = require_family_admin(family_id)
+    if err:
+        return err
+    reqs = JoinRequest.query.filter_by(family_id=family_id).order_by(JoinRequest.created_at).all()
+    return jsonify([{"id": r.id, "user": {"id": r.user.id, "username": r.user.username,
+                                          "display_name": r.user.display_name or r.user.full_name},
+                     "created_at": r.created_at.isoformat()} for r in reqs])
+
+
+def _join_request(family_id, request_id):
+    return JoinRequest.query.filter_by(id=request_id, family_id=family_id).first_or_404()
+
+
+@bp.post("/families/<int:family_id>/join-requests/<int:request_id>/approve")
+@require_auth
+def approve_join_request(family_id, request_id):
+    _, err = require_family_admin(family_id)
+    if err:
+        return err
+    req = _join_request(family_id, request_id)
+    fam = Family.query.get(family_id)
+    user_id = req.user_id
+    if not FamilyMember.query.filter_by(family_id=family_id, user_id=user_id).first():
+        db.session.add(FamilyMember(family_id=family_id, user_id=user_id, role="member"))
+    db.session.delete(req)
+    db.session.commit()
+    notify(user_id, "join_approved", f"You're in {fam.name}!", None, "/")
+    return jsonify({"ok": True})
+
+
+@bp.post("/families/<int:family_id>/join-requests/<int:request_id>/decline")
+@require_auth
+def decline_join_request(family_id, request_id):
+    _, err = require_family_admin(family_id)
+    if err:
+        return err
+    req = _join_request(family_id, request_id)
+    db.session.delete(req)
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@bp.post("/families/<int:family_id>/join-code")
+@require_auth
+def new_join_code(family_id):
+    """Replaces the clan's code (e.g. it got passed around). The old code stops working;
+    nobody already in the clan is affected."""
+    _, err = require_family_admin(family_id)
+    if err:
+        return err
+    fam = Family.query.get_or_404(family_id)
+    fam.join_code = _make_join_code()
+    db.session.commit()
+    return jsonify({"ok": True, "join_code": fam.join_code})
 
 
 @bp.get("/families/<int:family_id>")

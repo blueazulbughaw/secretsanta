@@ -114,6 +114,19 @@ CREATE TABLE family_members (
   INDEX idx_fm_household (household_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Someone who entered a clan code and is waiting for a clan admin to approve them.
+-- Not a member until approved (then a family_members row replaces this one).
+CREATE TABLE join_requests (
+  id          BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  family_id   BIGINT UNSIGNED NOT NULL,
+  user_id     BIGINT UNSIGNED NOT NULL,
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_jr_family FOREIGN KEY (family_id) REFERENCES families(id) ON DELETE CASCADE,
+  CONSTRAINT fk_jr_user   FOREIGN KEY (user_id)   REFERENCES users(id)    ON DELETE CASCADE,
+  UNIQUE KEY uq_join_request (family_id, user_id),
+  INDEX ix_join_requests_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ------------------------------------------------------------
 -- EVENTS — a single gift exchange (e.g., "Christmas 2026").
 -- Rules (budget, wishlist limit, codenames) are set per event.

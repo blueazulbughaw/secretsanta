@@ -112,7 +112,9 @@ All JSON, prefixed `/api`. 🔒 = auth required, 👑 = family admin.
 
 **Families**
 - `POST /families` 🔒 — create family (creator becomes admin)
-- `POST /families/join` 🔒 — `{ join_code }`
+- `POST /families/join` 🔒 — `{ join_code }`: asks to join (`pending: true`); a clan admin approves first. Pending clans show in `/auth/me` as `pending_families`
+- `GET /families/:id/join-requests` 👑, `POST /families/:id/join-requests/:rid/approve|decline` 👑 — let someone in (becomes a member) or decline (request deleted; they can ask again)
+- `POST /families/:id/join-code` 👑 — a new clan code; the old one stops working
 - `GET /families/:id` 🔒 — details + my role
 - `GET /families/:id/members` 🔒
 - `PATCH /families/:id/members/:memberId` 👑 — set role / household

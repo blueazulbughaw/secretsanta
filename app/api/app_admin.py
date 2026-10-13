@@ -3,7 +3,7 @@ from flask import Blueprint, jsonify, g
 from ..extensions import db
 from ..models import (User, Family, FamilyMember, Household, Event, EventParticipant, Assignment,
                       EventDish, WishlistItem, Message, Announcement, Notification,
-                      PushSubscription, OtpCode)
+                      PushSubscription, OtpCode, JoinRequest)
 from ..middleware.auth import require_auth
 from ..services.photo_service import remove_photo
 from .events import purge_event
@@ -51,6 +51,7 @@ def all_clans():
             "created_at": fam.created_at.isoformat() if fam.created_at else None,
             "event_count": Event.query.filter_by(family_id=fam.id).count(),
             "members": people,
+            "waiting": [_person(r.user) for r in JoinRequest.query.filter_by(family_id=fam.id).all()],
         })
     in_a_clan = db.session.query(FamilyMember.user_id)
     no_clan = (User.query.filter(~User.id.in_(in_a_clan), User.is_app_admin.is_(False))
@@ -71,7 +72,7 @@ def delete_clan(family_id):
     photos = []
     for ev in Event.query.filter_by(family_id=fam.id).all():
         photos += purge_event(ev)
-    for model in (Announcement, FamilyMember, Household):
+    for model in (Announcement, FamilyMember, Household, JoinRequest):
         model.query.filter_by(family_id=fam.id).delete()
     db.session.delete(fam)
     db.session.commit()
@@ -121,7 +122,7 @@ def delete_user(user_id):
     Assignment.query.filter((Assignment.giver_id == user.id)
                             | (Assignment.receiver_id == user.id)).delete()
     for model in (WishlistItem, EventDish, EventParticipant, Notification, PushSubscription,
-                  FamilyMember):
+                  FamilyMember, JoinRequest):
         model.query.filter_by(user_id=user.id).delete()
     Announcement.query.filter_by(author_id=user.id).delete()
     if user.phone:
