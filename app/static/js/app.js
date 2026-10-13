@@ -192,7 +192,7 @@ function renderSidebar(activePath) {
   if (!FAMILY && !ME.user.is_app_admin) return;
   const items = NAV.filter(i => FAMILY
       ? (!i.adminOnly || FAMILY.role === "admin") && (!i.appAdminOnly || ME.user.is_app_admin)
-      : i.appAdminOnly || i.key === "security")
+      : i.appAdminOnly)
     .map(i => navItemHtml(i, activePath)).join("");
   const brand = !FAMILY ? `<div class="sidebar-brand">App Admin</div>`
     : ME.families.length > 1
@@ -530,8 +530,8 @@ async function navigate() {
   // every route, and land back on the sign-in screen instead of a crash.
   if (!ME || !ME.authenticated) { pageLogin(); return; }
   let path = location.hash.replace(/^#/, "") || "/";
-  // An app admin who isn't in any clan only has All Clans and Profile & Security
-  if (!FAMILY && path !== "/security") path = "/app-admin";
+  // An app admin who isn't in any clan only has All Clans (its password is changed there)
+  if (!FAMILY) path = "/app-admin";
   renderSidebar(path.replace(/^\/events\/\d+\/wishlist(\/.*)?$/, "/wishlist")
     .replace(/^\/events\/\d+\/messages(\/.*)?$/, "/messages")
     .replace(/^\/events\/\d+(\/.*)?$/, "/events")
@@ -2034,41 +2034,59 @@ route(/^\/notifications$/, async () => {
 
 // ---------- app admin ----------
 // Every clan on the site, for the app admin (User.is_app_admin) only: who's in each and
-// who runs it. Read-only - an app admin can only open a clan they're in themselves.
+// who runs it, and deleting test clans and accounts. An app admin can only open a clan
+// they're in themselves.
 route(/^\/app-admin$/, async () => {
   if (!ME.user.is_app_admin) return go("/");
-  const clans = await api.get("/app-admin/clans");
-  const people = new Set(clans.flatMap(c => c.members.map(m => m.user_id))).size;
+  const { clans, no_clan } = await api.get("/app-admin/clans");
+  const people = new Set([...clans.flatMap(c => c.members.map(m => m.user_id)), ...no_clan.map(p => p.user_id)]).size;
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const personRow = (m, showHousehold) => `
+    <li><span>${esc(m.display_name)} <span class="muted">(${esc(m.username)})</span>${m.role === "admin" ? ` <span class="pill">Clan admin</span>` : ""}${m.is_active ? "" : ` <span class="muted">— inactive</span>`}</span>
+    <span class="row-actions">${showHousehold ? `<span class="list-note">${esc(m.household_name || "—")}</span>` : ""}
+    <button class="btn btn-quiet btn-row" data-del-user="${m.user_id}" data-name="${esc(m.display_name)}">Delete</button></span></li>`;
   const clanCard = (c) => {
     const admins = c.members.filter(m => m.role === "admin").map(m => m.display_name);
     const mine = ME.families.some(f => f.id === c.id);
-    const rows = c.members.map(m => `
-      <li><span>${esc(m.display_name)} <span class="muted">(${esc(m.username)})</span>${m.role === "admin" ? ` <span class="pill">Clan admin</span>` : ""}${m.is_active ? "" : ` <span class="muted">— inactive</span>`}</span>
-      <span class="list-note">${esc(m.household_name || "—")}</span></li>`).join("");
     return `
       <section class="card form-card">
         <h2>${esc(c.name)}</h2>
-        <p class="muted" style="margin-top:0">Code ${esc(c.join_code)} · ${c.members.length} ${c.members.length === 1 ? "member" : "members"} · ${c.event_count} ${c.event_count === 1 ? "event" : "events"}</p>
+        <p class="muted" style="margin-top:0">Code ${esc(c.join_code)} · ${plural(c.members.length, "member", "members")} · ${plural(c.event_count, "event", "events")}</p>
         <p><strong>Clan admins:</strong> ${admins.length ? esc(admins.join(", ")) : "none"}</p>
         ${c.members.length
-          ? `<div class="list-head">Household</div><ul class="name-list">${rows}</ul>`
+          ? `<div class="list-head">Household</div><ul class="name-list">${c.members.map(m => personRow(m, true)).join("")}</ul>`
           : `<p class="muted">No members.</p>`}
         ${mine && c.id !== FAMILY?.id ? `<button class="btn btn-secondary" data-open-clan="${c.id}">Switch to This Clan</button>` : ""}
+        <button class="btn btn-quiet" data-del-clan="${c.id}" data-name="${esc(c.name)}">Delete Clan</button>
       </section>`;
   };
   render("All Clans", `
+    <div id="msg"></div>
     <section class="card form-card">
       <h2>Start a new clan</h2>
       <p class="muted">You'll be its clan admin, and can share its code from Manage My Clan.</p>
       <label for="newClanName">Clan name</label>
       <input id="newClanName" maxlength="120">
-      <div id="msg"></div>
       <button class="btn btn-primary" id="newClanBtn">Start Clan</button>
     </section>
     <section class="card form-card">
-      <p style="margin:0">${clans.length} ${clans.length === 1 ? "clan" : "clans"}, ${people} ${people === 1 ? "person" : "people"} in all.</p>
+      <p style="margin:0">${plural(clans.length, "clan", "clans")}, ${plural(people, "person", "people")} in all.</p>
     </section>
     ${clans.map(clanCard).join("")}
+    ${no_clan.length ? `
+    <section class="card form-card">
+      <h2>Not in any clan</h2>
+      <p class="muted" style="margin-top:0">Accounts that aren't in a clan, e.g. left over from a deleted test clan.</p>
+      <ul class="name-list">${no_clan.map(m => personRow(m, false)).join("")}</ul>
+    </section>` : ""}
+    ${FAMILY ? "" : `
+    <section class="card form-card">
+      <h2>Change my password</h2>
+      <p class="muted" style="margin-top:0">At least 8 characters.</p>
+      ${passwordFieldHTML("newPassword", "New password", { confirm: true })}
+      <div id="pwMsg"></div>
+      <button class="btn btn-secondary" id="savePwBtn">Change Password</button>
+    </section>`}
   `, { wide: true });
   document.getElementById("newClanBtn").onclick = async () => {
     try {
@@ -2079,6 +2097,35 @@ route(/^\/app-admin$/, async () => {
     } catch (e) { showError(e); }
   };
   $app.querySelectorAll("[data-open-clan]").forEach(b => b.onclick = () => switchClan(b.dataset.openClan));
+  $app.querySelectorAll("[data-del-clan]").forEach(b => b.onclick = async () => {
+    if (!confirm(`Delete the clan "${b.dataset.name}"? This permanently erases it and everything in it (events, name draws, wishlists, messages, dishes, announcements, households). The people's accounts stay. It can't be undone.`)) return;
+    try {
+      await api.del(`/app-admin/clans/${b.dataset.delClan}`);
+      if (ME.families.some(f => f.id === Number(b.dataset.delClan))) return boot();  // was one of mine
+      navigate();
+    } catch (e) { showError(e); window.scrollTo(0, 0); }
+  });
+  $app.querySelectorAll("[data-del-user]").forEach(b => b.onclick = async () => {
+    if (!confirm(`Delete ${b.dataset.name}'s account? This permanently erases it from every clan they're in, with their wishlists, messages and dishes. It can't be undone.`)) return;
+    try {
+      await api.del(`/app-admin/users/${b.dataset.delUser}`);
+      navigate();
+    } catch (e) { showError(e); window.scrollTo(0, 0); }
+  });
+  const savePw = document.getElementById("savePwBtn");
+  if (savePw) {
+    wirePasswordToggles();
+    savePw.onclick = async () => {
+      const mismatch = passwordMismatchError("newPassword");
+      if (mismatch) return document.getElementById("pwMsg").innerHTML = alertBox(mismatch.message);
+      try {
+        await api.patch("/auth/security", { password: document.getElementById("newPassword").value });
+        document.getElementById("pwMsg").innerHTML = alertBox("Password changed!", true);
+        document.getElementById("newPassword").value = "";
+        document.getElementById("newPasswordConfirm").value = "";
+      } catch (e) { document.getElementById("pwMsg").innerHTML = alertBox(e.message); }
+    };
+  }
 });
 
 // ---------- admin ----------

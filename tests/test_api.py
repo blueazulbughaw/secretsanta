@@ -1817,7 +1817,7 @@ def test_app_admin_sees_every_clan_with_members_and_clan_admins(app, users):
     db.session.commit()
     r = admin.get("/api/app-admin/clans")
     assert r.status_code == 200
-    clans = {c["name"]: c for c in r.get_json()}
+    clans = {c["name"]: c for c in r.get_json()["clans"]}
     assert set(clans) == {"Test Fam", "Other Fam"}
     test_fam = clans["Test Fam"]
     assert [m["display_name"] for m in test_fam["members"]] == ["Ana", "Bob", "Cara"]  # admins first
@@ -1859,4 +1859,72 @@ def test_app_admin_signs_in_only_on_its_own_screen(app, users):
     assert c.post("/api/auth/admin-login", json={"username": "ss_admin", "password": PASSWORD}).status_code == 200
     me = c.get("/api/auth/me").get_json()
     assert me["user"]["is_app_admin"] and me["families"] == []
-    assert len(c.get("/api/app-admin/clans").get_json()) == 1
+    assert len(c.get("/api/app-admin/clans").get_json()["clans"]) == 1
+
+
+def _make_app_admin(app):
+    from app.models import User
+    from app.utils import hash_password
+    db.session.add(User(username="ss_admin", full_name="App Admin", is_app_admin=True,
+                        password_hash=hash_password(PASSWORD)))
+    db.session.commit()
+    c = app.test_client()
+    assert c.post("/api/auth/admin-login", json={"username": "ss_admin", "password": PASSWORD}).status_code == 200
+    return c
+
+
+def test_app_admin_deletes_a_whole_clan_and_its_people_stay(app, users, tmp_path):
+    from app.models import Family, Event, WishlistItem, Household
+    fam, admin, bob = users["_family"], users[ADMIN_USER], users[BOB_USER]
+    admin.post(f"/api/families/{fam['id']}/households", json={"name": "House"})
+    ev = admin.post(f"/api/families/{fam['id']}/events",
+                    json={"name": "Xmas", "event_date": future_date()}).get_json()["event"]
+    join_everyone(users, ev)
+    bob.post(f"/api/events/{ev['id']}/wishlists", data={"item_name": "Socks", "photo": make_image("s.png")},
+             content_type="multipart/form-data")
+    assert WishlistItem.query.count() == 1
+    ss = _make_app_admin(app)
+    assert bob.delete(f"/api/app-admin/clans/{fam['id']}").status_code == 403
+    assert admin.delete(f"/api/app-admin/clans/{fam['id']}").status_code == 403  # clan admin isn't enough
+    assert ss.delete(f"/api/app-admin/clans/{fam['id']}").status_code == 200
+    assert Family.query.count() == 0 and Event.query.count() == 0
+    assert WishlistItem.query.count() == 0 and Household.query.count() == 0
+    listing = ss.get("/api/app-admin/clans").get_json()
+    assert listing["clans"] == []
+    assert sorted(p["username"] for p in listing["no_clan"]) == [ADMIN_USER, BOB_USER, CARA_USER]
+    assert bob.get("/api/auth/me").get_json()["families"] == []
+
+
+def test_app_admin_deletes_an_account_but_not_one_that_would_break_something(app, users):
+    from app.models import User, Event
+    fam, admin, cara = users["_family"], users[ADMIN_USER], users[CARA_USER]
+    ss = _make_app_admin(app)
+    ana = User.query.filter_by(username=ADMIN_USER).first()
+    cara_id = User.query.filter_by(username=CARA_USER).first().id
+    # Ana is the clan's only clan admin
+    r = ss.delete(f"/api/app-admin/users/{ana.id}")
+    assert r.status_code == 400 and "only clan admin" in r.get_json()["error"]
+    ss_id = User.query.filter_by(username="ss_admin").first().id
+    assert ss.delete(f"/api/app-admin/users/{ss_id}").status_code == 400
+    assert admin.delete(f"/api/app-admin/users/{cara_id}").status_code == 403
+
+    # Cara is in a drawn event: refused until it's gone
+    h = admin.post(f"/api/families/{fam['id']}/households", json={"name": "H1"}).get_json()["household"]
+    h2 = admin.post(f"/api/families/{fam['id']}/households", json={"name": "H2"}).get_json()["household"]
+    h3 = admin.post(f"/api/families/{fam['id']}/households", json={"name": "H3"}).get_json()["household"]
+    for m, hid in zip(admin.get(f"/api/families/{fam['id']}/members").get_json(), (h, h2, h3)):
+        admin.patch(f"/api/families/{fam['id']}/members/{m['membership_id']}", json={"household_id": hid["id"]})
+    ev = admin.post(f"/api/families/{fam['id']}/events",
+                    json={"name": "Xmas", "event_date": future_date(), "game_master_id": None}).get_json()["event"]
+    join_everyone(users, ev)
+    assert admin.post(f"/api/events/{ev['id']}/assignments/generate").status_code == 200
+    r = ss.delete(f"/api/app-admin/users/{cara_id}")
+    assert r.status_code == 400 and "Xmas" in r.get_json()["error"]
+    admin.delete(f"/api/events/{ev['id']}")
+
+    cara.post(f"/api/families/{fam['id']}/announcements", json={"body": "x"})
+    assert ss.delete(f"/api/app-admin/users/{cara_id}").status_code == 200
+    assert User.query.get(cara_id) is None
+    assert cara.get("/api/auth/me").get_json() == {"authenticated": False}
+    names = [m["username"] for m in ss.get("/api/app-admin/clans").get_json()["clans"][0]["members"]]
+    assert CARA_USER not in names

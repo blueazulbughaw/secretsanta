@@ -156,7 +156,7 @@ All JSON, prefixed `/api`. 🔒 = auth required, 👑 = family admin.
 
 **Announcements** — `GET /families/:id/announcements` 🔒, `POST` 👑, `DELETE /announcements/:id` 👑
 
-**App admin** — `POST /auth/admin-login` (the /ss-admin screen; only `is_app_admin` accounts, which `/auth/login-password` and `/auth/verify-otp` refuse), `GET /app-admin/clans` 🔒 (only `users.is_app_admin`; 403 for everyone else) — every clan: name, join code, event count, members (display name, username, household, role, active). Never assignments.
+**App admin** — `POST /auth/admin-login` (the /ss-admin screen; only `is_app_admin` accounts, which `/auth/login-password` and `/auth/verify-otp` refuse), `GET /app-admin/clans` 🔒 (only `users.is_app_admin`; 403 for everyone else) — every clan: name, join code, event count, members (display name, username, household, role, active). Never assignments. Also lists `no_clan` (accounts in no clan). `DELETE /app-admin/clans/:id` (the clan and everything in it; accounts stay), `DELETE /app-admin/users/:id` (the account, from every clan; 400 while in a drawn event or a clan's only admin).
 
 **Notifications** — `GET /notifications` 🔒, `POST /notifications/:id/read` 🔒, `POST /notifications/read-all` 🔒, `POST /push/subscribe` 🔒 (stores subscription; push delivery is a later phase)
 

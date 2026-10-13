@@ -132,7 +132,11 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   /ss-admin (POST /auth/admin-login); the family sign-in and text-code sign-in refuse app
   admin accounts, and both answer the wrong kind of account with the same "Wrong username or
   password" (`_password_login` in api/auth.py). With no clan, its sidebar is just All Clans
-  + Profile & Security. (Unrelated to the old master-key /ss-admin, removed on purpose.)
+  and nothing else - no profile; its "Change my password" card is on All Clans. (Unrelated
+  to the old master-key /ss-admin, removed on purpose.) All Clans can delete a clan
+  (DELETE /app-admin/clans/:id - everything in it, via `purge_event`; the people's accounts
+  stay and show under "Not in any clan") and delete an account (DELETE /app-admin/users/:id
+  - from every clan, refused while they're in a drawn event or are a clan's only admin).
 - Wording: always say "event". Never "gift exchange" (user-facing text, errors, docs).
 - There is no separate admin page for a single event. The event page (`/events/:id`) is the
   one place: for clan admins it ends with an Admin card (Draw Names / Start Over (Re-Draw

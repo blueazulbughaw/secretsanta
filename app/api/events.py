@@ -192,14 +192,22 @@ def delete_event(event_id):
     _, err = require_family_admin(ev.family_id)
     if err:
         return err
-    photos = [i.photo_path for i in WishlistItem.query.filter_by(event_id=ev.id).all()]
-    for model in (Message, Assignment, WishlistItem, EventParticipant, Announcement, EventDish):
-        model.query.filter_by(event_id=ev.id).delete()
-    db.session.delete(ev)
+    photos = purge_event(ev)
     db.session.commit()
     for path in photos:
         remove_photo(path)
     return jsonify({"ok": True})
+
+
+def purge_event(ev):
+    """Deletes an event and everything scoped to it (not yet committed). Returns its gift
+    photos' paths, to remove from disk once the commit has gone through. Also used when the
+    app admin deletes a whole clan (api/app_admin.py)."""
+    photos = [i.photo_path for i in WishlistItem.query.filter_by(event_id=ev.id).all()]
+    for model in (Message, Assignment, WishlistItem, EventParticipant, Announcement, EventDish):
+        model.query.filter_by(event_id=ev.id).delete()
+    db.session.delete(ev)
+    return photos
 
 
 @bp.post("/events/<int:event_id>/complete")

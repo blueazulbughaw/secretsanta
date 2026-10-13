@@ -637,3 +637,7 @@ body.dragging-cards, body.dragging-cards * { cursor: grabbing !important; }
   display: inline-block; padding: .05rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 700;
   color: #fff; background: var(--green); vertical-align: middle;
 }
+
+/* All Clans: household + a Delete button at the end of each person's row */
+.row-actions { display: flex; align-items: center; gap: .75rem; flex: 0 0 auto; }
+.name-list .btn-row { width: auto; min-height: 32px; padding: .2rem .8rem; margin: 0; font-size: .8rem; }
