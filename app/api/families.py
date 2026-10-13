@@ -1,7 +1,9 @@
 import secrets
 import string
 
-from flask import Blueprint, request, jsonify, g
+import io
+
+from flask import Blueprint, request, jsonify, g, send_file, current_app
 
 from ..extensions import db
 from ..models import Family, FamilyMember, Household, User, Event, EventParticipant, JoinRequest
@@ -151,6 +153,30 @@ def decline_join_request(family_id, request_id):
     db.session.delete(req)
     db.session.commit()
     return jsonify({"ok": True})
+
+
+@bp.get("/families/<int:family_id>/join-qr.png")
+@require_auth
+def join_qr(family_id):
+    """A QR code of the clan's registration link (/join/CODE), for the clan admin to share
+    or print. Made fresh each time, so it always matches the current code."""
+    _, err = require_family_admin(family_id)
+    if err:
+        return err
+    import qrcode
+    fam = Family.query.get_or_404(family_id)
+    qr = qrcode.QRCode(border=2, box_size=12, error_correction=qrcode.constants.ERROR_CORRECT_M)
+    base = request.host_url
+    # The live site is HTTPS-only, but behind the host's web server Flask can see plain http
+    if not (current_app.debug or current_app.testing):
+        base = "https://" + base.split("://", 1)[1]
+    qr.add_data(f"{base}join/{fam.join_code}")
+    buf = io.BytesIO()
+    qr.make_image(fill_color="black", back_color="white").save(buf, "PNG")
+    buf.seek(0)
+    resp = send_file(buf, mimetype="image/png", download_name=f"{fam.name} clan code.png")
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @bp.post("/families/<int:family_id>/join-code")

@@ -2185,7 +2185,9 @@ route(/^\/admin$/, async () => {
     api.get(`/families/${FAMILY.id}/households`),
     api.get(`/families/${FAMILY.id}/join-requests`),
   ]);
-  let regUrl = `${location.origin}/#/join/${fam.join_code}`;
+  // Plain /join/CODE (no #), the same link the QR code holds - see captureEntryIntent
+  let regUrl = `${location.origin}/join/${fam.join_code}`;
+  const qrSrc = (code) => `/api/families/${FAMILY.id}/join-qr.png?c=${encodeURIComponent(code)}`;
   const byName = (x, y) => x.localeCompare(y);
   render("Manage My Clan", `
     ${waiting.length ? `
@@ -2215,8 +2217,11 @@ route(/^\/admin$/, async () => {
     <div class="card form-card center">
       <p class="muted">Share this code so family can join:</p>
       <div class="reveal-name" style="font-size:1.8rem" id="joinCodeShown">${esc(fam.join_code)}</div>
-      <p class="muted" style="font-size:.85rem">You approve everyone who joins with it.</p>
-      <button class="btn btn-quiet" id="copyLinkBtn" style="margin-top:.5rem">Copy Registration Link</button>
+      <img id="joinQr" class="join-qr" src="${qrSrc(fam.join_code)}" alt="QR code for joining ${esc(fam.name)}" width="220" height="220">
+      <p class="muted" style="font-size:.85rem">Scan it with a phone camera to open the sign-up page. You approve everyone who joins.</p>
+      <button class="btn btn-primary" id="shareLinkBtn">Share Registration Link</button>
+      <button class="btn btn-quiet" id="copyLinkBtn">Copy Link</button>
+      <button class="btn btn-quiet" id="shareQrBtn">Share QR Code</button>
       <button class="btn btn-quiet" id="newCodeBtn">Make a New Code</button>
       <div id="copyMsg"></div>
     </div>
@@ -2233,17 +2238,46 @@ route(/^\/admin$/, async () => {
     try {
       const r = await api.post(`/families/${FAMILY.id}/join-code`);
       document.getElementById("joinCodeShown").textContent = r.join_code;
-      regUrl = `${location.origin}/#/join/${r.join_code}`;
+      document.getElementById("joinQr").src = qrSrc(r.join_code);
+      regUrl = `${location.origin}/join/${r.join_code}`;
       document.getElementById("copyMsg").innerHTML = alertBox("New code made. The old one no longer works.", true);
     } catch (e) { document.getElementById("copyMsg").innerHTML = alertBox(e.message); }
   };
-  document.getElementById("copyLinkBtn").onclick = async () => {
+  const copyMsg = (text, ok = true) => { document.getElementById("copyMsg").innerHTML = alertBox(text, ok); };
+  const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(regUrl);
-      document.getElementById("copyMsg").innerHTML = alertBox("Link copied!", true);
+      copyMsg("Link copied!");
     } catch (e) {
-      document.getElementById("copyMsg").innerHTML = alertBox(regUrl, true);
+      copyMsg(regUrl);
     }
+  };
+  const shareText = () => `Join ${FAMILY.name} on Secret Santa: tap the link, or use clan code ${document.getElementById("joinCodeShown").textContent}.`;
+  // The phone's own share sheet (Messages, WhatsApp, email...) where there is one;
+  // otherwise just copy the link. Closing the share sheet isn't an error.
+  document.getElementById("shareLinkBtn").onclick = async () => {
+    if (!navigator.share) return copyLink();
+    try { await navigator.share({ title: `Join ${FAMILY.name}`, text: shareText(), url: regUrl }); }
+    catch (e) { if (e.name !== "AbortError") copyLink(); }
+  };
+  document.getElementById("copyLinkBtn").onclick = copyLink;
+  // Shares the QR code picture where the device can share files; otherwise saves it
+  document.getElementById("shareQrBtn").onclick = async () => {
+    try {
+      const blob = await (await fetch(document.getElementById("joinQr").src)).blob();
+      const file = new File([blob], `${FAMILY.name} clan code.png`, { type: "image/png" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: `Join ${FAMILY.name}`, text: shareText() }); }
+        catch (e) { if (e.name !== "AbortError") throw e; }
+        return;
+      }
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = file.name;
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      copyMsg("QR code saved to your downloads.");
+    } catch (e) { copyMsg("Couldn't share the QR code. Please try again.", false); }
   };
 });
 

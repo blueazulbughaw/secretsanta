@@ -1982,3 +1982,18 @@ def test_clan_admin_can_make_a_new_clan_code(app, users):
     assert c.post("/api/families/join", json={"join_code": fam["join_code"]}).status_code == 404
     assert c.post("/api/families/join", json={"join_code": new_code}).status_code == 201
     assert users[BOB_USER].get(f"/api/families/{fam['id']}/members").status_code == 200  # still in
+
+
+def test_clan_admin_gets_a_qr_code_of_the_registration_link(app, users):
+    import io
+    from PIL import Image
+    fam, admin = users["_family"], users[ADMIN_USER]
+    assert users[BOB_USER].get(f"/api/families/{fam['id']}/join-qr.png").status_code == 403
+    r = admin.get(f"/api/families/{fam['id']}/join-qr.png")
+    assert r.status_code == 200 and r.mimetype == "image/png"
+    assert r.headers["Cache-Control"] == "no-store"
+    img = Image.open(io.BytesIO(r.data))
+    assert img.size[0] == img.size[1] and img.size[0] > 200
+    # A new code means a different picture
+    admin.post(f"/api/families/{fam['id']}/join-code")
+    assert admin.get(f"/api/families/{fam['id']}/join-qr.png").data != r.data

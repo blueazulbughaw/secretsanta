@@ -641,3 +641,7 @@ body.dragging-cards, body.dragging-cards * { cursor: grabbing !important; }
 /* All Clans: household + a Delete button at the end of each person's row */
 .row-actions { display: flex; align-items: center; gap: .75rem; flex: 0 0 auto; }
 .name-list .btn-row { width: auto; min-height: 32px; padding: .2rem .8rem; margin: 0; font-size: .8rem; }
+
+/* Manage My Clan: the registration link as a QR code */
+.join-qr { display: block; width: 220px; max-width: 100%; height: auto; margin: .6rem auto .2rem;
+  border: 1px solid var(--line); border-radius: var(--radius); background: #fff; image-rendering: pixelated; }
