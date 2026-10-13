@@ -2220,8 +2220,6 @@ route(/^\/admin$/, async () => {
       <img id="joinQr" class="join-qr" src="${qrSrc(fam.join_code)}" alt="QR code for joining ${esc(fam.name)}" width="220" height="220">
       <p class="muted" style="font-size:.85rem">Scan it with a phone camera to open the sign-up page. You approve everyone who joins.</p>
       <button class="btn btn-primary" id="shareLinkBtn">Share Registration Link</button>
-      <button class="btn btn-quiet" id="copyLinkBtn">Copy Link</button>
-      <button class="btn btn-quiet" id="shareQrBtn">Share QR Code</button>
       <button class="btn btn-quiet" id="newCodeBtn">Make a New Code</button>
       <div id="copyMsg"></div>
     </div>
@@ -2259,25 +2257,6 @@ route(/^\/admin$/, async () => {
     if (!navigator.share) return copyLink();
     try { await navigator.share({ title: `Join ${FAMILY.name}`, text: shareText(), url: regUrl }); }
     catch (e) { if (e.name !== "AbortError") copyLink(); }
-  };
-  document.getElementById("copyLinkBtn").onclick = copyLink;
-  // Shares the QR code picture where the device can share files; otherwise saves it
-  document.getElementById("shareQrBtn").onclick = async () => {
-    try {
-      const blob = await (await fetch(document.getElementById("joinQr").src)).blob();
-      const file = new File([blob], `${FAMILY.name} clan code.png`, { type: "image/png" });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try { await navigator.share({ files: [file], title: `Join ${FAMILY.name}`, text: shareText() }); }
-        catch (e) { if (e.name !== "AbortError") throw e; }
-        return;
-      }
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = file.name;
-      document.body.append(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-      copyMsg("QR code saved to your downloads.");
-    } catch (e) { copyMsg("Couldn't share the QR code. Please try again.", false); }
   };
 });
 

@@ -131,8 +131,8 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   once. "Make a New Code" (POST /families/:id/join-code) retires a leaked code.
   The code card on Manage My Clan also shows the registration link (/join/CODE, no #) as a QR
   code (GET /families/:id/join-qr.png, clan admin only, `qrcode` package, always https:// on
-  the live site), with Share Registration Link (the phone's share sheet, else copy), Copy
-  Link and Share QR Code (shares the picture, else downloads it).
+  the live site), with ONE share button: Share Registration Link (the phone's share sheet,
+  else copy). No separate Copy Link / Share QR Code buttons (removed at the user's request).
 - More than one clan: a person can be in several clans (Profile & Security > "Join another
   clan": shows the code's clan name first, then asks to join - same approval). The app shows one clan at a time: the sidebar
   brand becomes a "Clan" switcher once they're in 2+, and the choice is remembered per
