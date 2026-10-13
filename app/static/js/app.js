@@ -2042,9 +2042,10 @@ route(/^\/app-admin$/, async () => {
   const { clans, no_clan } = await api.get("/app-admin/clans");
   const people = new Set([...clans.flatMap(c => c.members.map(m => m.user_id)), ...no_clan.map(p => p.user_id)]).size;
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-  // created_at is UTC from the server (no zone on it), shown as a date in the viewer's time zone
+  // created_at is UTC from the server (no zone on it), shown in the viewer's time zone
   const created = (iso) => iso
-    ? new Date(iso + "Z").toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "unknown";
+    ? new Date(iso + "Z").toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric",
+                                                     hour: "numeric", minute: "2-digit" }) : "unknown";
   const personRow = (m, showHousehold) => `
     <li><span>${esc(m.display_name)} <span class="muted">(${esc(m.username)})</span>${m.role === "admin" ? ` <span class="pill">Clan admin</span>` : ""}${m.is_active ? "" : ` <span class="muted">— inactive</span>`}</span>
     <span class="row-actions">${showHousehold ? `<span class="list-note">${esc(m.household_name || "—")}</span>` : ""}

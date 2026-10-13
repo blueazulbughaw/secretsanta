@@ -127,7 +127,7 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   device (`pickFamily`/`switchClan` in app.js, localStorage `activeClanId`).
 - App admin (`users.is_app_admin`, set in the database - not a clan role): sidebar "All
   Clans" (`/app-admin`, GET /app-admin/clans) lists every clan with its members, usernames,
-  households, clan admins and the date each clan was created (no "start a clan" here). Read-only; never anything about a
+  households, clan admins and the date and time each clan was created (no "start a clan" here). Read-only; never anything about a
   draw. The app admin is its own account (`ss_admin`, in no clan) that signs in ONLY at
   /ss-admin (POST /auth/admin-login); the family sign-in and text-code sign-in refuse app
   admin accounts, and both answer the wrong kind of account with the same "Wrong username or
