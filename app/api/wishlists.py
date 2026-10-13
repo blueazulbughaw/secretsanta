@@ -104,7 +104,8 @@ def add_item(event_id):
             mine = EventParticipant.query.filter_by(event_id=ev.id, user_id=g.user.id).first()
             who = (mine.codename if mine and mine.codename else "someone")
         notify(giver.giver_id, "wishlist", f"Your giftee {who} added a gift idea",
-               "Take a look at their updated wishlist.", link_path=link)
+               "Take a look at their updated wishlist.", link_path=link,
+               family_id=ev.family_id, event_id=ev.id)
     return jsonify({"ok": True, "item": item.to_dict()}), 201
 
 

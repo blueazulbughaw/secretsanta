@@ -285,17 +285,23 @@ CREATE TABLE announcements (
 CREATE TABLE notifications (
   id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   user_id       BIGINT UNSIGNED NOT NULL,
-  type          ENUM('assignment','message','announcement','wishlist',
-                     'event','reminder','system') NOT NULL,
+  type          VARCHAR(20) NOT NULL,          -- assignment, message, announcement, wishlist,
+                                               -- join_request, join_approved
   title         VARCHAR(200) NOT NULL,
   body          VARCHAR(500) NULL,
   link_path     VARCHAR(255) NULL,             -- in-app deep link, e.g. /events/12
-  channel       ENUM('in_app','push','email') NOT NULL DEFAULT 'in_app',
+  family_id     BIGINT NULL,                   -- what it's about: deleting that clan, event
+  event_id      BIGINT NULL,                   -- or announcement deletes the notification
+  announcement_id BIGINT NULL,
+  channel       VARCHAR(10) NOT NULL DEFAULT 'in_app',
   is_read       TINYINT(1) NOT NULL DEFAULT 0,
-  push_sent_at  DATETIME NULL,                 -- future-ready for web push
+  push_sent_at  DATETIME NULL,                 -- when it was sent to their phones (web push)
   created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_n_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-  INDEX idx_n_user_unread (user_id, is_read, created_at DESC)
+  INDEX idx_n_user_unread (user_id, is_read, created_at DESC),
+  INDEX ix_notifications_family_id (family_id),
+  INDEX ix_notifications_event_id (event_id),
+  INDEX ix_notifications_announcement_id (announcement_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------

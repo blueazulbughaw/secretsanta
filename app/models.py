@@ -315,6 +315,11 @@ class Notification(db.Model):
     title = db.Column(db.String(200), nullable=False)
     body = db.Column(db.String(500))
     link_path = db.Column(db.String(255))
+    # What it's about, so it goes when that does (deleting an announcement, event or clan
+    # deletes its notifications). Plain ids, no foreign keys: the live tables are MyISAM.
+    family_id = db.Column(db.BigInteger, index=True)
+    event_id = db.Column(db.BigInteger, index=True)
+    announcement_id = db.Column(db.BigInteger, index=True)
     channel = db.Column(db.String(10), nullable=False, default="in_app")
     is_read = db.Column(db.Boolean, nullable=False, default=False)
     push_sent_at = db.Column(db.DateTime)

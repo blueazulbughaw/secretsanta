@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, request, jsonify, g, current_app
 
 from ..extensions import db
 from ..models import Notification, PushSubscription
@@ -38,10 +38,29 @@ def read_all():
     return jsonify({"ok": True})
 
 
+@bp.get("/push/key")
+@require_auth
+def push_key():
+    """The public key a browser needs to turn on notifications (null = push is off here)."""
+    return jsonify({"public_key": current_app.config.get("VAPID_PUBLIC_KEY") or None})
+
+
+@bp.post("/push/unsubscribe")
+@require_auth
+def push_unsubscribe():
+    """This device stops getting notifications (turned off, or signing out of it)."""
+    endpoint = json_body().get("endpoint")
+    if isinstance(endpoint, str) and endpoint:
+        PushSubscription.query.filter_by(endpoint=endpoint[:500], user_id=g.user.id).delete()
+        db.session.commit()
+    return jsonify({"ok": True})
+
+
 @bp.post("/push/subscribe")
 @require_auth
 def push_subscribe():
-    """Future-ready: stores the browser's push subscription. Sending comes later."""
+    """Stores this device's push subscription, so notify() can reach it
+    (services/push_service.py). A device belongs to whoever signed in on it last."""
     data = json_body()
     endpoint = data.get("endpoint") if isinstance(data.get("endpoint"), str) else ""
     keys = data.get("keys") if isinstance(data.get("keys"), dict) else {}
@@ -49,6 +68,9 @@ def push_subscribe():
             or not all(isinstance(keys.get(k), str) and 0 < len(keys[k]) <= 255 for k in ("p256dh", "auth"))):
         return jsonify({"error": "Invalid subscription."}), 400
     existing = PushSubscription.query.filter_by(endpoint=endpoint).first()
+    if existing and existing.user_id != g.user.id:
+        existing.user_id = g.user.id   # someone else signed in on this device
+        db.session.commit()
     if not existing:
         db.session.add(PushSubscription(
             user_id=g.user.id, endpoint=endpoint[:500],

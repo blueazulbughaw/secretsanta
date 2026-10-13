@@ -1997,3 +1997,96 @@ def test_clan_admin_gets_a_qr_code_of_the_registration_link(app, users):
     # A new code means a different picture
     admin.post(f"/api/families/{fam['id']}/join-code")
     assert admin.get(f"/api/families/{fam['id']}/join-qr.png").data != r.data
+
+
+def _bell(client, type_=None):
+    items = client.get("/api/notifications").get_json()["items"]
+    return [n for n in items if type_ is None or n["type"] == type_]
+
+
+def test_deleting_an_announcement_event_or_clan_deletes_its_notifications(app, users):
+    fam, admin, bob = users["_family"], users[ADMIN_USER], users[BOB_USER]
+    url = f"/api/families/{fam['id']}/announcements"
+    first = admin.post(url, json={"title": "Party", "body": "At 6"}).get_json()["id"]
+    admin.post(url, json={"title": "Bring", "body": "A dish"})
+    assert len(_bell(bob, "announcement")) == 2
+    assert admin.delete(f"/api/announcements/{first}").status_code == 200
+    assert [n["body"] for n in _bell(bob, "announcement")] == ["Bring: A dish"]
+
+    ev = _drawn_event(users)
+    assert _bell(bob, "assignment")
+    admin.delete(f"/api/events/{ev['id']}")
+    assert _bell(bob, "assignment") == []
+
+    from app.models import User
+    from app.utils import hash_password
+    db.session.add(User(username="ss_admin", full_name="App Admin", is_app_admin=True,
+                        password_hash=hash_password(PASSWORD)))
+    db.session.commit()
+    ss = app.test_client()
+    ss.post("/api/auth/admin-login", json={"username": "ss_admin", "password": PASSWORD})
+    ss.delete(f"/api/app-admin/clans/{fam['id']}")
+    assert _bell(bob) == []
+
+
+class _FakePush:
+    """Stands in for pywebpush.webpush; `gone` endpoints answer like a dropped subscription."""
+    def __init__(self, gone=()):
+        self.sent, self.gone = [], set(gone)
+
+    def __call__(self, subscription_info, data, **kw):
+        import json
+        from pywebpush import WebPushException
+        if subscription_info["endpoint"] in self.gone:
+            class R: status_code = 410
+            raise WebPushException("gone", response=R())
+        self.sent.append((subscription_info["endpoint"], json.loads(data), kw["vapid_claims"]["sub"]))
+
+
+def _sub(n):
+    return {"endpoint": f"https://push.example.com/{n}", "keys": {"p256dh": "p" * 20, "auth": "a" * 10}}
+
+
+def test_notifications_are_pushed_to_the_devices_people_turned_them_on_for(app, users, monkeypatch):
+    import pywebpush
+    from app.models import PushSubscription
+    fam, admin, bob, cara = users["_family"], users[ADMIN_USER], users[BOB_USER], users[CARA_USER]
+    assert admin.get("/api/push/key").get_json() == {"public_key": None}   # off without keys
+    app.config.update(VAPID_PUBLIC_KEY="pub", VAPID_PRIVATE_KEY="priv")
+    assert admin.get("/api/push/key").get_json() == {"public_key": "pub"}
+    fake = _FakePush(gone={_sub("cara-old")["endpoint"]})
+    monkeypatch.setattr(pywebpush, "webpush", fake)
+
+    for client, name in ((bob, "bob-phone"), (bob, "bob-laptop"), (cara, "cara-old")):
+        assert client.post("/api/push/subscribe", json=_sub(name)).status_code == 200
+    admin.post(f"/api/families/{fam['id']}/announcements", json={"title": "Party", "body": "At 6"})
+    sent = sorted(e.rsplit("/", 1)[1] for e, _, _ in fake.sent)
+    assert sent == ["bob-laptop", "bob-phone"]                 # admin posted it: not to themselves
+    payload = fake.sent[0][1]
+    assert payload["title"] == "New Announcement posted by Admin" and payload["link_path"] == "/announcements"
+    assert payload["id"] == _bell(bob)[0]["id"]
+    assert fake.sent[0][2] == "https://secretsanta.glad.codes"
+    # Cara's subscription was gone at the push service: forgotten
+    assert not PushSubscription.query.filter_by(endpoint=_sub("cara-old")["endpoint"]).first()
+
+    # Turning it off on one device stops that device only; a device someone else signs in on is theirs
+    bob.post("/api/push/unsubscribe", json={"endpoint": _sub("bob-laptop")["endpoint"]})
+    cara.post("/api/push/subscribe", json=_sub("bob-phone"))
+    fake.sent.clear()
+    admin.post(f"/api/families/{fam['id']}/announcements", json={"title": "Again", "body": "Hi"})
+    assert sorted(e.rsplit("/", 1)[1] for e, _, _ in fake.sent) == ["bob-phone"]
+    from app.models import User
+    cara_id = User.query.filter_by(username=CARA_USER).first().id
+    assert PushSubscription.query.filter_by(endpoint=_sub("bob-phone")["endpoint"]).first().user_id == cara_id
+
+
+def test_a_failing_push_never_breaks_the_request(app, users, monkeypatch):
+    import pywebpush
+    fam, admin, bob = users["_family"], users[ADMIN_USER], users[BOB_USER]
+    app.config.update(VAPID_PUBLIC_KEY="pub", VAPID_PRIVATE_KEY="priv")
+    def boom(**kw):
+        raise ConnectionError("network down")
+    monkeypatch.setattr(pywebpush, "webpush", boom)
+    bob.post("/api/push/subscribe", json=_sub("bob-phone"))
+    r = admin.post(f"/api/families/{fam['id']}/announcements", json={"title": "Party", "body": "At 6"})
+    assert r.status_code == 201 and len(_bell(bob, "announcement")) == 1

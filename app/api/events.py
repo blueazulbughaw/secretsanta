@@ -5,7 +5,7 @@ from flask import Blueprint, request, jsonify, g
 
 from ..extensions import db
 from ..models import (Event, EventParticipant, FamilyMember, Assignment, WishlistItem,
-                      Message, Announcement, EventDish)
+                      Message, Announcement, EventDish, Notification)
 from ..services.photo_service import remove_photo
 from ..utils import parse_amount, clean_text, parse_bool, parse_id, json_body, InputError
 from ..middleware.auth import (require_auth, require_family_member, require_family_admin, archived_error,
@@ -204,7 +204,8 @@ def purge_event(ev):
     photos' paths, to remove from disk once the commit has gone through. Also used when the
     app admin deletes a whole clan (api/app_admin.py)."""
     photos = [i.photo_path for i in WishlistItem.query.filter_by(event_id=ev.id).all()]
-    for model in (Message, Assignment, WishlistItem, EventParticipant, Announcement, EventDish):
+    for model in (Message, Assignment, WishlistItem, EventParticipant, Announcement, EventDish,
+                  Notification):
         model.query.filter_by(event_id=ev.id).delete()
     db.session.delete(ev)
     return photos

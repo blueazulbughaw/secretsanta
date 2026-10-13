@@ -29,6 +29,13 @@ class Config:
     TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
     TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
 
+    # Web Push (phone/computer notifications - services/push_service.py). Both keys are
+    # base64url; leave them empty and nothing is pushed (the in-app bell still works).
+    # On the live server they're in the .env file next to DATABASE_URL.
+    VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
+    VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "")
+    VAPID_SUBJECT = os.getenv("VAPID_SUBJECT", "https://secretsanta.glad.codes")
+
     OTP_TTL_MINUTES = 10
     OTP_MAX_ATTEMPTS = 5
     OTP_REQUESTS_PER_WINDOW = 3       # per phone number

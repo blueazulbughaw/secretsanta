@@ -209,8 +209,7 @@ function renderSidebar(activePath) {
   `;
   document.getElementById("logoutLink").onclick = async (e) => {
     e.preventDefault();
-    await api.post("/auth/logout");
-    location.reload();
+    await signOut();
   };
   $sidebar.querySelectorAll("a.nav-link").forEach(a => a.addEventListener("click", closeSidebar));
   const clanSwitch = document.getElementById("clanSwitch");
@@ -269,6 +268,104 @@ function showError(e) {
   else window.alert(e.message);
 }
 function go(hash) { location.hash = hash; }
+
+// ---------- notifications on this device (Web Push) ----------
+// Sent by services/push_service.py, shown by sw.js. iPhones/iPads only allow it in the app
+// added to the Home Screen (iOS 16.4+); in Safari itself there's no PushManager at all.
+const PUSH_SUPPORTED = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+  || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+function b64urlToBytes(s) {
+  const raw = atob((s + "=".repeat((4 - s.length % 4) % 4)).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(raw, c => c.charCodeAt(0));
+}
+// The service worker lives at /static/sw.js (scope /static/), so navigator.serviceWorker.ready
+// never resolves for these pages; register() hands back the existing registration instead.
+async function pushRegistration() {
+  const reg = await navigator.serviceWorker.register("/static/sw.js");
+  if (reg.active) return reg;
+  const sw = reg.installing || reg.waiting;
+  await new Promise(res => sw.addEventListener("statechange", () => { if (sw.state === "activated") res(); }));
+  return reg;
+}
+async function currentPushSub() {
+  if (!PUSH_SUPPORTED) return null;
+  return (await pushRegistration()).pushManager.getSubscription();
+}
+async function turnOnPush() {
+  const { public_key } = await api.get("/push/key");
+  if (!public_key) throw new Error("Notifications aren't set up on this site yet.");
+  if (await Notification.requestPermission() !== "granted") {
+    throw new Error("Notifications weren't allowed. To turn them on, allow them for this site in your browser's settings.");
+  }
+  const reg = await pushRegistration();
+  let sub;
+  try {
+    sub = await reg.pushManager.getSubscription()
+      || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64urlToBytes(public_key) });
+  } catch (_) {  // the browser's own message ("Registration failed - ...") means nothing to anyone
+    throw new Error("This device couldn't turn on notifications. Please try again, or use Chrome or Safari.");
+  }
+  await api.post("/push/subscribe", sub.toJSON());
+}
+async function turnOffPush() {
+  const sub = await currentPushSub();
+  if (!sub) return;
+  await api.post("/push/unsubscribe", { endpoint: sub.endpoint });
+  await sub.unsubscribe();
+}
+// On every sign-in: a device that already allows notifications is (re)linked to whoever
+// signed in on it, so the server's list stays right. Silent - never asks for permission.
+async function resyncPush() {
+  try {
+    if (!PUSH_SUPPORTED || Notification.permission !== "granted") return;
+    const sub = await currentPushSub();
+    if (sub) await api.post("/push/subscribe", sub.toJSON());
+  } catch (_) {}
+}
+// Signing out stops this device getting that person's notifications (the browser keeps
+// its permission, so the next person to sign in here is linked by resyncPush).
+async function signOut() {
+  try {
+    const sub = await currentPushSub();
+    if (sub) await api.post("/push/unsubscribe", { endpoint: sub.endpoint });
+  } catch (_) {}
+  await api.post("/auth/logout");
+  location.reload();
+}
+// Profile & Security's "Notifications on this device" card
+async function wirePushCard() {
+  const state = document.getElementById("pushState");
+  const btn = document.getElementById("pushBtn");
+  const msg = (text, ok) => { document.getElementById("pushMsg").innerHTML = text ? alertBox(text, ok) : ""; };
+  const show = async () => {
+    btn.hidden = true;
+    if (!PUSH_SUPPORTED) {
+      state.innerHTML = IS_IOS
+        ? `<p>On an iPhone or iPad, first add Secret Santa to your Home Screen (tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>). Open it from there and turn this on.</p>`
+        : `<p>This browser can't show notifications.</p>`;
+      return;
+    }
+    if (Notification.permission === "denied") {
+      state.innerHTML = `<p>Notifications are blocked for this site. Allow them in your browser's settings, then come back here.</p>`;
+      return;
+    }
+    const on = !!(await currentPushSub()) && Notification.permission === "granted";
+    state.innerHTML = on ? `<p><strong>On</strong> for this device.</p>` : "";
+    btn.textContent = on ? "Turn Off Notifications" : "Turn On Notifications";
+    btn.hidden = false;
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        if (on) { await turnOffPush(); msg("Notifications are off for this device.", true); }
+        else { await turnOnPush(); msg("Notifications are on! You'll get them on this device.", true); }
+      } catch (e) { msg(e.message); }
+      btn.disabled = false;
+      show();
+    };
+  };
+  try { await show(); } catch (e) { state.innerHTML = `<p>This browser can't show notifications.</p>`; }
+}
 
 // Someone can be in more than one clan; the app shows one at a time. The one they last
 // picked in the sidebar's clan switcher is remembered on this device (just a convenience -
@@ -605,6 +702,7 @@ async function boot() {
   $menuBtn.hidden = false;
   $shell.classList.add("authed");
   refreshBadge();
+  resyncPush();
 }
 
 // A password input with a show/hide eye button - used for every password field, typed-in
@@ -1211,10 +1309,20 @@ async function pageSecuritySetup(forced) {
         <button class="btn btn-secondary" id="joinClanBtn">Find Clan</button>
       </div>
     </section>`;
+  const pushCard = forced ? "" : `
+    <section class="card form-card">
+      <h2>Notifications on this device</h2>
+      <p class="muted">Get a notification on this phone or computer when names are drawn, someone messages you or there's a new announcement, even when the app is closed.</p>
+      <div id="pushState"></div>
+      <div id="pushMsg"></div>
+      <button class="btn btn-secondary" id="pushBtn" hidden></button>
+    </section>`;
   render("Profile & Security", `
     ${forced ? passwordCard + profileCard : profileCard + passwordCard}
+    ${pushCard}
     ${joinCard}
   `);
+  if (pushCard) wirePushCard();
   // Same as signing up with a code: show which clan the code is for before asking to join
   const joinBtn = document.getElementById("joinClanBtn");
   if (joinBtn) joinBtn.onclick = async () => {
@@ -1404,10 +1512,7 @@ function pageWaitingForApproval() {
   `);
   document.getElementById("checkAgainBtn").onclick = () => boot();
   document.getElementById("otherCodeBtn").onclick = () => pageNoFamily();
-  document.getElementById("waitSignOutBtn").onclick = async () => {
-    await api.post("/auth/logout");
-    location.reload();
-  };
+  document.getElementById("waitSignOutBtn").onclick = () => signOut();
 }
 
 function pageNoFamily() {

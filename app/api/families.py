@@ -9,7 +9,7 @@ from ..extensions import db
 from ..models import Family, FamilyMember, Household, User, Event, EventParticipant, JoinRequest
 from ..middleware.auth import require_auth, require_family_member, require_family_admin
 from ..services import otp_service
-from ..services.notification_service import notify
+from ..services.notification_service import notify, notify_many
 from ..utils import (normalize_phone, normalize_username, hash_password, slugify_username_base,
                      clean_text, normalize_email, parse_id, json_body, InputError)
 
@@ -104,9 +104,9 @@ def join_family():
     db.session.add(JoinRequest(family_id=fam.id, user_id=g.user.id))
     db.session.commit()
     who = g.user.display_name or g.user.full_name or g.user.username
-    for admin in FamilyMember.query.filter_by(family_id=fam.id, role="admin").all():
-        notify(admin.user_id, "join_request", f"{who} wants to join {fam.name}",
-               "Approve or decline them on the Members page.", "/admin/members")
+    notify_many([a.user_id for a in FamilyMember.query.filter_by(family_id=fam.id, role="admin").all()],
+                "join_request", f"{who} wants to join {fam.name}",
+                "Approve or decline them on the Members page.", "/admin/members", family_id=fam.id)
     return jsonify(waiting), 201
 
 
@@ -139,7 +139,7 @@ def approve_join_request(family_id, request_id):
         db.session.add(FamilyMember(family_id=family_id, user_id=user_id, role="member"))
     db.session.delete(req)
     db.session.commit()
-    notify(user_id, "join_approved", f"You're in {fam.name}!", None, "/")
+    notify(user_id, "join_approved", f"You're in {fam.name}!", None, "/", family_id=family_id)
     return jsonify({"ok": True})
 
 

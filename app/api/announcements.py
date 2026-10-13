@@ -1,10 +1,10 @@
 from flask import Blueprint, request, jsonify, g
 
 from ..extensions import db
-from ..models import Announcement, FamilyMember, Event
+from ..models import Announcement, FamilyMember, Event, Notification
 from ..utils import clean_text, json_body, parse_bool, parse_id, InputError
 from ..middleware.auth import require_auth, require_family_member, require_family_admin
-from ..services.notification_service import notify
+from ..services.notification_service import notify_many
 
 bp = Blueprint("announcements", __name__)
 
@@ -52,10 +52,11 @@ def post_announcement(family_id):
     db.session.add(a)
     db.session.commit()
     if is_published:
-        for m in FamilyMember.query.filter_by(family_id=family_id).all():
-            if m.user_id != g.user.id:
-                notify(m.user_id, "announcement", "New Announcement posted by Admin",
-                       f"{title}: {body}"[:200], link_path="/announcements")
+        notify_many([m.user_id for m in FamilyMember.query.filter_by(family_id=family_id).all()
+                     if m.user_id != g.user.id],
+                    "announcement", "New Announcement posted by Admin", f"{title}: {body}"[:200],
+                    link_path="/announcements", family_id=family_id, event_id=event_id,
+                    announcement_id=a.id)
     return jsonify({"ok": True, "id": a.id}), 201
 
 
@@ -90,6 +91,8 @@ def delete_announcement(ann_id):
     _, err = require_family_admin(a.family_id)
     if err:
         return err
+    # Its notifications go with it, from everyone's bell
+    Notification.query.filter_by(announcement_id=a.id).delete()
     db.session.delete(a)
     db.session.commit()
     return jsonify({"ok": True})

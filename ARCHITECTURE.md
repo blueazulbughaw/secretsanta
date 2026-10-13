@@ -161,7 +161,7 @@ All JSON, prefixed `/api`. 🔒 = auth required, 👑 = family admin.
 
 **App admin** — `POST /auth/admin-login` (the /ss-admin screen; only `is_app_admin` accounts, which `/auth/login-password` and `/auth/verify-otp` refuse), `GET /app-admin/clans` 🔒 (only `users.is_app_admin`; 403 for everyone else) — every clan: name, join code, event count, members (display name, username, household, role, active). Never assignments. Also lists `no_clan` (accounts in no clan). `DELETE /app-admin/clans/:id` (the clan and everything in it; accounts stay), `DELETE /app-admin/users/:id` (the account, from every clan; 400 while in a drawn event or a clan's only admin).
 
-**Notifications** — `GET /notifications` 🔒, `POST /notifications/:id/read` 🔒, `POST /notifications/read-all` 🔒, `POST /push/subscribe` 🔒 (stores subscription; push delivery is a later phase)
+**Notifications** — `GET /notifications` 🔒, `POST /notifications/:id/read` 🔒, `POST /notifications/read-all` 🔒, `GET /push/key` 🔒 (VAPID public key, null = push off), `POST /push/subscribe` 🔒 (this device; reassigned to whoever signs in on it), `POST /push/unsubscribe` 🔒. Every notification is also sent by Web Push to the person's subscribed devices (services/push_service.py). Deleting an announcement, event or clan deletes the notifications about it
 
 ## 6. Matching algorithm
 

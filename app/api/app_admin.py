@@ -72,7 +72,7 @@ def delete_clan(family_id):
     photos = []
     for ev in Event.query.filter_by(family_id=fam.id).all():
         photos += purge_event(ev)
-    for model in (Announcement, FamilyMember, Household, JoinRequest):
+    for model in (Announcement, FamilyMember, Household, JoinRequest, Notification):
         model.query.filter_by(family_id=fam.id).delete()
     db.session.delete(fam)
     db.session.commit()

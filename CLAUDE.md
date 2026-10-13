@@ -84,6 +84,18 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   nothing, for tiny groups) and reports `repeated`. Don't draw with plain `solve`.
 - Messages belong to one event: threads come from that event's draw and every
   thread page says which event it is. Notifications are links to what they're about.
+- Notifications also record what they're about (`family_id` / `event_id` /
+  `announcement_id` on notifications): pass them to `notify()` / `notify_many()`
+  (services/notification_service.py) for every new notification. Deleting an announcement,
+  event (`purge_event`) or clan deletes its notifications from everyone's bell.
+- Phone/computer notifications (Web Push): every notify() is also pushed
+  (services/push_service.py, pywebpush, best-effort - a failed push never fails the request;
+  404/410 subscriptions are forgotten). Keys VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY live in the
+  server's .env (no keys = no push, bell still works). People turn it on per device on Profile
+  & Security ("Notifications on this device"); iPhone/iPad only from the Home Screen app.
+  A device belongs to whoever signed in on it last (resyncPush on boot); signing out stops it
+  (signOut() in app.js - use it for every sign-out button). sw.js shows them and opens
+  the link on tap.
 - A giftee's profile shows the Secret Santa a Message button with a note that it's anonymous.
 - A giftee's wishlist is viewed on their profile (`/events/:id/clan/:userId`, top bar = their
   name); there is no separate "Their Wishlist" page (`/events/:id/giftee` only redirects, for

@@ -4,7 +4,7 @@ from datetime import datetime
 from ..extensions import db
 from ..models import Event, EventParticipant, FamilyMember, Assignment
 from .codenames import generate_codenames
-from .notification_service import notify
+from .notification_service import notify_many
 
 
 class MatchingError(Exception):
@@ -192,8 +192,7 @@ def generate_assignments(event: Event):
         db.session.rollback()
         raise
 
-    for giver in matches:
-        notify(giver, "assignment", "Names have been drawn! 🎁",
-               f"Tap to see who you're giving a gift to for {event.name}.",
-               link_path=f"/events/{event.id}/my-person")
+    notify_many(list(matches), "assignment", "Names have been drawn! 🎁",
+                f"Tap to see who you're giving a gift to for {event.name}.",
+                link_path=f"/events/{event.id}/my-person", family_id=event.family_id, event_id=event.id)
     return len(matches), repeated
