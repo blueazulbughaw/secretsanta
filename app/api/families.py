@@ -3,7 +3,7 @@ import string
 
 import io
 
-from flask import Blueprint, request, jsonify, g, send_file, current_app
+from flask import Blueprint, Response, request, jsonify, g, current_app
 
 from ..extensions import db
 from ..models import Family, FamilyMember, Household, User, Event, EventParticipant, JoinRequest
@@ -173,10 +173,9 @@ def join_qr(family_id):
     qr.add_data(f"{base}join/{fam.join_code}")
     buf = io.BytesIO()
     qr.make_image(fill_color="black", back_color="white").save(buf, "PNG")
-    buf.seek(0)
-    resp = send_file(buf, mimetype="image/png", download_name=f"{fam.name} clan code.png")
-    resp.headers["Cache-Control"] = "no-store"
-    return resp
+    # Plain bytes, not send_file(): the live server's LiteSpeed WSGI tries to stream a
+    # file-like body via fileno(), which an in-memory buffer doesn't have (500 there).
+    return Response(buf.getvalue(), mimetype="image/png", headers={"Cache-Control": "no-store"})
 
 
 @bp.post("/families/<int:family_id>/join-code")
