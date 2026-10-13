@@ -154,6 +154,7 @@ const NAV = [
     { key: "manage-events", href: "/admin/events", label: "Manage Events" },
     { key: "announce", href: "/admin/announce", label: "Post Announcement" },
   ] },
+  { key: "app-admin", label: "All Clans", href: "/app-admin", appAdminOnly: true },
   { key: "security", label: "Profile & Security", href: "/security" },
 ];
 
@@ -185,10 +186,18 @@ function navItemHtml(item, activePath) {
 }
 function renderSidebar(activePath) {
   if (!FAMILY) return;
-  const items = NAV.filter(i => !i.adminOnly || FAMILY.role === "admin")
+  const items = NAV.filter(i => (!i.adminOnly || FAMILY.role === "admin")
+      && (!i.appAdminOnly || ME.user.is_app_admin))
     .map(i => navItemHtml(i, activePath)).join("");
+  const brand = ME.families.length > 1
+    ? `<div class="sidebar-brand clan-switch">
+         <label for="clanSwitch">Clan</label>
+         <select id="clanSwitch">${ME.families.map(f =>
+           `<option value="${f.id}" ${f.id === FAMILY.id ? "selected" : ""}>${esc(f.name)}</option>`).join("")}</select>
+       </div>`
+    : `<div class="sidebar-brand">${esc(FAMILY.name)}</div>`;
   $sidebar.innerHTML = `
-    <div class="sidebar-brand">${esc(FAMILY.name)}</div>
+    ${brand}
     <div class="nav-scroll">${items}</div>
     <a href="#" id="logoutLink" class="nav-link nav-logout">Sign Out</a>
   `;
@@ -198,6 +207,8 @@ function renderSidebar(activePath) {
     location.reload();
   };
   $sidebar.querySelectorAll("a.nav-link").forEach(a => a.addEventListener("click", closeSidebar));
+  const clanSwitch = document.getElementById("clanSwitch");
+  if (clanSwitch) clanSwitch.onchange = () => switchClan(clanSwitch.value);
 }
 // Two modes, one menu button: on phones the sidebar is an off-canvas drawer
 // (open/close); on desktop it collapses so the content fills the whole page,
@@ -252,6 +263,27 @@ function showError(e) {
   else window.alert(e.message);
 }
 function go(hash) { location.hash = hash; }
+
+// Someone can be in more than one clan; the app shows one at a time. The one they last
+// picked in the sidebar's clan switcher is remembered on this device (just a convenience -
+// with nothing saved, or a clan they've since left, it falls back to their first clan).
+const ACTIVE_CLAN_KEY = "activeClanId";
+function rememberClan(id) {
+  try { localStorage.setItem(ACTIVE_CLAN_KEY, String(id)); } catch (_) {}
+}
+function pickFamily() {
+  let saved = null;
+  try { saved = Number(localStorage.getItem(ACTIVE_CLAN_KEY)); } catch (_) {}
+  return ME.families.find(f => f.id === saved) || ME.families[0];
+}
+function switchClan(id) {
+  const fam = ME.families.find(f => f.id === Number(id));
+  if (!fam || fam === FAMILY) return;
+  FAMILY = fam;
+  rememberClan(fam.id);
+  // Every page is about the active clan, so start over on its dashboard
+  if ((location.hash.replace(/^#/, "") || "/") === "/") navigate(); else go("/");
+}
 
 function wishThumbCell(item) {
   return item.photo_url
@@ -540,7 +572,7 @@ async function boot() {
   // Set before the password/security checks below (not just the final success path) -
   // pageSecuritySetup(true) needs it for the household picker, and a brand-new account
   // that needs a password can still already have a family (e.g. an admin-added member).
-  if (ME.families.length > 0) FAMILY = ME.families[0];
+  if (ME.families.length > 0) FAMILY = pickFamily();
   if (!ME.user.full_name) return pageName();
   if (ME.must_change_password) return pageForcedPasswordChange();
   if (ME.needs_security_setup) return pageSecuritySetup(true);
@@ -1112,9 +1144,29 @@ async function pageSecuritySetup(forced) {
     <button class="btn btn-quiet" id="signOutOthersBtn">Sign Out Other Devices</button>`}
     </section>
   `;
+  // Joining a second clan with its code; the sidebar then shows a clan switcher
+  const joinCard = forced ? "" : `
+    <section class="card form-card">
+      <h2>Join another clan</h2>
+      <p class="muted">Got a code from another clan? You'll stay in ${esc(FAMILY?.name || "your clan")} too, and can switch between them in the menu.</p>
+      <label for="joinCode">Clan code</label>
+      <input id="joinCode" class="code-input" maxlength="8" style="text-transform:uppercase" autocomplete="off">
+      <div id="joinMsg"></div>
+      <button class="btn btn-secondary" id="joinClanBtn">Join Clan</button>
+    </section>`;
   render("Profile & Security", `
     ${forced ? passwordCard + profileCard : profileCard + passwordCard}
+    ${joinCard}
   `);
+  const joinBtn = document.getElementById("joinClanBtn");
+  if (joinBtn) joinBtn.onclick = async () => {
+    try {
+      const r = await api.post("/families/join", { join_code: document.getElementById("joinCode").value });
+      rememberClan(r.family.id);
+      history.replaceState(null, "", "#/");
+      boot();
+    } catch (e) { document.getElementById("joinMsg").innerHTML = alertBox(e.message); }
+  };
   wirePasswordToggles();
   document.getElementById("profilePhoneCountry").onchange = () => {
     // A number already on file shows with its real "+<code>" prefix (see guessCountryIso
@@ -1938,6 +1990,55 @@ route(/^\/notifications$/, async () => {
   const ra = document.getElementById("readAll");
   if (ra) ra.onclick = async () => { await api.post("/notifications/read-all"); refreshBadge(); navigate(); };
   refreshBadge();
+});
+
+// ---------- app admin ----------
+// Every clan on the site, for the app admin (User.is_app_admin) only: who's in each and
+// who runs it. Read-only - an app admin can only open a clan they're in themselves.
+route(/^\/app-admin$/, async () => {
+  if (!ME.user.is_app_admin) return go("/");
+  const clans = await api.get("/app-admin/clans");
+  const people = new Set(clans.flatMap(c => c.members.map(m => m.user_id))).size;
+  const clanCard = (c) => {
+    const admins = c.members.filter(m => m.role === "admin").map(m => m.display_name);
+    const mine = ME.families.some(f => f.id === c.id);
+    const rows = c.members.map(m => `
+      <li><span>${esc(m.display_name)} <span class="muted">(${esc(m.username)})</span>${m.role === "admin" ? ` <span class="pill">Clan admin</span>` : ""}${m.is_active ? "" : ` <span class="muted">— inactive</span>`}</span>
+      <span class="list-note">${esc(m.household_name || "—")}</span></li>`).join("");
+    return `
+      <section class="card form-card">
+        <h2>${esc(c.name)}</h2>
+        <p class="muted" style="margin-top:0">Code ${esc(c.join_code)} · ${c.members.length} ${c.members.length === 1 ? "member" : "members"} · ${c.event_count} ${c.event_count === 1 ? "event" : "events"}</p>
+        <p><strong>Clan admins:</strong> ${admins.length ? esc(admins.join(", ")) : "none"}</p>
+        ${c.members.length
+          ? `<div class="list-head">Household</div><ul class="name-list">${rows}</ul>`
+          : `<p class="muted">No members.</p>`}
+        ${mine && c.id !== FAMILY.id ? `<button class="btn btn-secondary" data-open-clan="${c.id}">Switch to This Clan</button>` : ""}
+      </section>`;
+  };
+  render("All Clans", `
+    <section class="card form-card">
+      <h2>Start a new clan</h2>
+      <p class="muted">You'll be its clan admin, and can share its code from Manage My Clan.</p>
+      <label for="newClanName">Clan name</label>
+      <input id="newClanName" maxlength="120">
+      <div id="msg"></div>
+      <button class="btn btn-primary" id="newClanBtn">Start Clan</button>
+    </section>
+    <section class="card form-card">
+      <p style="margin:0">${clans.length} ${clans.length === 1 ? "clan" : "clans"}, ${people} ${people === 1 ? "person" : "people"} in all.</p>
+    </section>
+    ${clans.map(clanCard).join("")}
+  `, { wide: true });
+  document.getElementById("newClanBtn").onclick = async () => {
+    try {
+      const r = await api.post("/families", { name: document.getElementById("newClanName").value });
+      rememberClan(r.family.id);
+      history.replaceState(null, "", "#/admin");
+      boot();
+    } catch (e) { showError(e); }
+  };
+  $app.querySelectorAll("[data-open-clan]").forEach(b => b.onclick = () => switchClan(b.dataset.openClan));
 });
 
 // ---------- admin ----------

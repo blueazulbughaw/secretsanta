@@ -100,6 +100,12 @@ nav#sidebar {
   color: #fff; font-weight: 700; font-size: 1rem;
   padding: .9rem 1.1rem .7rem; border-bottom: 1px solid #32373c; margin-bottom: .3rem;
 }
+/* Someone in more than one clan picks which one the app shows */
+.clan-switch label { display: block; margin: 0 0 .25rem; color: #c3c4c7; font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.clan-switch select {
+  width: 100%; min-height: 36px; padding: .3rem .5rem; font: inherit; font-weight: 700;
+  color: #fff; background: #32373c; border: 1px solid #50575e; border-radius: 6px;
+}
 .nav-scroll { flex: 1 1 auto; padding-bottom: .5rem; }
 .nav-link {
   display: block; padding: .7rem 1.1rem; font-size: .85rem; font-weight: 600;
@@ -624,4 +630,10 @@ body.dragging-cards, body.dragging-cards * { cursor: grabbing !important; }
 .inline-form .inline-check input { width: 18px; height: 18px; min-height: 0; accent-color: var(--green); }
 @media (max-width: 780px) {
   .inline-form .btn { width: 100%; }
+}
+
+/* A small tag beside a name (All Clans: "Clan admin") */
+.pill {
+  display: inline-block; padding: .05rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 700;
+  color: #fff; background: var(--green); vertical-align: middle;
 }

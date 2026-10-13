@@ -22,9 +22,11 @@ def create_app(config_object=None):
     from .api.announcements import bp as announcements_bp
     from .api.notifications import bp as notifications_bp
     from .api.dishes import bp as dishes_bp
+    from .api.app_admin import bp as app_admin_bp
 
     for bp in (auth_bp, families_bp, households_bp, events_bp, assignments_bp,
-               wishlists_bp, messages_bp, announcements_bp, notifications_bp, dishes_bp):
+               wishlists_bp, messages_bp, announcements_bp, notifications_bp, dishes_bp,
+               app_admin_bp):
         app.register_blueprint(bp, url_prefix="/api")
 
     # Real pages (not the JS app shell) so anyone - including a texting-provider reviewer -

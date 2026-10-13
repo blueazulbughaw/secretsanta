@@ -121,6 +121,14 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   has its own My Wishlist, Message My Secret Santa and View Event Details (a giftee is
   messaged from their profile), and the event page has My Wishlist / View My Messages / View
   Clan & Wishlists. Only the admin's Manage My Clan lists every member.
+- More than one clan: a person can be in several clans (Profile & Security > "Join another
+  clan" posts the code to /families/join). The app shows one clan at a time: the sidebar
+  brand becomes a "Clan" switcher once they're in 2+, and the choice is remembered per
+  device (`pickFamily`/`switchClan` in app.js, localStorage `activeClanId`).
+- App admin (`users.is_app_admin`, set in the database - not a clan role): sidebar "All
+  Clans" (`/app-admin`, GET /app-admin/clans) lists every clan with its members, usernames,
+  households and clan admins, plus "Start a new clan". Read-only; never anything about a
+  draw. There is no master-key /ss-admin login (removed on purpose).
 - Wording: always say "event". Never "gift exchange" (user-facing text, errors, docs).
 - There is no separate admin page for a single event. The event page (`/events/:id`) is the
   one place: for clan admins it ends with an Admin card (Draw Names / Start Over (Re-Draw

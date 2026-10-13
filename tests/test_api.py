@@ -1800,3 +1800,42 @@ def test_specific_field_rules(app, users):
     # API errors are always JSON, even for routes that don't exist
     r = bob.get("/api/does-not-exist")
     assert r.status_code == 404 and r.is_json
+
+
+def test_app_admin_sees_every_clan_with_members_and_clan_admins(app, users):
+    from app.models import User
+    admin, bob = users[ADMIN_USER], users[BOB_USER]
+    # A second clan Bob runs, which the app admin isn't in
+    other = app.test_client()
+    other.post("/api/auth/register", json={"username": "dee", "password": PASSWORD,
+                                           "full_name": "Dee", "clan_name": "Other Fam"})
+    assert admin.get("/api/app-admin/clans").status_code == 403
+    assert bob.get("/api/app-admin/clans").status_code == 403
+    assert app.test_client().get("/api/app-admin/clans").status_code == 401
+
+    User.query.filter_by(username=ADMIN_USER).first().is_app_admin = True
+    db.session.commit()
+    r = admin.get("/api/app-admin/clans")
+    assert r.status_code == 200
+    clans = {c["name"]: c for c in r.get_json()}
+    assert set(clans) == {"Test Fam", "Other Fam"}
+    test_fam = clans["Test Fam"]
+    assert [m["display_name"] for m in test_fam["members"]] == ["Ana", "Bob", "Cara"]  # admins first
+    assert [m["role"] for m in test_fam["members"]] == ["admin", "member", "member"]
+    assert clans["Other Fam"]["members"][0]["username"] == "dee"
+    assert "assignments" not in r.get_data(as_text=True)
+
+
+def test_a_person_can_join_a_second_clan_and_see_both(app, users):
+    bob = users[BOB_USER]
+    other = app.test_client()
+    code = other.post("/api/auth/register", json={
+        "username": "dee", "password": PASSWORD, "full_name": "Dee", "clan_name": "Other Fam",
+    }).get_json()["family"]["join_code"]
+    assert bob.post("/api/families/join", json={"join_code": code}).status_code == 201
+    fams = bob.get("/api/auth/me").get_json()["families"]
+    assert sorted(f["name"] for f in fams) == ["Other Fam", "Test Fam"]
+    assert all(f["role"] == "member" for f in fams)
+    # Each clan's data is still only reachable as a member of it
+    for f in fams:
+        assert bob.get(f"/api/families/{f['id']}/events").status_code == 200
