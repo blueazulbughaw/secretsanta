@@ -1051,27 +1051,40 @@ function pageRegister(username) {
   };
 }
 
+// The clan's registration link: plain /join/CODE (no #), the same link its QR code holds
+function joinUrl(code) { return `${location.origin}/join/${code}`; }
+function joinQrSrc(familyId, code) { return `/api/families/${familyId}/join-qr.png?c=${encodeURIComponent(code)}`; }
+// "Share Registration Link": the phone's own share sheet (Messages, WhatsApp, email...)
+// where there is one, otherwise copy the link. Closing the share sheet isn't an error.
+// Messages go in #copyMsg.
+async function shareJoinLink(clanName, code) {
+  const url = joinUrl(code);
+  const say = (text) => { document.getElementById("copyMsg").innerHTML = alertBox(text, true); };
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(url); say("Link copied!"); }
+    catch (e) { say(url); }
+  };
+  if (!navigator.share) return copy();
+  try {
+    await navigator.share({ title: `Join ${clanName}`, url,
+      text: `Join ${clanName} on Secret Santa: tap the link, or use clan code ${code}.` });
+  } catch (e) { if (e.name !== "AbortError") copy(); }
+}
+
 function pageClanCreated(family) {
-  const regUrl = `${location.origin}/#/join/${family.join_code}`;
   render("", `
     <div class="center" style="margin-top:1rem"><div style="font-size:3rem">🎉</div></div>
     <h2 class="center">${esc(family.name)} is ready!</h2>
-    <p class="muted center">You're its clan admin. Share this code or link so family can join:</p>
+    <p class="muted center">You're its clan admin. Share this code, link or QR code so family can join:</p>
     <div class="card center">
       <div class="reveal-name" style="font-size:1.8rem">${esc(family.join_code)}</div>
-      <button class="btn btn-quiet" id="copyLinkBtn" style="margin-top:.5rem">Copy Registration Link</button>
+      <img class="join-qr" src="${joinQrSrc(family.id, family.join_code)}" alt="QR code for joining ${esc(family.name)}" width="220" height="220">
+      <button class="btn btn-quiet" id="shareLinkBtn" style="margin-top:.5rem">Share Registration Link</button>
       <div id="copyMsg"></div>
     </div>
     <button class="btn btn-primary" id="continueBtn">Continue to Dashboard</button>
   `);
-  document.getElementById("copyLinkBtn").onclick = async () => {
-    try {
-      await navigator.clipboard.writeText(regUrl);
-      document.getElementById("copyMsg").innerHTML = alertBox("Link copied!", true);
-    } catch (e) {
-      document.getElementById("copyMsg").innerHTML = alertBox(regUrl, true);
-    }
-  };
+  document.getElementById("shareLinkBtn").onclick = () => shareJoinLink(family.name, family.join_code);
   document.getElementById("continueBtn").onclick = () => boot();
 }
 
@@ -2185,9 +2198,7 @@ route(/^\/admin$/, async () => {
     api.get(`/families/${FAMILY.id}/households`),
     api.get(`/families/${FAMILY.id}/join-requests`),
   ]);
-  // Plain /join/CODE (no #), the same link the QR code holds - see captureEntryIntent
-  let regUrl = `${location.origin}/join/${fam.join_code}`;
-  const qrSrc = (code) => `/api/families/${FAMILY.id}/join-qr.png?c=${encodeURIComponent(code)}`;
+  let joinCode = fam.join_code;
   const byName = (x, y) => x.localeCompare(y);
   render("Manage My Clan", `
     ${waiting.length ? `
@@ -2217,7 +2228,7 @@ route(/^\/admin$/, async () => {
     <div class="card form-card center">
       <p class="muted">Share this code so family can join:</p>
       <div class="reveal-name" style="font-size:1.8rem" id="joinCodeShown">${esc(fam.join_code)}</div>
-      <img id="joinQr" class="join-qr" src="${qrSrc(fam.join_code)}" alt="QR code for joining ${esc(fam.name)}" width="220" height="220">
+      <img id="joinQr" class="join-qr" src="${joinQrSrc(FAMILY.id, fam.join_code)}" alt="QR code for joining ${esc(fam.name)}" width="220" height="220">
       <p class="muted" style="font-size:.85rem">Scan it with a phone camera to open the sign-up page. You approve everyone who joins.</p>
       <button class="btn btn-primary" id="shareLinkBtn">Share Registration Link</button>
       <button class="btn btn-quiet" id="newCodeBtn">Make a New Code</button>
@@ -2236,28 +2247,12 @@ route(/^\/admin$/, async () => {
     try {
       const r = await api.post(`/families/${FAMILY.id}/join-code`);
       document.getElementById("joinCodeShown").textContent = r.join_code;
-      document.getElementById("joinQr").src = qrSrc(r.join_code);
-      regUrl = `${location.origin}/join/${r.join_code}`;
+      document.getElementById("joinQr").src = joinQrSrc(FAMILY.id, r.join_code);
+      joinCode = r.join_code;
       document.getElementById("copyMsg").innerHTML = alertBox("New code made. The old one no longer works.", true);
     } catch (e) { document.getElementById("copyMsg").innerHTML = alertBox(e.message); }
   };
-  const copyMsg = (text, ok = true) => { document.getElementById("copyMsg").innerHTML = alertBox(text, ok); };
-  const copyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(regUrl);
-      copyMsg("Link copied!");
-    } catch (e) {
-      copyMsg(regUrl);
-    }
-  };
-  const shareText = () => `Join ${FAMILY.name} on Secret Santa: tap the link, or use clan code ${document.getElementById("joinCodeShown").textContent}.`;
-  // The phone's own share sheet (Messages, WhatsApp, email...) where there is one;
-  // otherwise just copy the link. Closing the share sheet isn't an error.
-  document.getElementById("shareLinkBtn").onclick = async () => {
-    if (!navigator.share) return copyLink();
-    try { await navigator.share({ title: `Join ${FAMILY.name}`, text: shareText(), url: regUrl }); }
-    catch (e) { if (e.name !== "AbortError") copyLink(); }
-  };
+  document.getElementById("shareLinkBtn").onclick = () => shareJoinLink(FAMILY.name, joinCode);
 });
 
 route(/^\/admin\/members$/, async () => {
