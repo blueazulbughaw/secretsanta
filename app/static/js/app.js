@@ -2119,7 +2119,8 @@ route(/^\/events\/(\d+)\/clan\/(\d+)$/, async (id, uid) => {
       <p class="muted" style="margin:.4rem 0 0">You're ${esc(name)}'s Secret Santa. Your message is sent anonymously, so they'll only see that it's from their Secret Santa.</p>
     </section>` : ""}
     <h2 class="section-title">Wishlist${n ? ` <span class="muted">· ${n} gift idea${n === 1 ? "" : "s"}</span>` : ""}</h2>
-    ${n ? clanWishGrid(entry.items, archived) : `<div class="card"><p class="muted" style="margin:0">No gift ideas yet.</p></div>`}
+    ${entry.wishlist_hidden ? `<div class="card"><p class="muted" style="margin:0">Only ${esc(name)}'s Secret Santa can see this wishlist.</p></div>`
+      : n ? clanWishGrid(entry.items, archived) : `<div class="card"><p class="muted" style="margin:0">No gift ideas yet.</p></div>`}
   `);
   wireBuyButtons();
 });
@@ -2356,6 +2357,13 @@ route(/^\/admin$/, async () => {
       <button class="btn btn-secondary" id="saveClanName">Save Clan Name</button>
     </section>
 
+    <section class="card form-card">
+      <h2>Wishlists</h2>
+      <div class="check-row"><input type="checkbox" id="openWishlists" ${fam.open_wishlists ? "checked" : ""}><label for="openWishlists" style="margin:0">Everyone can see and buy from every wishlist</label></div>
+      <p class="muted" style="margin-bottom:0">When this is off, members only see their giftee's wishlist.</p>
+      <div id="wishMsg"></div>
+    </section>
+
     ${nameListCard("Events", events.map(e => ({ name: e.name, href: `/events/${e.id}` })), "No events yet.", "/admin/events", "Manage Events")}
     ${nameListCard("Clan Members", members.map(m => ({ name: m.user.display_name, href: `/members/${m.user.id}`, note: m.household_name || "—" }))
       .sort((x, y) => byName(x.name, y.name)), "No members yet.", "/admin/members", "Manage Clan Members", "Household")}
@@ -2382,6 +2390,14 @@ route(/^\/admin$/, async () => {
       FAMILY.name = r.family.name;
       document.getElementById("nameMsg").innerHTML = alertBox("Clan name saved!", true);
     } catch (e) { showError(e); }
+  };
+  const openBox = document.getElementById("openWishlists");
+  openBox.onchange = async () => {
+    try {
+      await api.patch(`/families/${FAMILY.id}`, { open_wishlists: openBox.checked });
+      document.getElementById("wishMsg").innerHTML = alertBox(openBox.checked
+        ? "Saved. Everyone can see every wishlist." : "Saved. Members now see only their giftee's wishlist.", true);
+    } catch (e) { openBox.checked = !openBox.checked; showError(e); }
   };
   document.getElementById("newCodeBtn").onclick = async () => {
     if (!confirm("Make a new clan code? The old code and registration link stop working. Everyone already in the clan stays in.")) return;

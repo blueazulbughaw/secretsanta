@@ -106,6 +106,9 @@ class Family(db.Model):
     join_code = db.Column(db.String(8), unique=True, nullable=False, index=True)
     created_by = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=False)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    # True: everyone in an event sees and can buy from every wishlist in it. False: a
+    # member sees only their giftee's (clan admins still see all). Set on Manage My Clan.
+    open_wishlists = db.Column(db.Boolean, nullable=False, default=True)
 
 
 class Household(db.Model):

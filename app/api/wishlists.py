@@ -3,7 +3,7 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify, g
 
 from ..extensions import db
-from ..models import Event, WishlistItem, Assignment, User, EventParticipant, FamilyMember
+from ..models import Event, WishlistItem, Assignment, User, EventParticipant, FamilyMember, Family
 from ..middleware.auth import require_auth, require_family_member, require_family_admin, archived_error, require_event_access
 from ..services.notification_service import notify
 from ..services.photo_service import save_photo, remove_photo
@@ -35,6 +35,17 @@ def _item_dict(item, include_purchase):
     if include_purchase:
         d["bought_by_me"] = item.purchased_by == g.user.id
     return d
+
+
+def _visible_owners(ev, member):
+    """Whose wishlists the caller may see and buy from in this event, or None for
+    everyone's. With the clan's "everyone sees every wishlist" switch off, a member
+    gets only their own and their giftee's (none of anyone else's before the draw);
+    clan admins always see all."""
+    if member.role == "admin" or Family.query.get(ev.family_id).open_wishlists:
+        return None
+    a = Assignment.query.filter_by(event_id=ev.id, giver_id=g.user.id).first()
+    return {g.user.id} | ({a.receiver_id} if a else set())
 
 
 @bp.get("/events/<int:event_id>/wishlists/mine")
@@ -188,7 +199,7 @@ def delete_item(item_id):
 def mark_purchased(item_id):
     item = WishlistItem.query.get_or_404(item_id)
     ev = Event.query.get_or_404(item.event_id)
-    _, err = require_event_access(ev)
+    m, err = require_event_access(ev)
     if err:
         return err
     err = archived_error(ev)
@@ -196,6 +207,9 @@ def mark_purchased(item_id):
         return err
     if item.user_id == g.user.id:
         return jsonify({"error": "You can't mark your own wishlist."}), 403
+    visible = _visible_owners(ev, m)
+    if visible is not None and item.user_id not in visible:
+        return jsonify({"error": "In this clan you can only buy from your giftee's wishlist."}), 403
     # `purchased` says which state the caller wants, so a repeat (double-tap, two tabs)
     # is a no-op rather than flipping it back. No body = toggle, for older cached pages.
     data = json_body()
@@ -219,16 +233,24 @@ def clan_wishlists(event_id):
     """Every participating member's wishlist, for the whole family - not just
     the assigned Secret Santa. Purchase status is visible for everyone's
     items except your own, so the clan can coordinate on gifts beyond just
-    the one drawn assignment. Owners still never see their own status."""
+    the one drawn assignment. Owners still never see their own status.
+    When the clan admin has turned that off (Family.open_wishlists), everyone is
+    still listed, but other people's entries come with no items and
+    `wishlist_hidden` - only your giftee's list is shown (see _visible_owners)."""
     ev = Event.query.get_or_404(event_id)
-    _, err = require_event_access(ev)
+    member, err = require_event_access(ev)
     if err:
         return err
+    visible = _visible_owners(ev, member)
     parts = EventParticipant.query.filter_by(event_id=ev.id, is_participating=True).all()
     households = {m.user_id: (m.household.name if m.household else "")
                   for m in FamilyMember.query.filter_by(family_id=ev.family_id).all()}
     out = []
     for p in parts:
+        if visible is not None and p.user_id not in visible:
+            out.append({"user": p.user.clan_dict(), "household_name": households.get(p.user_id, ""),
+                        "items": [], "wishlist_hidden": True})
+            continue
         items = (WishlistItem.query.filter_by(event_id=ev.id, user_id=p.user_id)
                  .order_by(WishlistItem.priority, WishlistItem.id).all())
         out.append({"user": p.user.clan_dict(), "household_name": households.get(p.user_id, ""),

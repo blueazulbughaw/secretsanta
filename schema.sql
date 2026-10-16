@@ -74,6 +74,7 @@ CREATE TABLE families (
   join_code   CHAR(8)      NOT NULL UNIQUE,   -- human-friendly invite code, e.g. "CEDENO26"
   created_by  BIGINT UNSIGNED NOT NULL,
   created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  open_wishlists TINYINT(1) NOT NULL DEFAULT 1,  -- 0 = members see only their giftee's wishlist
   CONSTRAINT fk_families_creator FOREIGN KEY (created_by)
     REFERENCES users(id) ON DELETE RESTRICT,
   INDEX idx_families_join_code (join_code)

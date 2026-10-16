@@ -2090,3 +2090,38 @@ def test_a_failing_push_never_breaks_the_request(app, users, monkeypatch):
     bob.post("/api/push/subscribe", json=_sub("bob-phone"))
     r = admin.post(f"/api/families/{fam['id']}/announcements", json={"title": "Party", "body": "At 6"})
     assert r.status_code == 201 and len(_bell(bob, "announcement")) == 1
+
+
+def test_clan_admin_can_limit_members_to_their_giftees_wishlist(users):
+    fam, admin, bob, cara = users["_family"], users[ADMIN_USER], users[BOB_USER], users[CARA_USER]
+    ev = _drawn_event(users)
+    eid, fid = ev["id"], fam["id"]
+    me = lambda c: c.get("/api/auth/me").get_json()["user"]["id"]
+    ids = {}
+    for c in (admin, bob, cara):
+        ids[me(c)] = c.post(f"/api/events/{eid}/wishlists", json={"item_name": "Gift"}).get_json()["item"]["id"]
+    assert admin.get(f"/api/families/{fid}").get_json()["open_wishlists"] is True   # on by default
+
+    # only a clan admin can flip it, and it can be saved on its own (name untouched)
+    assert bob.patch(f"/api/families/{fid}", json={"open_wishlists": False}).status_code == 403
+    assert admin.patch(f"/api/families/{fid}", json={"open_wishlists": "maybe"}).status_code == 400
+    r = admin.patch(f"/api/families/{fid}", json={"open_wishlists": False})
+    assert r.status_code == 200 and r.get_json()["family"] == {"id": fid, "name": "Test Fam", "open_wishlists": False}
+    assert bob.get(f"/api/families/{fid}").get_json()["open_wishlists"] is False
+
+    giftee = bob.get(f"/api/events/{eid}/assignments/mine").get_json()["giftee_user_id"]
+    other = next(uid for uid in ids if uid not in (giftee, me(bob)))
+    clan = {e["user"]["id"]: e for e in bob.get(f"/api/events/{eid}/wishlists/clan").get_json()}
+    assert len(clan) == 3                                     # everyone's still listed...
+    assert [i["id"] for i in clan[giftee]["items"]] == [ids[giftee]] and not clan[giftee].get("wishlist_hidden")
+    assert clan[other]["items"] == [] and clan[other]["wishlist_hidden"] is True   # ...but not their gifts
+    assert bob.post(f"/api/wishlists/{ids[other]}/purchase", json={"purchased": True}).status_code == 403
+    assert bob.post(f"/api/wishlists/{ids[giftee]}/purchase", json={"purchased": True}).status_code == 200
+
+    # the clan admin still sees everything
+    assert all(e["items"] for e in admin.get(f"/api/events/{eid}/wishlists/clan").get_json())
+
+    # turned back on, everyone sees every list again
+    admin.patch(f"/api/families/{fid}", json={"open_wishlists": True})
+    assert all(e["items"] for e in bob.get(f"/api/events/{eid}/wishlists/clan").get_json())
+    assert bob.post(f"/api/wishlists/{ids[other]}/purchase", json={"purchased": True}).status_code == 200

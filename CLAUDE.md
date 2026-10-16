@@ -50,7 +50,11 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
 - Wishlist privacy rule: owners NEVER see purchase status (who/when). Everyone else in
   the family can, and can toggle it — not just the assigned Secret Santa — via the event's Clan & Wishlists page
   (`/events/:id/wishlists/clan`) and the admin all-wishlists view, so the whole clan can
-  coordinate gifts beyond the one drawn assignment. Once purchased, an item is locked:
+  coordinate gifts beyond the one drawn assignment. A clan admin can turn that off with the
+  "Everyone can see and buy from every wishlist" checkbox on Manage My Clan
+  (`families.open_wishlists`, default on): then a member sees and buys only from their
+  giftee's list (`_visible_owners` in api/wishlists.py; others' entries come back as
+  `wishlist_hidden`); clan admins still see all. Once purchased, an item is locked:
   the owner can no longer edit or delete it (they just lose the delete control — the
   `locked` flag on `WishlistItem.to_dict()` is the only signal that ever reaches them).
 - Assignment secrecy: admins see counts only, never who drew whom.

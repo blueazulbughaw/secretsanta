@@ -11,7 +11,7 @@ from ..middleware.auth import require_auth, require_family_member, require_famil
 from ..services import otp_service
 from ..services.notification_service import notify, notify_many
 from ..utils import (normalize_phone, normalize_username, hash_password, slugify_username_base,
-                     clean_text, normalize_email, parse_id, json_body, InputError)
+                     clean_text, normalize_email, parse_id, parse_bool, json_body, InputError)
 
 bp = Blueprint("families", __name__)
 
@@ -200,6 +200,7 @@ def get_family(family_id):
         return err
     fam = Family.query.get_or_404(family_id)
     return jsonify({"id": fam.id, "name": fam.name, "my_role": m.role,
+                    "open_wishlists": fam.open_wishlists,
                     "join_code": fam.join_code if m.role == "admin" else None})
 
 
@@ -226,12 +227,19 @@ def rename_family(family_id):
     if err:
         return err
     fam = Family.query.get_or_404(family_id)
-    name = clean_text(json_body().get("name"), CLAN_NAME_MAX, "Clan name")
-    if not name:
-        return jsonify({"error": "Please give your clan a name."}), 400
-    fam.name = name
+    data = json_body()
+    # Either field may come on its own: the clan name and the wishlist switch are
+    # saved separately on Manage My Clan.
+    if "name" in data or "open_wishlists" not in data:
+        name = clean_text(data.get("name"), CLAN_NAME_MAX, "Clan name")
+        if not name:
+            return jsonify({"error": "Please give your clan a name."}), 400
+        fam.name = name
+    if "open_wishlists" in data:
+        fam.open_wishlists = parse_bool(data["open_wishlists"], "Everyone sees every wishlist")
     db.session.commit()
-    return jsonify({"ok": True, "family": {"id": fam.id, "name": fam.name}})
+    return jsonify({"ok": True, "family": {"id": fam.id, "name": fam.name,
+                                           "open_wishlists": fam.open_wishlists}})
 
 
 @bp.get("/families/<int:family_id>/members")
