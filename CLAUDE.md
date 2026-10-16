@@ -48,13 +48,13 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   (ID cards show the household too).
 - Every endpoint must verify the user belongs to the resource's family (see middleware/auth.py helpers).
 - Wishlist privacy rule: owners NEVER see purchase status (who/when). Everyone else in
-  the family can, and can toggle it — not just the assigned Secret Santa — via the event's Clan & Wishlists page
+  the family can, and can toggle it — not just the assigned Secret Santa — via the event's My Clan page
   (`/events/:id/wishlists/clan`) and the admin all-wishlists view, so the whole clan can
   coordinate gifts beyond the one drawn assignment. A clan admin can turn that off with the
   "Everyone can see and buy from every wishlist" checkbox on Manage My Clan
   (`families.open_wishlists`, default on): then a member sees and buys only from their
   giftee's list (`_visible_owners` in api/wishlists.py; others' entries come back as
-  `wishlist_hidden`) - clan admins too on Clan & Wishlists; only the admin-only View
+  `wishlist_hidden`) - clan admins too on My Clan; only the admin-only View
   Everyone's Wishlists still shows (and lets them buy from) every list. Once purchased, an item is locked:
   the owner can no longer edit or delete it (they just lose the delete control — the
   `locked` flag on `WishlistItem.to_dict()` is the only signal that ever reaches them).
@@ -88,7 +88,9 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   bans every pair from the clan's other events (falling back to just the latest event, then
   nothing, for tiny groups) and reports `repeated`. Don't draw with plain `solve`.
 - Messages belong to one event: threads come from that event's draw and every
-  thread page says which event it is. Notifications are links to what they're about.
+  thread page says which event it is. The event's Messages page shows the two threads as toggles,
+  "Message to my Giftee (<name>)" and "Message to my Secret Santa"; opening one closes the
+  other, and the one you just sent from stays open. Notifications are links to what they're about.
 - Notifications also record what they're about (`family_id` / `event_id` /
   `announcement_id` on notifications): pass them to `notify()` / `notify_many()`
   (services/notification_service.py) for every new notification. Deleting an announcement,
@@ -128,8 +130,8 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
 - Events are visible only to the people joining them (clan admins see all): a member's event
   list, event page, attendees, dishes, messages, wishlists and profiles-in-event are limited to
   events they're in (`require_event_access` in middleware/auth.py - use it for every new
-  event-scoped endpoint). There is no "My Clan" page or link: the people in an event are on that
-  event's page / Clan & Wishlists. The sidebar's My Wishlist and My Messages are event-aware
+  event-scoped endpoint). There is no clan-wide "My Clan" page in the sidebar: the people in an event are on
+  that event's page / its event-scoped My Clan page (`/events/:id/clan`). The sidebar's My Wishlist and My Messages are event-aware
   (`eventChooser` in app.js, routes `/wishlist` and `/messages`): with one upcoming event
   they go straight to it; with several, a bare picker of cards showing only "<Event Name>
   Wishlist" / "<Event Name> Messages" (no giftee/date/theme/buttons - that full-detail layout
@@ -137,7 +139,7 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   the "You're not joining any upcoming events..." message. Every event on the dashboard also
   has its own My Wishlist, Message My Secret Santa and View Event Details (a giftee is
   messaged from their profile), and the event page has My Wishlist / View My Messages / View
-  Clan & Wishlists. Only the admin's Manage My Clan lists every member.
+  My Clan. Only the admin's Manage My Clan lists every member.
 - Joining with a clan code needs a clan admin's approval: POST /families/join only makes a
   `join_requests` row (kept OUT of family_members on purpose, so every membership check keeps
   meaning "really in") and notifies the clan admins. Until approved the person sees only a
@@ -201,7 +203,8 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
 - Profile: photo, about me, likes, favorite colors, "what not to give me" live on
   `users` (PATCH /auth/me + /auth/me/photo) and are shown to the clan as an ID-style
   card on `/events/:id/clan/:userId` (photo beside details, wishlist cards below).
-  The event's Clan & Wishlists page (`/events/:id/clan`) is a name-sorted grid of photo + name tiles of the people joining THAT event.
+  The event's My Clan page (`/events/:id/clan`) is a name-sorted grid of photo + name tiles of the people joining THAT event (your own
+  tile says "<Name> (You)").
   Favorite colors are up to 8 "#rrggbb" values picked with the browser's color picker
   (`favorite_colors` in the API, stored comma-joined in `users.favorite_color`) and shown as
   circles - never free text. Members only ever get `User.clan_dict()` for other people (no

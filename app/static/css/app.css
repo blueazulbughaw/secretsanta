@@ -650,3 +650,16 @@ body.dragging-cards, body.dragging-cards * { cursor: grabbing !important; }
 .qr-btn { display: block; margin: 0 auto; padding: 0; border: 0; background: none; cursor: pointer; }
 .qr-btn .join-qr { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; pointer-events: none; }
 .qr-btn:focus-visible { outline: 3px solid var(--red); outline-offset: 4px; border-radius: var(--radius); }
+
+/* Messages page: each conversation is a toggle (opening one closes the other) */
+.msg-toggle > summary {
+  cursor: pointer; list-style: none; font-weight: 700; font-size: 1.1rem;
+  display: flex; align-items: center; gap: .4rem; min-height: 44px;
+}
+.msg-toggle > summary::-webkit-details-marker { display: none; }
+.msg-toggle > summary::after {
+  content: "▸"; margin-left: auto; color: var(--red); transition: transform .15s;
+}
+.msg-toggle[open] > summary::after { transform: rotate(90deg); }
+.msg-toggle[open] > summary { margin-bottom: .6rem; }
+.msg-toggle > summary .muted { font-weight: 400; font-size: .9rem; }

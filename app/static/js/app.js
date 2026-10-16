@@ -1847,7 +1847,7 @@ route(/^\/events\/(\d+)$/, async (id) => {
       </dl>
       ${extras ? "" : `<p class="muted">Your clan admin hasn't added rules or other details yet.</p>`}
       <div class="form-actions">
-        <button class="btn btn-primary" onclick="go('/events/${id}/clan')">View Clan &amp; Wishlists</button>
+        <button class="btn btn-primary" onclick="go('/events/${id}/clan')">View My Clan</button>
         ${ev.i_am_participating ? `<button class="btn btn-primary" onclick="go('/events/${id}/wishlist')">My Wishlist</button>` : ""}
         ${ev.i_am_participating ? `<button class="btn btn-primary" onclick="go('/events/${id}/messages')">View My Messages</button>` : ""}
         ${isAdmin && ev.status !== "completed" ? `<button class="btn btn-secondary" onclick="go('/admin/events/${id}/edit')">Edit Details</button>` : ""}
@@ -2072,7 +2072,7 @@ function personCard(user, eventId) {
     : `<span class="person-initials" style="background:${safeColor(user.avatar_color)}" aria-hidden="true">${esc(initialsOf(name))}</span>`;
   const card = h(`<button type="button" class="person-card" aria-label="${esc(name)}'s profile and wishlist">
     <span class="person-photo">${photo}</span>
-    <span class="person-name">${esc(name)}</span>
+    <span class="person-name">${esc(name)}${user.id === ME.user.id ? " (You)" : ""}</span>
   </button>`).firstElementChild;
   card.onclick = () => go(`/events/${eventId}/clan/${user.id}`);
   return card;
@@ -2081,7 +2081,7 @@ function personCard(user, eventId) {
 route(/^\/events\/(\d+)\/clan$/, async (id) => {
   const [list, ev] = await Promise.all([api.get(`/events/${id}/wishlists/clan`), api.get(`/events/${id}`)]);
   list.sort((a, b) => a.user.display_name.localeCompare(b.user.display_name));
-  render("Clan & Wishlists", list.length
+  render("My Clan", list.length
     ? `<p class="muted" style="margin-top:0">Event: <strong>${esc(ev.name)}</strong>. Tap someone to see their profile and wishlist.</p><div class="person-grid" id="personGrid"></div>`
     : `<div class="card center"><p>No one's joined this event yet.</p></div>`);
   const grid = document.getElementById("personGrid");
@@ -2104,8 +2104,8 @@ route(/^\/events\/(\d+)\/clan\/(\d+)$/, async (id, uid) => {
   const archived = ev.status === "completed";
   const entry = list.find(e => e.user.id === Number(uid));
   if (!entry) {
-    return render("Clan & Wishlists", alertBox("We couldn't find that person in this event.") + `
-      <button class="btn btn-secondary" style="width:auto" onclick="go('/events/${id}/clan')">Back to Clan & Wishlists</button>`);
+    return render("My Clan", alertBox("We couldn't find that person in this event.") + `
+      <button class="btn btn-secondary" style="width:auto" onclick="go('/events/${id}/clan')">Back to My Clan</button>`);
   }
   const n = entry.items.length;
   const name = entry.user.display_name;
@@ -2125,35 +2125,53 @@ route(/^\/events\/(\d+)\/clan\/(\d+)$/, async (id, uid) => {
   wireBuyButtons();
 });
 
+// Which conversation was open on the Messages page, so it stays open after sending.
+let openMessageThread = null;
 route(/^\/events\/(\d+)\/messages$/, async (id) => {
   const [d, ev] = await Promise.all([api.get(`/events/${id}/messages`), api.get(`/events/${id}`)]);
   const archived = ev.status === "completed";
-  function thread(key, label) {
+  // Each conversation is a toggle; opening one closes the other.
+  function thread(key, label, note) {
     const t = d[key];
     if (!t) return "";
     const msgs = t.messages.map(m =>
       `<div class="bubble ${m.mine ? "mine" : "theirs"}">${esc(m.body)}</div>`).join("")
       || `<p class="muted center">${archived ? "No messages." : "No messages yet. Say hello!"}</p>`;
-    return `<section class="card"><h2>${label}: ${esc(t.with_display_name)}</h2>
+    const n = t.messages.length;
+    const count = n ? ` <span class="muted">· ${n} message${n === 1 ? "" : "s"}</span>` : "";
+    return `<details class="card msg-toggle" data-thread="${key}" ${openMessageThread === `${id}:${key}` ? "open" : ""}>
+      <summary>${label}${count}</summary>
+      ${note && !archived ? `<p class="muted" style="margin-top:0">${note}</p>` : ""}
       <div>${msgs}</div>
       ${archived ? "" : `<label for="in-${key}">Write a message</label>
       <input id="in-${key}" maxlength="2000">
-      <button class="btn btn-primary" data-send="${key}">Send</button>`}</section>`;
+      <button class="btn btn-primary" data-send="${key}">Send</button>`}</details>`;
   }
   render("Messages", `
     <div id="msg"></div>
     <p class="muted" style="margin-top:0">Event: <strong>${esc(ev.name)}</strong>. These conversations are only for this event.</p>
     ${archived ? archivedBanner() : ""}
-    ${thread("giftee", "To my person")}
-    ${thread("giver", "With my Secret Santa")}
+    ${d.giftee ? thread("giftee", `Message to my Giftee (${esc(d.giftee.with_display_name)})`,
+      "Your messages here are sent anonymously.") : ""}
+    ${thread("giver", "Message to my Secret Santa")}
     ${!d.giftee && !d.giver ? `<div class="card center"><p>Messages open up after names are drawn.</p></div>` : ""}
   `);
+  const toggles = [...$app.querySelectorAll(".msg-toggle")];
+  toggles.forEach(t => t.addEventListener("toggle", () => {
+    if (t.open) {
+      openMessageThread = `${id}:${t.dataset.thread}`;
+      toggles.forEach(other => { if (other !== t) other.open = false; });
+    } else if (openMessageThread === `${id}:${t.dataset.thread}`) openMessageThread = null;
+  }));
   $app.querySelectorAll("[data-send]").forEach(b => b.onclick = async () => {
     const key = b.dataset.send;
     const input = document.getElementById(`in-${key}`);
     if (!input.value.trim()) return;
-    try { await api.post(`/events/${id}/messages`, { to: key, body: input.value }); navigate(); }
-    catch (e) { showError(e); }
+    try {
+      await api.post(`/events/${id}/messages`, { to: key, body: input.value });
+      openMessageThread = `${id}:${key}`;
+      navigate();
+    } catch (e) { showError(e); }
   });
 });
 
