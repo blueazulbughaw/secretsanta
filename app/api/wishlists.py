@@ -37,12 +37,13 @@ def _item_dict(item, include_purchase):
     return d
 
 
-def _visible_owners(ev, member):
+def _visible_owners(ev, member, admin_sees_all):
     """Whose wishlists the caller may see and buy from in this event, or None for
-    everyone's. With the clan's "everyone sees every wishlist" switch off, a member
-    gets only their own and their giftee's (none of anyone else's before the draw);
-    clan admins always see all."""
-    if member.role == "admin" or Family.query.get(ev.family_id).open_wishlists:
+    everyone's. With the clan's "everyone sees every wishlist" switch off, everyone -
+    clan admins included - gets only their own and their giftee's on Clan & Wishlists
+    (none of anyone else's before the draw). `admin_sees_all` is for the admin-only
+    View Everyone's Wishlists, where a clan admin can still buy from any list."""
+    if (admin_sees_all and member.role == "admin") or Family.query.get(ev.family_id).open_wishlists:
         return None
     a = Assignment.query.filter_by(event_id=ev.id, giver_id=g.user.id).first()
     return {g.user.id} | ({a.receiver_id} if a else set())
@@ -207,7 +208,7 @@ def mark_purchased(item_id):
         return err
     if item.user_id == g.user.id:
         return jsonify({"error": "You can't mark your own wishlist."}), 403
-    visible = _visible_owners(ev, m)
+    visible = _visible_owners(ev, m, admin_sees_all=True)
     if visible is not None and item.user_id not in visible:
         return jsonify({"error": "In this clan you can only buy from your giftee's wishlist."}), 403
     # `purchased` says which state the caller wants, so a repeat (double-tap, two tabs)
@@ -241,7 +242,7 @@ def clan_wishlists(event_id):
     member, err = require_event_access(ev)
     if err:
         return err
-    visible = _visible_owners(ev, member)
+    visible = _visible_owners(ev, member, admin_sees_all=False)
     parts = EventParticipant.query.filter_by(event_id=ev.id, is_participating=True).all()
     households = {m.user_id: (m.household.name if m.household else "")
                   for m in FamilyMember.query.filter_by(family_id=ev.family_id).all()}

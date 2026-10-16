@@ -2118,8 +2118,12 @@ def test_clan_admin_can_limit_members_to_their_giftees_wishlist(users):
     assert bob.post(f"/api/wishlists/{ids[other]}/purchase", json={"purchased": True}).status_code == 403
     assert bob.post(f"/api/wishlists/{ids[giftee]}/purchase", json={"purchased": True}).status_code == 200
 
-    # the clan admin still sees everything
-    assert all(e["items"] for e in admin.get(f"/api/events/{eid}/wishlists/clan").get_json())
+    # a clan admin joining the event is limited on Clan & Wishlists too...
+    admin_giftee = admin.get(f"/api/events/{eid}/assignments/mine").get_json()["giftee_user_id"]
+    shown = {e["user"]["id"] for e in admin.get(f"/api/events/{eid}/wishlists/clan").get_json() if e["items"]}
+    assert shown == {admin_giftee, me(admin)}
+    # ...but still sees every list on the admin-only View Everyone's Wishlists
+    assert all(e["items"] for e in admin.get(f"/api/events/{eid}/wishlists").get_json())
 
     # turned back on, everyone sees every list again
     admin.patch(f"/api/families/{fid}", json={"open_wishlists": True})
