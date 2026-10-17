@@ -102,7 +102,10 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   & Security ("Notifications on this device"); iPhone/iPad only from the Home Screen app.
   A device belongs to whoever signed in on it last (resyncPush on boot); signing out stops it
   (signOut() in app.js - use it for every sign-out button). sw.js shows them and opens
-  the link on tap.
+  the link on tap. The worker is served at /sw.js (root scope - iPhones need it to cover
+  the pages; the file is still app/static/sw.js) and old /static/ registrations are moved
+  over silently on boot. "Send Me a Test" (POST /push/test) pushes to your own devices only,
+  nothing in the bell. An Apple Watch shows them as the iPhone's while it's locked.
 - A giftee's profile shows the Secret Santa a Message button with a note that it's anonymous.
 - A giftee's wishlist is viewed on their profile (`/events/:id/clan/:userId`, top bar = their
   name); there is no separate "Their Wishlist" page (`/events/:id/giftee` only redirects, for
@@ -119,7 +122,9 @@ Secret Santa: family gift-exchange app. Flask + SQLAlchemy + MySQL + vanilla JS 
   profile photos cropped to a 512px square. Tests must upload real images.
 - Add a member and the Members table's edit rows show the same fields (Display Name, Username,
   Phone, Email, Household, Clan admin); an admin can edit a username too (unique, tidied, never
-  equal to the display name). Joining is only ever set on the event - the Members table has no
+  equal to the display name). Every field in a row (Household and Clan admin too) is saved
+  by that row's Save button, highlighted once something changed - nothing saves on change.
+  Joining is only ever set on the event - the Members table has no
   Joining column.
 - Add member / Add household are one-line cards on a desktop (`.inline-form`; stacked on a
   phone) above their tables.
