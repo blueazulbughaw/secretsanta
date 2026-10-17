@@ -1,4 +1,4 @@
-const CACHE = "giftcircle-v3";
+const CACHE = "giftcircle-v4";
 const STATIC = [
   "/",
   "/static/css/app.css",
@@ -23,7 +23,7 @@ self.addEventListener("activate", (e) => {
 
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
-  if (e.request.method !== "GET") return;
+  if (e.request.method !== "GET" || url.origin !== self.location.origin) return;
 
   if (url.pathname.startsWith("/api/")) {
     // Network-first for data

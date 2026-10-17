@@ -47,6 +47,16 @@ def create_app(config_object=None):
         # top of sms_optin.html for why). Fully functional, not a mockup.
         return render_template("sms_optin.html")
 
+    @app.route("/sw.js")
+    def service_worker():
+        # Served from the root (not /static/) so its scope is the whole app: phones -
+        # iPhones especially - only treat a service worker as the app's own, for
+        # notifications, when it covers the pages. no-cache so updates reach devices.
+        resp = make_response(app.send_static_file("sw.js"))
+        resp.headers["Content-Type"] = "application/javascript"
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
     @app.route("/")
     def landing():
         # The root URL specifically also renders a server-side copy of the sign-in form (see

@@ -279,10 +279,10 @@ function b64urlToBytes(s) {
   const raw = atob((s + "=".repeat((4 - s.length % 4) % 4)).replace(/-/g, "+").replace(/_/g, "/"));
   return Uint8Array.from(raw, c => c.charCodeAt(0));
 }
-// The service worker lives at /static/sw.js (scope /static/), so navigator.serviceWorker.ready
-// never resolves for these pages; register() hands back the existing registration instead.
+// The service worker is served at /sw.js (scope: the whole app). register() hands back the
+// existing registration, waiting for a brand-new one to activate.
 async function pushRegistration() {
-  const reg = await navigator.serviceWorker.register("/static/sw.js");
+  const reg = await navigator.serviceWorker.register("/sw.js");
   if (reg.active) return reg;
   const sw = reg.installing || reg.waiting;
   await new Promise(res => sw.addEventListener("statechange", () => { if (sw.state === "activated") res(); }));
@@ -307,6 +307,39 @@ async function turnOnPush() {
     throw new Error("This device couldn't turn on notifications. Please try again, or use Chrome or Safari.");
   }
   await api.post("/push/subscribe", sub.toJSON());
+  await dropOldPushRegistration();
+}
+// The worker used to live at /static/sw.js (scope /static/). Its subscription is moved to the
+// new one - no prompt, the permission is already there - and then it's removed. If the move
+// fails the old one is kept, so the device keeps getting notifications meanwhile.
+async function oldPushRegistration() {
+  const reg = await navigator.serviceWorker.getRegistration("/static/");
+  return reg && new URL(reg.scope).pathname === "/static/" ? reg : null;
+}
+async function dropOldPushRegistration() {
+  const old = await oldPushRegistration();
+  if (!old) return;
+  const sub = await old.pushManager.getSubscription();
+  if (sub) {
+    await api.post("/push/unsubscribe", { endpoint: sub.endpoint }).catch(() => {});
+    await sub.unsubscribe().catch(() => {});
+  }
+  await old.unregister();
+}
+async function movePushToNewWorker() {
+  const old = await oldPushRegistration();
+  if (!old) return;
+  if (await old.pushManager.getSubscription()) {
+    const { public_key } = await api.get("/push/key");
+    const reg = await pushRegistration();
+    const sub = await reg.pushManager.getSubscription()
+      || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64urlToBytes(public_key) });
+    await api.post("/push/subscribe", sub.toJSON());
+  }
+  await dropOldPushRegistration();
+}
+async function sendTestPush() {
+  await api.post("/push/test", {});
 }
 async function turnOffPush() {
   const sub = await currentPushSub();
@@ -319,6 +352,7 @@ async function turnOffPush() {
 async function resyncPush() {
   try {
     if (!PUSH_SUPPORTED || Notification.permission !== "granted") return;
+    try { await movePushToNewWorker(); } catch (_) {}
     const sub = await currentPushSub();
     if (sub) await api.post("/push/subscribe", sub.toJSON());
   } catch (_) {}
@@ -337,9 +371,11 @@ async function signOut() {
 async function wirePushCard() {
   const state = document.getElementById("pushState");
   const btn = document.getElementById("pushBtn");
+  const testBtn = document.getElementById("pushTestBtn");
   const msg = (text, ok) => { document.getElementById("pushMsg").innerHTML = text ? alertBox(text, ok) : ""; };
   const show = async () => {
     btn.hidden = true;
+    testBtn.hidden = true;
     if (!PUSH_SUPPORTED) {
       state.innerHTML = IS_IOS
         ? `<p>On an iPhone or iPad, first add Secret Santa to your Home Screen (tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>). Open it from there and turn this on.</p>`
@@ -351,9 +387,18 @@ async function wirePushCard() {
       return;
     }
     const on = !!(await currentPushSub()) && Notification.permission === "granted";
-    state.innerHTML = on ? `<p><strong>On</strong> for this device.</p>` : "";
+    state.innerHTML = on ? `<p><strong>On</strong> for this device.${IS_IOS ? " An Apple Watch shows them too while this iPhone is locked." : ""}</p>` : "";
     btn.textContent = on ? "Turn Off Notifications" : "Turn On Notifications";
     btn.hidden = false;
+    testBtn.hidden = !on;
+    testBtn.onclick = async () => {
+      testBtn.disabled = true;
+      try {
+        await sendTestPush();
+        msg("Test sent. It should show up on this device in a few seconds (lock the phone to see it on your watch).", true);
+      } catch (e) { msg(e.message); }
+      testBtn.disabled = false;
+    };
     btn.onclick = async () => {
       btn.disabled = true;
       try {
@@ -1352,6 +1397,7 @@ async function pageSecuritySetup(forced) {
       <div id="pushState"></div>
       <div id="pushMsg"></div>
       <button class="btn btn-secondary" id="pushBtn" hidden></button>
+      <button class="btn btn-secondary" id="pushTestBtn" style="margin-top:.5rem" hidden>Send Me a Test</button>
     </section>`;
   render("Profile & Security", `
     ${forced ? passwordCard + profileCard : profileCard + passwordCard}
@@ -2457,33 +2503,34 @@ route(/^\/admin\/members$/, async () => {
 
   function wireRow(tr, membershipId) {
     const msg = () => document.getElementById("msg");
-    tr.querySelector("[data-save]").onclick = async () => {
+    // Every field in the row - Household and Clan admin too - is saved by the row's Save
+    // button, which lights up as soon as something in the row has changed.
+    const saveBtn = tr.querySelector("[data-save]");
+    const markChanged = () => { saveBtn.textContent = "Save"; saveBtn.disabled = false; saveBtn.classList.add("btn-unsaved"); };
+    tr.querySelectorAll("input, select").forEach(el => {
+      el.addEventListener("input", markChanged);
+      el.addEventListener("change", markChanged);
+    });
+    saveBtn.onclick = async () => {
       const nameEl = tr.querySelector("[data-name]");
       const userEl = tr.querySelector("[data-username]");
       const phoneEl = tr.querySelector("[data-phone]");
       const emailEl = tr.querySelector("[data-email]");
+      const houseEl = tr.querySelector("[data-house]");
+      const roleEl = tr.querySelector("[data-role]");
+      saveBtn.disabled = true;
       try {
         await api.patch(`/families/${FAMILY.id}/members/${membershipId}`, {
           full_name: nameEl.value, username: userEl.value, phone: phoneEl.value, email: emailEl.value,
+          household_id: houseEl.value ? Number(houseEl.value) : null,
+          role: roleEl.checked ? "admin" : "member",
         });
         userEl.value = userEl.value.trim().toLowerCase();   // the server saves it tidied like this
         nameEl.title = nameEl.value; userEl.title = userEl.value; phoneEl.title = phoneEl.value; emailEl.title = emailEl.value;
-        msg().innerHTML = alertBox("Saved!", true);
-      } catch (err) { showError(err); }
-    };
-    tr.querySelector("[data-house]").onchange = async e => {
-      try {
-        await api.patch(`/families/${FAMILY.id}/members/${membershipId}`,
-          { household_id: e.target.value ? Number(e.target.value) : null });
-        msg().innerHTML = alertBox("Saved!", true);
-      } catch (err) { showError(err); }
-    };
-    tr.querySelector("[data-role]").onchange = async e => {
-      try {
-        await api.patch(`/families/${FAMILY.id}/members/${membershipId}`,
-          { role: e.target.checked ? "admin" : "member" });
-        msg().innerHTML = alertBox("Saved!", true);
-      } catch (err) { e.target.checked = !e.target.checked; showError(err); }
+        saveBtn.classList.remove("btn-unsaved");
+        saveBtn.textContent = "Saved ✓";
+        msg().innerHTML = alertBox(`Saved ${nameEl.value}.`, true);
+      } catch (err) { saveBtn.disabled = false; showError(err); }
     };
     tr.querySelector("[data-reset]").onclick = async () => {
       if (!confirm("Reset this person's password? Their old password will stop working and they'll be signed out on every device.")) return;

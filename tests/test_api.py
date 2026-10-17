@@ -2080,6 +2080,31 @@ def test_notifications_are_pushed_to_the_devices_people_turned_them_on_for(app, 
     assert PushSubscription.query.filter_by(endpoint=_sub("bob-phone")["endpoint"]).first().user_id == cara_id
 
 
+def test_send_me_a_test_pushes_only_to_my_own_devices(app, users, monkeypatch):
+    import pywebpush
+    admin, bob, cara = users[ADMIN_USER], users[BOB_USER], users[CARA_USER]
+    assert bob.post("/api/push/test", json={}).status_code == 400          # push off here
+    app.config.update(VAPID_PUBLIC_KEY="pub", VAPID_PRIVATE_KEY="priv")
+    fake = _FakePush()
+    monkeypatch.setattr(pywebpush, "webpush", fake)
+    assert bob.post("/api/push/test", json={}).status_code == 400          # no device yet
+    bob.post("/api/push/subscribe", json=_sub("bob-phone"))
+    cara.post("/api/push/subscribe", json=_sub("cara-phone"))
+    before = _bell(bob)
+    r = bob.post("/api/push/test", json={})
+    assert r.status_code == 200 and r.get_json()["sent"] == 1
+    assert [e.rsplit("/", 1)[1] for e, _, _ in fake.sent] == ["bob-phone"]
+    assert fake.sent[0][1]["link_path"] == "/security"
+    assert _bell(bob) == before                                            # not saved in the bell
+
+
+def test_service_worker_is_served_from_the_root(app):
+    r = app.test_client().get("/sw.js")
+    assert r.status_code == 200 and "javascript" in r.headers["Content-Type"]
+    assert "showNotification" in r.get_data(as_text=True)
+    assert r.headers["Cache-Control"] == "no-cache"
+
+
 def test_a_failing_push_never_breaks_the_request(app, users, monkeypatch):
     import pywebpush
     fam, admin, bob = users["_family"], users[ADMIN_USER], users[BOB_USER]

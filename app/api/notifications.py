@@ -56,6 +56,20 @@ def push_unsubscribe():
     return jsonify({"ok": True})
 
 
+@bp.post("/push/test")
+@require_auth
+def push_test():
+    """Profile & Security's "Send Me a Test": pushes to the signed-in person's own devices
+    only (nothing goes in the bell), so they can see it arrive on their phone / watch."""
+    from ..services.push_service import enabled, send_test
+    if not enabled():
+        return jsonify({"error": "Notifications aren't set up on this site yet."}), 400
+    sent = send_test(g.user.id)
+    if not sent:
+        return jsonify({"error": "Couldn't reach this device. Turn notifications off and on again, then try again."}), 400
+    return jsonify({"ok": True, "sent": sent})
+
+
 @bp.post("/push/subscribe")
 @require_auth
 def push_subscribe():

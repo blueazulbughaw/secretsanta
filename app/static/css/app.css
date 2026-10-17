@@ -181,6 +181,8 @@ table.data tr.group-header td {
   padding-top: .6rem; padding-bottom: .4rem;
 }
 table.data .table-actions { display: flex; gap: .35rem; flex-wrap: wrap; }
+/* Members table: this row has changes that Save hasn't saved yet */
+.btn.btn-unsaved { box-shadow: 0 0 0 3px var(--yellow, #F5C518); }
 table.data .table-actions button {
   width: auto; min-height: 30px; padding: .3rem .55rem; margin: 0; font-size: .78rem;
 }

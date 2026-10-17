@@ -41,6 +41,28 @@ def _send_one(sub, payload, private_key, claims):
     return None
 
 
+def send_test(user_id):
+    """A test push to one person's devices (not saved in the bell). Returns how many took it."""
+    subs = [{"id": s.id, "endpoint": s.endpoint, "p256dh": s.p256dh_key, "auth": s.auth_key}
+            for s in PushSubscription.query.filter_by(user_id=user_id).all()]
+    if not subs:
+        return 0
+    payload = json.dumps({"title": "Secret Santa", "link_path": "/security",
+                          "body": "Notifications are working on this device."})
+    private_key = current_app.config["VAPID_PRIVATE_KEY"]
+    claims = {"sub": current_app.config.get("VAPID_SUBJECT") or "https://secretsanta.glad.codes"}
+    sent, dead = 0, set()
+    for sub in subs:
+        gone = _send_one(sub, payload, private_key, claims)
+        if gone:
+            dead.add(gone)
+        sent += 1
+    if dead:
+        PushSubscription.query.filter(PushSubscription.id.in_(dead)).delete(synchronize_session=False)
+        db.session.commit()
+    return sent - len(dead)
+
+
 def send(notifications):
     """Pushes each (already saved) Notification to its person's devices."""
     if not notifications or not enabled():
